@@ -1,0 +1,128 @@
+{% extends "wizard_step.html" %}
+{% set step_title = "Camunda OpenSearch" %}
+{% block step_body %}
+  <div class="d-flex align-items-start flex-wrap gap-2 mb-3">
+    <div class="alert alert-info py-2 mb-0 flex-grow-1 wizard-inline-alert">
+      <div class="small">Engine versions, instance types and count limits are fetched from the AWS OpenSearch API and cached (24h by default).</div>
+      {% set meta = form.version_meta %}
+      <div class="small mt-1">
+        Engine versions
+        <span class="badge {{ 'bg-success' if meta.source == 'aws_cache' else 'bg-warning text-dark' }} ms-2">source={{ meta.source }}</span>
+        <span class="badge bg-secondary ms-1">region={{ meta.region }}</span>
+        <span class="badge bg-secondary ms-1">count={{ meta.count }}</span>
+        <span class="badge {{ 'bg-warning text-dark' if meta.stale else 'bg-success' }} ms-1">{{ 'stale' if meta.stale else 'fresh' }}</span>
+        {% if meta.error %}<span class="badge bg-warning text-dark ms-1">Refresh failed: {{ meta.error }}</span>{% endif %}
+      </div>
+      {% for field in form if field.type == 'FormField' %}
+        {% set meta = field.form.catalog_meta %}
+        <div class="small mt-1">
+          {{ field.name|upper }} / OpenSearch {{ field.form.catalog_version }}
+          <span class="badge {{ 'bg-success' if meta.source == 'aws_cache' else 'bg-warning text-dark' }} ms-2" title="{{ meta.cache_path }}">source={{ meta.source }}</span>
+          <span class="badge bg-secondary ms-1">region={{ meta.region }}</span>
+          <span class="badge bg-secondary ms-1">count={{ meta.count }}</span>
+          <span class="badge {{ 'bg-warning text-dark' if meta.stale else 'bg-success' }} ms-1">{{ 'stale' if meta.stale else 'fresh' }}</span>
+          {% if meta.error %}<span class="badge bg-warning text-dark ms-1">Refresh failed: {{ meta.error }}</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    <div class="d-flex align-items-center gap-2 ms-auto flex-shrink-0">
+      <button type="submit" name="opensearch_catalog_refresh" value="versions" formnovalidate class="btn btn-sm btn-outline-secondary">Refresh engine versions</button>
+      <button type="submit" data-instance-refresh name="opensearch_catalog_refresh" value="1" formnovalidate class="btn btn-sm btn-outline-secondary">Refresh instance types</button>
+    </div>
+  </div>
+  <h3 class="h6 mb-3">Shared settings</h3>
+  <div data-camunda-shared>
+    {% for name in form.shared_inputs %}
+      {{ render_field(form[name], step) }}
+    {% endfor %}
+  </div>
+  {% for field in form if field.type == 'FormField' %}
+    {% set env_key = field.name|lower %}
+    {% set env_base = env_key.split('_', 1)[0].split('-', 1)[0] %}
+    <div class="env-section mb-4" data-env="{{ env_base }}">
+      <div class="env-chip" data-env="{{ env_base }}">{{ env_key|upper }}</div>
+      <div class="env-section__body">
+        <p>EKS cluster: <strong {% if field.form.multi %}data-cluster-preview="{{ field.form.cluster_target.id }}" data-cluster-suffix="{{ field.form.cluster_name_suffix }}"{% endif %}>{{ field.form.cluster_preview }}</strong>{% if field.form.multi %} (based on the selected target){% endif %}</p>
+        {% if field.form.opensearch_cidr_blocks.data or field.form.opensearch_cidr_blocks.errors %}
+          {{ render_field(field.form.opensearch_cidr_blocks, step) }}
+        {% endif %}
+        {% for label, names in field.form.groups %}
+          {% set visible = names|reject('in', form.shared_inputs)|reject('in', ['opensearch_master_user_secret_name', 'opensearch_custom_endpoint_certificate_id'])|list %}
+          {% if visible|select('in', field.form)|list %}
+          {% if loop.last %}<details{% if field.form.errors %} open{% endif %}><summary class="mt-3">Account and advanced settings</summary>{% endif %}
+          <fieldset class="border-top mt-3 pt-3">
+            <legend class="h6">{{ label }}</legend>
+            {% if label == 'Endpoint and credentials' %}
+              <p class="text-muted small">The Camunda wrapper creates the master-user secret for new deployments. Existing saved secret references are retained.</p>
+            {% endif %}
+            {% for name in visible if name in field.form %}
+              {% if name in ('opensearch_custom_endpoint', 'opensearch_custom_endpoint_certificate_id') %}
+                <div data-custom-endpoint-field="{{ field.form.opensearch_custom_endpoint_enabled.id }}"{% if not field.form.opensearch_custom_endpoint_enabled.data %} hidden{% endif %}>
+                  {{ render_field(field.form[name], step) }}
+                </div>
+              {% else %}
+                {{ render_field(field.form[name], step) }}
+              {% endif %}
+            {% endfor %}
+          </fieldset>
+          {% if loop.last %}</details>{% endif %}
+          {% endif %}
+        {% endfor %}
+        <div class="border-top mt-3 pt-3" data-shared-override>
+          {{ render_field(field.form.override_shared_settings, step) }}
+          <fieldset data-shared-override-fields{% if not field.form.override_shared_settings.data %} hidden disabled{% endif %}>
+            <legend class="h6">Shared setting overrides — {{ env_key|upper }}</legend>
+            {% for name in form.shared_inputs %}
+              <div data-shared-field="{{ name }}">{% if name in ('opensearch_custom_endpoint', 'opensearch_custom_endpoint_certificate_id') %}
+                <div data-custom-endpoint-field="{{ field.form.opensearch_custom_endpoint_enabled.id }}"{% if not field.form.opensearch_custom_endpoint_enabled.data %} hidden{% endif %}>
+                  {{ render_field(field.form[name], step) }}
+                </div>
+              {% else %}
+                {{ render_field(field.form[name], step) }}
+              {% endif %}</div>
+            {% endfor %}
+          </fieldset>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+  <script>
+    document.querySelectorAll('select[name$="opensearch_engine_version"]').forEach((select) => {
+      select.addEventListener('change', () => {
+        const refresh = document.querySelector('[data-instance-refresh]');
+        select.form.requestSubmit(refresh);
+      });
+    });
+    document.querySelectorAll('[data-custom-endpoint-field]').forEach((container) => {
+      const toggle = document.getElementById(container.dataset.customEndpointField);
+      const update = () => { container.hidden = !toggle.checked; };
+      toggle.addEventListener('change', update);
+      update();
+    });
+    document.querySelectorAll('[data-shared-override]').forEach((section) => {
+      const toggle = section.querySelector('input[type="checkbox"]');
+      const fields = section.querySelector('[data-shared-override-fields]');
+      toggle.addEventListener('change', () => {
+        fields.hidden = fields.disabled = !toggle.checked;
+        if (!toggle.checked) return;
+        fields.querySelectorAll('[data-shared-field]').forEach((container) => {
+          const sources = document.querySelectorAll(`[data-camunda-shared] [name="${container.dataset.sharedField}"]`);
+          const targets = container.querySelectorAll('input, select, textarea');
+          targets.forEach((target, index) => {
+            const source = sources[index];
+            if (!source) return;
+            if (target.type === 'checkbox') target.checked = source.checked;
+            else target.value = source.value;
+          });
+        });
+      });
+    });
+    document.querySelectorAll('[data-cluster-preview]').forEach((preview) => {
+      const select = document.getElementById(preview.dataset.clusterPreview);
+      select?.addEventListener('change', () => {
+        preview.textContent = !preview.dataset.clusterSuffix ? 'Complete Common Settings first'
+          : select.value ? `${select.value}-${preview.dataset.clusterSuffix}` : 'Choose the application cluster';
+      });
+    });
+  </script>
+{% endblock %}

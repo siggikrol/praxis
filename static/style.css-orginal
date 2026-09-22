@@ -1,0 +1,404 @@
+/* Center card wrapper */
+.wizard-wrapper {
+  display: flex;
+  justify-content: center;
+  padding-top: 2rem;
+}
+
+/* Constrain card width */
+.card {
+  max-width: 700px;
+  width: 100%;
+  margin: 0;
+}
+
+/* Horizontal form rows */
+.form-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.form-row label {
+  flex: 0 0 30%;
+  margin-bottom: 0;
+  text-align: right;
+  padding-right: 1rem;
+}
+.form-row .input-col {
+  flex: 1;
+}
+
+/* Progress bar container */
+.step-progress {
+  display: flex;
+  height: 0.75rem;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  border-radius: 0.375rem;
+}
+/* Individual segments */
+.step-progress .progress-bar {
+  flex: 1;
+  transition: background-color 0.3s;
+}
+/* Inactive segments */
+.step-progress .bg-light {
+  background-color: #e9ecef !important;
+}
+/* Active segments */
+.step-progress .bg-primary {
+  background-color: #0d6efd !important;
+}
+
+
+/* NCR pages: wider card + nicer monospace output */
+.card-wide { max-width: 1100px; }
+@media (min-width: 1400px) {
+  .card-wide { max-width: 1280px; }
+}
+pre.ncr-pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95rem;
+  white-space: pre;    /* keep spacing exactly as rendered */
+}
+
+/* NCR pages: wider card and nice monospace output */
+.card-ncr { max-width: 1180px; }
+@media (min-width: 1400px) { .card-ncr { max-width: 1440px; } }
+@media (min-width: 1600px) { .card-ncr { max-width: 1560px; } }
+
+pre.ncr-pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.95rem;
+  white-space: pre; /* preserve spacing */
+}
+
+/* Print-friendly */
+@media print {
+  body { background: #fff !important; }
+  .container { padding: 0 !important; }
+  .card, .card * { box-shadow: none !important; }
+  .card { border: none !important; }
+  .card-header, .btn, .navbar, .nav, .text-center .btn { display: none !important; }
+  pre.ncr-pre { font-size: 11pt; }
+}
+
+/* ---- Home page polish ---- */
+.card--wide { max-width: 1100px; width: 100%; }
+
+.bg-gradient-primary {
+  background: linear-gradient(135deg, #0d6efd 0%, #6c63ff 50%, #00a3ff 100%);
+}
+
+.hero { border-top-left-radius: .375rem; border-top-right-radius: .375rem; }
+
+/* Feature cards */
+.feature-card {
+  border: 1px solid #eef0f3;
+  border-radius: .75rem;
+  padding: 1rem 1.25rem;
+  background: #fff;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .2s ease;
+}
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 .75rem 1.5rem rgba(0,0,0,.06);
+  border-color: #e3e7ee;
+  cursor: pointer;
+}
+.feature-card--accent {
+  border: 1px solid #dfe8ff;
+  background: linear-gradient(180deg, #f7faff 0%, #ffffff 100%);
+}
+
+/* Icon badge */
+.icon-circle {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #eef4ff; color: #0d6efd; font-size: 1.25rem;
+}
+
+/* Checklist with nice bullets; collapses to one column on narrow screens */
+.checklist {
+  list-style: none; padding-left: 0; margin-bottom: 0;
+  columns: 2; column-gap: 2rem;
+}
+@media (max-width: 992px) {
+  .checklist { columns: 1; }
+}
+.checklist li {
+  position: relative; padding-left: 1.75rem; margin-bottom: .5rem;
+  break-inside: avoid;
+}
+.checklist li::before {
+  content: "\f00c"; /* fa-check */
+  font-family: "Font Awesome 6 Free"; font-weight: 900;
+  position: absolute; left: 0; top: .15rem;
+  color: #198754; /* Bootstrap success */
+}
+
+/* Lighter placeholder text globally */
+.form-control::placeholder {
+  color: rgba(0, 0, 0, 0.35); /* tweak 0.35 up/down to taste */
+  opacity: 1;                 /* Safari sometimes dims placeholders */
+}
+
+
+/* Keep existing global card rules for wizards; home uses card--wide */
+
+/* Brand lockup: image + text perfectly aligned */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .2rem;
+  line-height: 1;
+}
+
+/* Default 24px */
+.brand-icon {
+  display: block;            /* kills descender gap */
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  max-height: none !important; /* beats any framework cap */
+}
+
+/* Size variants */
+.brand--48 .brand-icon { width: 48px; height: 48px; }
+.brand--64 .brand-icon { width: 64px; height: 64px; }
+
+/* Text sizing that pairs nicely with each icon size */
+.brand-text { font-weight: 600; }
+.brand .brand-text        { font-size: 1.25rem; } /* 24px icon */
+.brand--48 .brand-text    { font-size: 1.5rem;  }
+.brand--64 .brand-text    { font-size: 1.75rem; }
+
+/* If your SVG sits a hair low/high, nudge it: (optional)
+.brand--48 .brand-icon { transform: translateY(1px); }
+*/
+
+/* Keep layout from shifting when the vertical scrollbar appears */
+html {
+  scrollbar-gutter: stable;            /* modern browsers */
+}
+
+/* Fallback for older browsers */
+@supports not (scrollbar-gutter: stable) {
+  html { overflow-y: scroll; }
+}
+
+
+/* --- Env subform heading chip --- */
+
+
+/* Optional: subtle section frame + header tint (unchanged) */
+.env-box {
+  border: 1px solid #eef0f3;
+  border-radius: .75rem;
+  overflow: hidden;
+  background: #fff;
+}
+.env-box__head { padding:.6rem .9rem .4rem; border-bottom:1px solid #eef0f3; }
+.env-box__body { padding:1rem 1.25rem; }
+
+/* === COLOR MAP === */
+/* Env chips (no Bootstrap color classes) */
+.env-chip{
+  display:inline-block;
+  padding:.35rem .9rem;
+  border-radius:999px;
+  font-weight:700;
+  letter-spacing:.5px;
+  font-size:.85rem;
+  color:#fff;
+  background:#6c757d; /* fallback */
+}
+
+/* Per-environment colors */
+.env-chip[data-env="sit"]      { background:#0d6efd; }  /* info-ish */
+.env-chip[data-env="staging"]  { background:#198754; }  /* green */
+.env-chip[data-env="uat"]      { background:#fd7e14; }  /* orange */
+.env-chip[data-env="preprod"]  { background:#6f42c1; }  /* purple */
+.env-chip[data-env="prod"]     { background:#dc3545; }  /* red */
+
+
+/* --- Praxis wizard progress --- */
+.ps-progress {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.ps-step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ps-step .ps-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e9ecef;                 /* light */
+  box-shadow: 0 0 0 2px #fff inset;
+  transition: transform .15s ease, box-shadow .2s ease, background .2s ease;
+}
+
+.ps-step.is-done .ps-dot {
+  background: #0d6efd;                  /* primary */
+}
+
+.ps-step.is-current .ps-dot {
+  background: #0d6efd;
+  box-shadow:
+    0 0 0 3px rgba(13,110,253,.35),
+    0 0 0 6px rgba(13,110,253,.15);
+  transform: scale(1.05);
+}
+
+.ps-step .ps-line {
+  height: 4px;
+  flex: 1 1 auto;
+  margin-left: .5rem;
+  margin-right: .5rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e9ecef, #e9ecef);
+  transition: background .25s ease;
+}
+
+.ps-step.is-done .ps-line {
+  background: linear-gradient(90deg, #0d6efd, #6ea8fe);
+}
+
+/* Nice hover + keyboard focus effect */
+.ps-step:is(:hover, :focus-within) .ps-dot {
+  box-shadow:
+    0 0 0 3px rgba(13,110,253,.45),
+    0 0 0 8px rgba(13,110,253,.10);
+  transform: scale(1.08);
+}
+
+/* CSS-only tooltip fallback (shows if BS tooltip isn't running) */
+.ps-step:hover::after {
+  content: attr(data-title);
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(33,37,41,.95);       /* almost-black */
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  opacity: .95;
+}
+
+/* === Progress dot: green (ready) / red (incomplete) ====================== */
+/* color tokens */
+:root{
+  --ps-success: #198754;            /* Bootstrap success */
+  --ps-success-ring1: rgba(25,135,84,.35);
+  --ps-success-ring2: rgba(25,135,84,.12);
+  --ps-danger:  #dc3545;            /* Bootstrap danger  */
+  --ps-danger-ring1: rgba(220,53,69,.35);
+  --ps-danger-ring2: rgba(220,53,69,.12);
+}
+
+/* ensure dot is positioned for ripple */
+.ps-step .ps-dot { position: relative; }
+
+/* Default “ready” = GREEN pulse on current step when no invalid fields */
+.card-body:not(:has(form :invalid)) .ps-step.is-current .ps-dot{
+  background: var(--ps-success);
+  animation: psPulseGreen 1.6s ease-in-out infinite;
+  box-shadow:
+    0 0 0 3px var(--ps-success-ring1),
+    0 0 0 6px var(--ps-success-ring2);
+}
+.card-body:not(:has(form :invalid)) .ps-step.is-current .ps-dot::after{
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: var(--ps-success-ring2);
+  filter: blur(0.2px);
+  animation: psRippleGreen 1.6s ease-out infinite;
+  pointer-events: none;
+}
+
+/* Any invalid controls on the page -> RED pulse */
+.card-body:has(form :invalid) .ps-step.is-current .ps-dot{
+  background: var(--ps-danger);
+  animation: psPulseRed 1.6s ease-in-out infinite;
+  box-shadow:
+    0 0 0 3px var(--ps-danger-ring1),
+    0 0 0 6px var(--ps-danger-ring2);
+}
+.card-body:has(form :invalid) .ps-step.is-current .ps-dot::after{
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: var(--ps-danger-ring2);
+  filter: blur(0.2px);
+  animation: psRippleRed 1.6s ease-out infinite;
+  pointer-events: none;
+}
+
+/* Optional: tint the percent number accordingly */
+.card-body:not(:has(form :invalid)) .ps-progress-meta .ps-percent-num{ color: var(--ps-success); }
+.card-body:has(form :invalid) .ps-progress-meta .ps-percent-num{ color: var(--ps-danger); }
+
+/* Keyframes */
+@keyframes psPulseGreen{
+  0%   { transform: scale(1.00); box-shadow:
+          0 0 0 3px var(--ps-success-ring1),
+          0 0 0 6px var(--ps-success-ring2); }
+  50%  { transform: scale(1.12); box-shadow:
+          0 0 0 4px var(--ps-success-ring1),
+          0 0 0 10px var(--ps-success-ring2); }
+  100% { transform: scale(1.00); box-shadow:
+          0 0 0 3px var(--ps-success-ring1),
+          0 0 0 6px var(--ps-success-ring2); }
+}
+@keyframes psRippleGreen{
+  0%   { transform: scale(0.9); opacity: .5; }
+  70%  { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes psPulseRed{
+  0%   { transform: scale(1.00); box-shadow:
+          0 0 0 3px var(--ps-danger-ring1),
+          0 0 0 6px var(--ps-danger-ring2); }
+  50%  { transform: scale(1.12); box-shadow:
+          0 0 0 4px var(--ps-danger-ring1),
+          0 0 0 10px var(--ps-danger-ring2); }
+  100% { transform: scale(1.00); box-shadow:
+          0 0 0 3px var(--ps-danger-ring1),
+          0 0 0 6px var(--ps-danger-ring2); }
+}
+@keyframes psRippleRed{
+  0%   { transform: scale(0.9); opacity: .5; }
+  70%  { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce){
+  .card-body .ps-step.is-current .ps-dot,
+  .card-body .ps-step.is-current .ps-dot::after{
+    animation: none !important;
+  }
+}
+
+/* --- Percent complete badge --- */
+.ps-progress-meta { margin-top: .25rem; }
+.ps-percent { font-weight: 600; }
+.ps-percent-num { font-variant-numeric: tabular-nums; letter-spacing: .02em; }

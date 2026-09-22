@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}{% if page_mode == 'published' %}Published Setups{% elif page_mode == 'drafts' %}Environment Drafts{% else %}Readiness Gate{% endif %} · Praxis{% endblock %}
+{% block content %}
+<div class="page-shell foundation-landing">
+  {% if page_mode == 'drafts' %}{% set hero_title = "Environment Drafts" %}{% set hero_subtitle = "Start a new foundation request or continue saved work." %}{% set hero_eyebrow = "Foundation Readiness Workspace" %}
+  {% elif page_mode == 'published' %}{% set hero_title = "Published Environment Setups" %}{% set hero_subtitle = "Track acknowledged, active, paused, overdue, and completed Praxis foundation work." %}{% set hero_eyebrow = "Foundation Operations" %}
+  {% else %}{% set hero_title = "Praxis Foundation Readiness" %}{% set hero_subtitle = "Prepare and document everything DevOps needs before Praxis foundation provisioning can begin." %}{% set hero_eyebrow = "Provisioning Entry Gate" %}{% endif %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('index') }}"><i class="fa-solid fa-arrow-left"></i> Back to Home</a>
+  {% set readiness_section = page_mode %}
+  {% include "environment_readiness/_workspace_nav.html" %}
+
+  {% if page_mode == 'information' %}
+  <section class="foundation-intro">
+    <div class="foundation-intro__icon"><i class="fa-solid fa-layer-group"></i></div>
+    <div>
+      <h2>This gate answers: “Can Praxis provisioning start?”</h2>
+      <p>It confirms that the AWS account, networking, access, ownership, release, and external platform prerequisites are available before DevOps begins setup.</p>
+      <p><strong>Completion rule:</strong> once every applicable item is confirmed, publish and share the setup. The receiving DevOps owner acknowledges the handoff before foundation setup begins.</p>
+      <p class="foundation-intro__boundary"><i class="fa-solid fa-circle-info"></i> This is not final environment, application, testing, product-acceptance, or production readiness.</p>
+    </div>
+  </section>
+
+  <section class="foundation-overview">
+    <article><span>1</span><div><h3>Describe the foundation</h3><p>Capture the environment identity, target account, technical definition, and applicable services.</p></div></article>
+    <article><span>2</span><div><h3>Confirm prerequisites</h3><p>Record status, owner, and evidence for networking, AWS access, and external dependencies.</p></div></article>
+    <article><span>3</span><div><h3>Publish and share</h3><p>Publish an immutable readiness snapshot and send its Praxis link to the receiving DevOps owner.</p></div></article>
+  </section>
+
+  <section class="foundation-includes">
+    <div><i class="fa-solid fa-network-wired"></i><span><strong>Networking</strong><small>CIDR, firewall, TGW, endpoints, internet, VPN, Vault, Harbor, and Rancher paths.</small></span></div>
+    <div><i class="fa-brands fa-aws"></i><span><strong>AWS and access</strong><small>Target account, region, IAM execution/admin roles, and account availability.</small></span></div>
+    <div><i class="fa-solid fa-file-lines"></i><span><strong>Evidence-backed output</strong><small>Every prerequisite has an accountable owner and ticket, link, or verification reference.</small></span></div>
+  </section>
+
+  <a class="foundation-why" href="{{ url_for('environment_readiness.origins') }}"><i class="fa-solid fa-book-open"></i><span><strong>Why does this gate ask for these things?</strong><small>Review the Catalyst incidents and canonical Confluence sources behind every Networking and AWS prerequisite.</small></span><i class="fa-solid fa-arrow-right"></i></a>
+  <div class="foundation-page-next"><a class="btn btn-primary" href="{{ url_for('environment_readiness.drafts') }}">Continue to Environment Drafts <i class="fa-solid fa-arrow-right ms-1"></i></a></div>
+  {% endif %}
+
+  {% if page_mode == 'published' %}
+  <section class="foundation-drafts foundation-published">
+    <div class="foundation-drafts__heading">
+      <div><h2>Published environment setups</h2><p>Active work is shown by default. Completed setups remain available in the archive views.</p></div>
+      <div class="foundation-published-actions"><a class="btn btn-outline-primary" href="{{ url_for('environment_readiness.export_csv', status=setup_dashboard.status_filter, customer=setup_dashboard.customer or None, q=setup_dashboard.query or None, mine=setup_dashboard.mine_filter if setup_dashboard.mine_filter != 'all' else None, urgency=setup_dashboard.urgency_filter or None, sort=setup_dashboard.sort_by or None, direction=setup_dashboard.sort_direction if setup_dashboard.sort_by else None) }}"><i class="fa-solid fa-file-csv me-1"></i> Export filtered CSV</a><form method="post" action="{{ url_for('environment_readiness.drafts') }}">{% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}<button class="btn btn-primary" type="submit" name="_action" value="new"><i class="fa-solid fa-plus me-1"></i> Start new environment</button></form></div>
+    </div>
+    {% set personal_views = [('all', 'All team setups', 'fa-users'), ('owned', 'Owned by me', 'fa-user-shield'), ('assigned', 'Assigned to me', 'fa-user-check'), ('requested', 'Requested by me', 'fa-paper-plane'), ('started', 'Started by me', 'fa-person-digging')] %}
+    <nav class="foundation-personal-filters" aria-label="Personal setup work queues">
+      {% for key, label, icon in personal_views %}{% if key == 'all' or setup_dashboard.current_user %}<a class="foundation-personal-filter{% if setup_dashboard.mine_filter == key %} is-active{% endif %}" href="{{ url_for('environment_readiness.published_setups', mine=key if key != 'all' else None, status=setup_dashboard.status_filter, customer=setup_dashboard.customer or None, q=setup_dashboard.query or None, urgency=setup_dashboard.urgency_filter or None, sort=setup_dashboard.sort_by or None, direction=setup_dashboard.sort_direction if setup_dashboard.sort_by else None) }}"{% if setup_dashboard.mine_filter == key %} aria-current="page"{% endif %}><i class="fa-solid {{ icon }}"></i><span>{{ label }}</span><strong>{{ setup_dashboard.personal_counts.get(key, 0) }}</strong></a>{% endif %}{% endfor %}
+      {% if setup_dashboard.current_user %}<small><i class="fa-solid fa-user me-1"></i>{{ setup_dashboard.current_user }}</small>{% endif %}
+    </nav>
+    {% set summary_cards = [
+      ('awaiting', 'Awaiting acknowledgement', 'ready', '', 'fa-inbox', 'neutral'),
+      ('acknowledged', 'Acknowledged', 'acknowledged', '', 'fa-handshake', 'info'),
+      ('provisioning', 'Provisioning now', 'started', '', 'fa-person-digging', 'primary'),
+      ('on_hold', 'On hold', 'paused', '', 'fa-circle-pause', 'warning'),
+      ('overdue', 'Overdue', 'active', 'overdue', 'fa-triangle-exclamation', 'danger'),
+      ('completed_month', 'Completed this month', 'completed', 'completed_month', 'fa-flag-checkered', 'success')
+    ] %}
+    <section class="foundation-summary" aria-label="Environment setup operational summary">
+      {% for key, label, status, urgency, icon, tone in summary_cards %}<a class="foundation-summary-card is-{{ tone }}{% if setup_dashboard.urgency_filter == urgency and setup_dashboard.status_filter == status and (urgency or status != 'active') %} is-selected{% endif %}" href="{{ url_for('environment_readiness.published_setups', status=status, urgency=urgency or None, customer=setup_dashboard.customer or None, q=setup_dashboard.query or None, mine=setup_dashboard.mine_filter if setup_dashboard.mine_filter != 'all' else None, sort=setup_dashboard.sort_by or None, direction=setup_dashboard.sort_direction if setup_dashboard.sort_by else None) }}"><i class="fa-solid {{ icon }}"></i><span><strong>{{ setup_dashboard.summary.get(key, 0) }}</strong><small>{{ label }}</small></span><i class="fa-solid fa-arrow-right"></i></a>{% endfor %}
+    </section>
+    <form class="foundation-filter-bar" method="get" role="search">
+      <input type="hidden" name="status" value="{{ setup_dashboard.status_filter }}">
+      <input type="hidden" name="mine" value="{{ setup_dashboard.mine_filter }}">
+      {% if setup_dashboard.urgency_filter %}<input type="hidden" name="urgency" value="{{ setup_dashboard.urgency_filter }}">{% endif %}
+      {% if setup_dashboard.sort_by %}<input type="hidden" name="sort" value="{{ setup_dashboard.sort_by }}"><input type="hidden" name="direction" value="{{ setup_dashboard.sort_direction }}">{% endif %}
+      <div class="foundation-search"><label class="visually-hidden" for="setupSearch">Search published setups</label><i class="fa-solid fa-magnifying-glass"></i><input class="form-control" id="setupSearch" name="q" value="{{ setup_dashboard.query }}" placeholder="Search environment, AWS account, Jira, NCR, owner, or architect"></div>
+      <div class="foundation-customer-filter"><label for="setupCustomerFilter">Customer</label><select class="form-select" id="setupCustomerFilter" name="customer" onchange="this.form.submit()">
+          <option value="">All customers</option>
+          {% for customer in setup_dashboard.customers %}<option value="{{ customer }}"{% if customer|lower == setup_dashboard.customer|lower %} selected{% endif %}>{{ customer }}</option>{% endfor %}
+      </select></div>
+      <button class="btn btn-primary" type="submit">Search</button>
+      {% if setup_dashboard.query or setup_dashboard.customer or setup_dashboard.status_filter != 'active' or setup_dashboard.mine_filter != 'all' or setup_dashboard.urgency_filter %}<a class="btn btn-outline-secondary" href="{{ url_for('environment_readiness.published_setups') }}">Clear filters</a>{% endif %}
+    </form>
+    {% set status_views = [('active', 'Active'), ('ready', 'Awaiting acknowledgement'), ('acknowledged', 'Acknowledged'), ('started', 'Started'), ('paused', 'On hold'), ('completed', 'Completed'), ('all', 'All')] %}
+    <nav class="foundation-status-filters" aria-label="Filter published setups by status">
+      {% for key, label in status_views %}<a class="foundation-status-filter{% if setup_dashboard.status_filter == key %} is-active{% endif %}" href="{{ url_for('environment_readiness.published_setups', status=key, customer=setup_dashboard.customer or None, q=setup_dashboard.query or None, mine=setup_dashboard.mine_filter if setup_dashboard.mine_filter != 'all' else None, sort=setup_dashboard.sort_by or None, direction=setup_dashboard.sort_direction if setup_dashboard.sort_by else None) }}"{% if setup_dashboard.status_filter == key %} aria-current="page"{% endif %}><span>{{ label }}</span><strong>{{ setup_dashboard.counts.get(key, 0) }}</strong></a>{% endfor %}
+    </nav>
+    {% if published_setups %}
+    {% macro sortable_header(key, label) %}{% set active_sort = setup_dashboard.sort_by == key %}{% set next_direction = 'desc' if active_sort and setup_dashboard.sort_direction == 'asc' else 'asc' %}<th{% if active_sort %} aria-sort="{{ 'ascending' if setup_dashboard.sort_direction == 'asc' else 'descending' }}"{% endif %}><a class="foundation-sort{% if active_sort %} is-active{% endif %}" href="{{ url_for('environment_readiness.published_setups', status=setup_dashboard.status_filter, customer=setup_dashboard.customer or None, q=setup_dashboard.query or None, mine=setup_dashboard.mine_filter if setup_dashboard.mine_filter != 'all' else None, urgency=setup_dashboard.urgency_filter or None, sort=key, direction=next_direction) }}">{{ label }}<i class="fa-solid {% if active_sort and setup_dashboard.sort_direction == 'asc' %}fa-arrow-up{% elif active_sort %}fa-arrow-down{% else %}fa-sort{% endif %}" aria-hidden="true"></i></a></th>{% endmacro %}
+    <div class="table-responsive mt-3 operational-table-scroll" tabindex="0" role="region" aria-label="Published setups table; scroll horizontally to see every column"><table class="table align-middle foundation-setup-table">
+      <thead><tr>{{ sortable_header('environment', 'Environment') }}{{ sortable_header('setup', 'Setup') }}{{ sortable_header('jira', 'Jira epic') }}{{ sortable_header('aws_account', 'AWS account') }}{{ sortable_header('setup_owner', 'Setup owner') }}{{ sortable_header('owner', 'Receiving DevOps owner') }}{{ sortable_header('target_date', 'Target date') }}{{ sortable_header('status', 'Status') }}{{ sortable_header('published', 'Published') }}<th><span class="visually-hidden">Actions</span></th></tr></thead>
+      <tbody>{% for setup in published_setups %}<tr class="schedule-{{ setup.schedule.key }}">
+        <td><strong>{{ setup.environment_name }}</strong><small>{{ setup.customer }}{% if setup.revision > 1 %} · Revision {{ setup.revision }}{% endif %}</small></td>
+        <td>{{ setup.setup_type|replace('-', ' ')|title|replace('Vpc', 'VPC') }}</td>
+        <td>{% if setup.jira_epic %}{{ setup.jira_epic }}{% else %}<span class="foundation-reference-empty">—</span>{% endif %}</td>
+        <td>{% if setup.aws_account_id %}{{ setup.aws_account_id }}{% else %}<span class="foundation-reference-empty">—</span>{% endif %}</td>
+        <td>{{ setup.setup_owner }}</td><td>{{ setup.devops_owner }}</td><td><strong class="foundation-target-date">{{ setup.target_date }}</strong><span class="foundation-schedule foundation-schedule--{{ setup.schedule.key }}">{% if setup.schedule.key in ('overdue', 'paused_overdue') %}<i class="fa-solid fa-triangle-exclamation"></i>{% elif setup.schedule.key == 'due_today' %}<i class="fa-solid fa-clock"></i>{% elif setup.schedule.key == 'due_soon' %}<i class="fa-solid fa-hourglass-half"></i>{% elif setup.schedule.key == 'completed_late' %}<i class="fa-solid fa-calendar-xmark"></i>{% else %}<i class="fa-regular fa-calendar"></i>{% endif %} {{ setup.schedule.label }}</span></td>
+        <td><span class="badge {% if setup.status == 'completed' %}text-bg-success{% elif setup.status == 'paused' %}text-bg-warning{% elif setup.status == 'started' %}text-bg-primary{% elif setup.status == 'acknowledged' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{% if setup.status == 'completed' %}Completed{% elif setup.status == 'paused' %}On hold{% elif setup.status == 'started' %}Setup started{% elif setup.status == 'acknowledged' %}Acknowledged{% else %}Awaiting acknowledgement{% endif %}</span></td>
+        <td><small>{{ setup.published_at }}<br>by {{ setup.published_by }}</small></td>
+        <td><div class="d-flex justify-content-end gap-2"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('environment_readiness.setup_detail', setup_id=setup.id) }}">Open</a><button class="btn btn-sm btn-outline-secondary" type="button" data-copy-url="{{ url_for('environment_readiness.setup_detail', setup_id=setup.id, _external=True) }}" title="Copy share link" aria-label="Copy share link for {{ setup.environment_name }}"><i class="fa-solid fa-link" aria-hidden="true"></i></button></div></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}
+    <div class="foundation-empty"><i class="fa-solid fa-filter"></i><div><strong>No setups match this view</strong><span>Try a broader search, choose another status or customer, or publish a new environment setup.</span></div></div>
+    {% endif %}
+    {% if setup_dashboard.page_count > 1 %}<nav class="foundation-pagination" aria-label="Published setup pages">
+      {% if setup_dashboard.page > 1 %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('environment_readiness.published_setups', status=setup_dashboard.status_filter, customer=setup_dashboard.customer or None, q=setup_dashboard.query or None, mine=setup_dashboard.mine_filter if setup_dashboard.mine_filter != 'all' else None, urgency=setup_dashboard.urgency_filter or None, sort=setup_dashboard.sort_by or None, direction=setup_dashboard.sort_direction if setup_dashboard.sort_by else None, page=setup_dashboard.page - 1) }}"><i class="fa-solid fa-arrow-left me-1"></i>Previous</a>{% endif %}
+      <span>Page {{ setup_dashboard.page }} of {{ setup_dashboard.page_count }} · {{ setup_dashboard.total }} setups</span>
+      {% if setup_dashboard.page < setup_dashboard.page_count %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('environment_readiness.published_setups', status=setup_dashboard.status_filter, customer=setup_dashboard.customer or None, q=setup_dashboard.query or None, mine=setup_dashboard.mine_filter if setup_dashboard.mine_filter != 'all' else None, urgency=setup_dashboard.urgency_filter or None, sort=setup_dashboard.sort_by or None, direction=setup_dashboard.sort_direction if setup_dashboard.sort_by else None, page=setup_dashboard.page + 1) }}">Next<i class="fa-solid fa-arrow-right ms-1"></i></a>{% endif %}
+    </nav>{% endif %}
+  </section>
+  {% endif %}
+
+  {% if page_mode == 'drafts' %}
+  <section class="foundation-drafts mt-3">
+    <div class="foundation-drafts__heading">
+      <div><h2>Environment work</h2><p>Resume active drafts or review the handoffs and setups they produced.</p></div>
+      <div class="foundation-draft-actions">
+        <form method="post">
+          {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+          <button class="btn btn-primary" type="submit" name="_action" value="new"><i class="fa-solid fa-plus me-1"></i> Start New Environment</button>
+        </form>
+      </div>
+    </div>
+    <nav class="draft-view-tabs" aria-label="Draft lifecycle views">
+      {% for key, label, icon in [('active', 'Active drafts', 'fa-file-pen'), ('published', 'Published', 'fa-paper-plane'), ('completed', 'Completed', 'fa-flag-checkered'), ('all', 'All', 'fa-layer-group')] %}
+      <a class="{% if draft_view_filter == key %}is-active{% endif %}" href="{{ url_for('environment_readiness.drafts', view=key, scope=draft_scope_filter, customer=draft_customer_filter or None, environment_type=draft_environment_type_filter or None, q=draft_search_query or None) }}"{% if draft_view_filter == key %} aria-current="page"{% endif %}><i class="fa-solid {{ icon }}"></i><span>{{ label }}</span><strong>{{ draft_view_counts[key] }}</strong></a>
+      {% endfor %}
+    </nav>
+    <form class="draft-filter-bar" method="get" role="search">
+      <input type="hidden" name="view" value="{{ draft_view_filter }}">
+      <label class="draft-search"><span class="visually-hidden">Search drafts</span><i class="fa-solid fa-magnifying-glass"></i><input class="form-control" name="q" value="{{ draft_search_query }}" placeholder="Search environment, title, owner, or setup type"></label>
+      <label><span>Customer</span><select class="form-select" name="customer"><option value="">All customers</option>{% for customer in draft_customers %}<option value="{{ customer }}"{% if customer|lower == draft_customer_filter|lower %} selected{% endif %}>{{ customer }}</option>{% endfor %}</select></label>
+      <label><span>Environment</span><select class="form-select" name="environment_type"><option value="">All types</option>{% for environment_type in draft_environment_types %}<option value="{{ environment_type }}"{% if environment_type|lower == draft_environment_type_filter|lower %} selected{% endif %}>{{ environment_type|upper }}</option>{% endfor %}</select></label>
+      <label><span>Ownership</span><select class="form-select" name="scope"><option value="mine"{% if draft_scope_filter == 'mine' %} selected{% endif %}>My drafts</option><option value="team"{% if draft_scope_filter == 'team' %} selected{% endif %}>All team drafts</option></select></label>
+      <button class="btn btn-primary" type="submit">Filter</button>
+      {% if draft_customer_filter or draft_environment_type_filter or draft_search_query or draft_scope_filter != 'mine' %}<a class="btn btn-outline-secondary" href="{{ url_for('environment_readiness.drafts', view=draft_view_filter) }}">Clear</a>{% endif %}
+    </form>
+    {% if duplicate_groups and draft_view_filter in ('active', 'all') %}
+    <div class="draft-duplicate-alert" role="alert"><i class="fa-solid fa-triangle-exclamation"></i><div><strong>Existing duplicate active drafts need review</strong><p>No records were deleted. Keep the correct draft and remove the obsolete copies; future duplicates are now blocked.</p><ul>{% for group in duplicate_groups %}<li><b>{{ group[0].get('environment_name') }}</b><span>{{ group|length }} drafts · {% for draft in group %}{{ draft.get('_owner') }}{% if not loop.last %}, {% endif %}{% endfor %}</span></li>{% endfor %}</ul></div></div>
+    {% endif %}
+    {% if saved_drafts %}
+    <div class="foundation-draft-grid">
+      {% for draft_id, draft in saved_drafts %}
+      <article class="foundation-draft-card{% if draft_id == active_draft_id and draft.get('_is_mine') %} is-active{% endif %}{% if draft.get('_duplicate_count') %} is-duplicate{% endif %}">
+        <div class="foundation-draft-card__icon"><i class="fa-solid fa-cloud"></i></div>
+        <div class="foundation-draft-card__body">
+          <strong>{{ draft.get('environment_name') or draft.get('title') or 'Unnamed environment' }}</strong>
+          <span>{{ draft.get('customer') or 'No customer' }} · {{ draft.get('environment_type') or 'No environment type' }} · {{ draft.get('setup_type', 'Setup not selected')|replace('-', ' ') }}</span>
+          <small>{% if draft_scope_filter == 'team' %}{{ draft.get('_owner') }} · {% endif %}Step {{ draft.get('_step', 1) }} of 7 · Saved {{ draft.get('_saved_at', 'recently') }}</small>
+          {% if draft.get('_duplicate_count') %}<em class="foundation-draft-state is-duplicate"><i class="fa-solid fa-copy"></i> {{ draft.get('_duplicate_count') }} active drafts use this name</em>{% endif %}
+          {% set setup_status = draft.get('_published_setup_status') %}{% if setup_status == 'completed' %}<em class="foundation-draft-state is-completed"><i class="fa-solid fa-flag-checkered"></i> Setup completed</em>{% elif setup_status == 'paused' %}<em class="foundation-draft-state is-waiting"><i class="fa-solid fa-circle-pause"></i> Setup on hold</em>{% elif setup_status == 'started' %}<em class="foundation-draft-state is-started"><i class="fa-solid fa-person-digging"></i> Setup started</em>{% elif setup_status == 'acknowledged' %}<em class="foundation-draft-state is-acknowledged"><i class="fa-solid fa-handshake"></i> Handoff acknowledged</em>{% elif setup_status == 'ready' %}<em class="foundation-draft-state is-published"><i class="fa-solid fa-inbox"></i> Awaiting acknowledgement</em>{% elif not draft.get('aws_service_request') or not draft.get('ncr_ticket') %}<em class="foundation-draft-state is-action"><i class="fa-solid fa-ticket"></i> ServiceNow requests need attention</em>{% elif not draft.get('aws_account_id') or not draft.get('vpc_cidr') or not draft.get('firewall_zone') %}<em class="foundation-draft-state is-waiting"><i class="fa-solid fa-clock"></i> Waiting for allocated details</em>{% else %}<em class="foundation-draft-state is-verification"><i class="fa-solid fa-list-check"></i> Prerequisite verification</em>{% endif %}
+        </div>
+        <div class="foundation-draft-card__actions">
+          {% if setup_status %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('environment_readiness.setup_detail', setup_id=draft.get('_published_setup_id')) }}">View setup</a>{% elif draft.get('_is_mine') %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('environment_readiness.workspace', draft=draft_id) }}">{% if draft_id == active_draft_id %}Continue{% else %}Resume{% endif %}</a>{% else %}<span class="draft-owner-note"><i class="fa-solid fa-lock"></i> {{ draft.get('_owner') }}</span>{% endif %}
+          {% if draft.get('_is_mine') and not setup_status %}
+          <form method="post">
+            {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+            <input type="hidden" name="draft_id" value="{{ draft_id }}">
+            <button class="btn btn-sm btn-outline-danger" type="submit" name="_action" value="delete" aria-label="Delete {{ draft.get('environment_name') or 'draft' }}" onclick="return confirm('Delete this saved environment draft?');"><i class="fa-solid fa-trash"></i></button>
+          </form>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="foundation-empty"><i class="fa-solid fa-folder-open"></i><div>{% if has_any_drafts %}<strong>No matching {{ draft_view_filter }} environments</strong><span>Adjust the search, filters, ownership, or lifecycle view.</span>{% else %}<strong>No saved environments yet</strong><span>Start a new environment, complete a few fields, and use Save Progress inside the wizard.</span>{% endif %}</div></div>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-copy-url]").forEach((button) => button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.copyUrl);
+      const original = button.innerHTML;
+      button.innerHTML = '<i class="fa-solid fa-check"></i>';
+      window.setTimeout(() => { button.innerHTML = original; }, 1400);
+    } catch (_error) { window.prompt("Copy this setup link", button.dataset.copyUrl); }
+  }));
+});
+</script>
+
+<style>
+.foundation-landing { margin: 0 auto; }
+.foundation-page-nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.65rem; margin:1rem 0; }
+.foundation-page-nav a { display:flex; align-items:center; gap:.55rem; min-height:3rem; padding:.7rem .85rem; border:1px solid var(--border-default); border-radius:.8rem; background:var(--bg-surface); color:var(--text-secondary); text-decoration:none; font-size:.82rem; font-weight:700; }
+.foundation-page-nav a>i { color:#7c3aed; }.foundation-page-nav a:hover,.foundation-page-nav a.is-active { border-color:#7c3aed; background:rgba(124,58,237,.1); color:var(--text-primary); }
+.foundation-page-next { display:flex; justify-content:flex-end; }
+.foundation-intro { display: flex; gap: 1rem; margin: 1rem 0; padding: 1.1rem; border: 1px solid var(--accent-blue-border, var(--border-default)); border-radius: 1rem; background: var(--accent-blue-bg); }
+.foundation-intro__icon { display: grid; place-items: center; flex: 0 0 2.6rem; width: 2.6rem; height: 2.6rem; border-radius: .7rem; background: var(--bg-surface); color: var(--accent-blue); }
+.foundation-intro h2 { margin: 0; font-size: 1.1rem; }.foundation-intro p { margin: .4rem 0 0; color: var(--text-secondary); font-size: .86rem; }
+.foundation-intro__boundary { padding-top: .45rem; border-top: 1px solid var(--border-subtle); }
+.foundation-overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin-bottom: .75rem; }
+.foundation-overview article { display: flex; gap: .7rem; padding: .9rem; border: 1px solid var(--border-default); border-radius: .85rem; background: var(--bg-surface); }
+.foundation-overview article > span { display: grid; place-items: center; flex: 0 0 1.8rem; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--accent-blue); color: white; font-weight: 700; }
+.foundation-overview h3 { margin: 0; font-size: .9rem; }.foundation-overview p { margin: .2rem 0 0; color: var(--text-muted); font-size: .76rem; }
+.foundation-includes { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin-bottom: 1rem; }
+.foundation-includes > div { display: flex; gap: .65rem; padding: .8rem; border-radius: .75rem; background: var(--bg-elevated); }.foundation-includes > div > i { margin-top: .15rem; color: var(--accent-blue); }
+.foundation-includes span { display: grid; }.foundation-includes small { color: var(--text-muted); font-size: .72rem; }
+.foundation-why { display: flex; align-items: center; gap: .7rem; margin-bottom: 1rem; padding: .85rem; border: 1px solid var(--accent-blue-border, var(--border-default)); border-radius: .8rem; background: var(--accent-blue-bg); text-decoration: none; }.foundation-why > i:first-child { color: var(--accent-blue); }.foundation-why span { display: grid; flex: 1; }.foundation-why small { color: var(--text-secondary); font-size: .74rem; }
+.foundation-drafts { padding: 1rem; border: 1px solid var(--border-default); border-radius: 1rem; background: var(--bg-surface); }
+.foundation-published { border-color: var(--accent-blue-border, var(--border-default)); }
+.foundation-setup-table { width:100%; min-width:1320px; margin-bottom:0; border-collapse:collapse; }.foundation-setup-table th,.foundation-setup-table td { vertical-align:middle; white-space:nowrap; }.foundation-setup-table td:first-child strong,.foundation-setup-table td:first-child small { display:block; }.foundation-setup-table small { color:var(--text-muted); }.foundation-setup-table tbody tr:last-child td { border-bottom-width:0; }
+.foundation-sort { display:inline-flex; align-items:center; gap:.35rem; color:inherit; text-decoration:none; white-space:nowrap; }.foundation-sort i { color:var(--text-muted); font-size:.68rem; }.foundation-sort:hover,.foundation-sort.is-active { color:var(--accent-blue); }.foundation-sort.is-active i { color:var(--accent-blue); }
+.foundation-reference-link { display:inline-flex; align-items:center; gap:.35rem; white-space:nowrap; color:var(--accent-blue); font-size:.76rem; font-weight:650; text-decoration:none; }.foundation-reference-link:hover { text-decoration:underline; }.foundation-reference-empty { color:var(--text-muted); }
+.foundation-target-date,.foundation-schedule { display:block; white-space:nowrap; }.foundation-schedule { margin-top:.2rem; color:var(--text-muted); font-size:.67rem; }.foundation-schedule--overdue,.foundation-schedule--paused_overdue { color:var(--accent-red, #ef4444); font-weight:700; }.foundation-schedule--due_today,.foundation-schedule--completed_late { color:var(--accent-yellow, #d39e00); font-weight:700; }.foundation-schedule--due_soon { color:var(--accent-blue); }.foundation-setup-table tr.schedule-overdue td:first-child,.foundation-setup-table tr.schedule-paused_overdue td:first-child { box-shadow:inset 3px 0 0 var(--accent-red, #ef4444); padding-left:.75rem; }
+.foundation-personal-filters { display:flex; align-items:center; gap:.45rem; margin-top:1rem; }.foundation-personal-filter { display:flex; align-items:center; gap:.4rem; padding:.55rem .65rem; border:1px solid var(--border-default); border-radius:.6rem; background:var(--bg-elevated); color:var(--text-secondary); text-decoration:none; font-size:.75rem; }.foundation-personal-filter>i { color:var(--accent-blue); }.foundation-personal-filter strong { display:grid; place-items:center; min-width:1.4rem; height:1.4rem; margin-left:.2rem; padding:0 .3rem; border-radius:999px; background:var(--bg-surface); font-size:.67rem; }.foundation-personal-filter:hover,.foundation-personal-filter.is-active { border-color:var(--accent-blue); background:var(--accent-blue-bg); color:var(--accent-blue); }.foundation-personal-filters>small { margin-left:auto; color:var(--text-muted); }
+.foundation-summary { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.5rem; margin-top:.7rem; }.foundation-summary-card { --summary-color:var(--text-secondary); display:flex; align-items:center; gap:.55rem; min-width:0; padding:.7rem; border:1px solid var(--border-default); border-radius:.7rem; background:var(--bg-elevated); color:var(--text-secondary); text-decoration:none; }.foundation-summary-card>i:first-child { color:var(--summary-color); }.foundation-summary-card>i:last-child { margin-left:auto; color:var(--text-muted); font-size:.7rem; }.foundation-summary-card span { display:grid; min-width:0; }.foundation-summary-card strong { color:var(--text-primary); font-size:1.05rem; line-height:1; }.foundation-summary-card small { margin-top:.2rem; overflow:hidden; color:var(--text-muted); font-size:.65rem; text-overflow:ellipsis; }.foundation-summary-card.is-primary,.foundation-summary-card.is-info { --summary-color:var(--accent-blue); }.foundation-summary-card.is-warning { --summary-color:var(--accent-yellow, #d39e00); }.foundation-summary-card.is-danger { --summary-color:var(--accent-red, #ef4444); }.foundation-summary-card.is-success { --summary-color:var(--accent-green); }.foundation-summary-card:hover,.foundation-summary-card.is-selected { border-color:var(--summary-color); box-shadow:inset 0 0 0 1px var(--summary-color); }
+.foundation-filter-bar { display:grid; grid-template-columns:minmax(260px,1fr) auto auto auto; align-items:end; gap:.55rem; margin-top:1rem; padding:.7rem; border:1px solid var(--border-subtle); border-radius:.7rem; background:var(--bg-elevated); }.foundation-search { position:relative; }.foundation-search>i { position:absolute; left:.8rem; top:50%; z-index:1; transform:translateY(-50%); color:var(--text-muted); }.foundation-search input { padding-left:2.25rem; }.foundation-customer-filter { display:grid; gap:.2rem; }.foundation-customer-filter label { color:var(--text-muted); font-size:.68rem; font-weight:700; }.foundation-customer-filter select { min-width:190px; }.foundation-status-filters { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:.45rem; margin-top:.7rem; }.foundation-status-filter { display:flex; align-items:center; justify-content:space-between; gap:.4rem; padding:.55rem .65rem; border:1px solid var(--border-default); border-radius:.6rem; background:var(--bg-elevated); color:var(--text-secondary); text-decoration:none; font-size:.75rem; }.foundation-status-filter strong { display:grid; place-items:center; min-width:1.45rem; height:1.45rem; padding:0 .3rem; border-radius:999px; background:var(--bg-surface); font-size:.68rem; }.foundation-status-filter:hover,.foundation-status-filter.is-active { border-color:var(--accent-blue); background:var(--accent-blue-bg); color:var(--accent-blue); }.foundation-pagination { display:flex; align-items:center; justify-content:center; gap:1rem; margin-top:.85rem; }.foundation-pagination span { color:var(--text-muted); font-size:.75rem; }
+.foundation-drafts__heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }.foundation-drafts__heading h2 { margin: 0; font-size: 1rem; }.foundation-drafts__heading p { margin: .15rem 0 0; color: var(--text-muted); font-size: .78rem; }
+.foundation-published-actions { display:flex; align-items:center; gap:.5rem; }.foundation-published-actions form { margin:0; }
+.foundation-draft-actions { display:flex; align-items:flex-end; gap:.65rem; }.foundation-draft-actions>form:first-child { display:grid; gap:.2rem; }.foundation-draft-actions label { color:var(--text-muted); font-size:.68rem; font-weight:700; }.foundation-draft-actions select { min-width:190px; }
+.draft-view-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.5rem; margin-top:1rem; }.draft-view-tabs a { display:flex; align-items:center; gap:.45rem; padding:.65rem .75rem; border:1px solid var(--border-default); border-radius:.65rem; background:var(--bg-elevated); color:var(--text-secondary); text-decoration:none; font-size:.75rem; font-weight:700; }.draft-view-tabs a i { color:var(--accent-blue); }.draft-view-tabs a strong { display:grid; place-items:center; min-width:1.45rem; height:1.45rem; margin-left:auto; padding:0 .35rem; border-radius:999px; background:var(--bg-surface); font-size:.67rem; }.draft-view-tabs a:hover,.draft-view-tabs a.is-active { border-color:var(--accent-blue); background:var(--accent-blue-bg); color:var(--accent-blue); }
+.draft-filter-bar { display:grid; grid-template-columns:minmax(260px,1fr) repeat(3,auto) auto auto; align-items:end; gap:.5rem; margin-top:.65rem; padding:.65rem; border:1px solid var(--border-subtle); border-radius:.7rem; background:var(--bg-elevated); }.draft-filter-bar label { display:grid; gap:.2rem; }.draft-filter-bar label>span { color:var(--text-muted); font-size:.65rem; font-weight:700; }.draft-filter-bar select { min-width:145px; }.draft-search { position:relative; }.draft-search>i { position:absolute; top:50%; left:.75rem; transform:translateY(-50%); color:var(--text-muted); }.draft-search input { padding-left:2.15rem; }
+.draft-duplicate-alert { display:flex; gap:.7rem; margin-top:.7rem; padding:.8rem; border:1px solid var(--accent-red); border-radius:.7rem; background:var(--accent-red-bg); color:var(--text-secondary); }.draft-duplicate-alert>i { margin-top:.15rem; color:var(--accent-red); }.draft-duplicate-alert p { margin:.15rem 0 .4rem; font-size:.72rem; }.draft-duplicate-alert ul { display:flex; flex-wrap:wrap; gap:.35rem; margin:0; padding:0; list-style:none; }.draft-duplicate-alert li { display:grid; padding:.35rem .5rem; border-radius:.45rem; background:var(--bg-surface); }.draft-duplicate-alert li b { font-size:.72rem; }.draft-duplicate-alert li span { color:var(--text-muted); font-size:.62rem; }
+.foundation-draft-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: .7rem; margin-top: .85rem; }
+.foundation-draft-card { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); align-items: center; column-gap: .7rem; row-gap: .55rem; min-width: 0; padding: .8rem; border: 1px solid var(--border-subtle); border-radius: .75rem; background: var(--bg-elevated); }.foundation-draft-card.is-active { border-color: var(--accent-blue); background: var(--accent-blue-bg); }.foundation-draft-card.is-duplicate { border-color:var(--accent-red); }
+.foundation-draft-card__icon { display: grid; place-items: center; flex: 0 0 2.2rem; width: 2.2rem; height: 2.2rem; border-radius: .6rem; background: var(--bg-surface); color: var(--accent-blue); }
+.foundation-draft-card__body { display: grid; min-width: 0; gap: .08rem; }.foundation-draft-card__body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.foundation-draft-card__body span,.foundation-draft-card__body small { color: var(--text-muted); font-size: .72rem; line-height: 1.35; overflow-wrap: anywhere; white-space: normal; }
+.foundation-draft-state { display:inline-flex; align-items:center; gap:.3rem; width:max-content; max-width:100%; margin-top:.3rem; padding:.18rem .4rem; border-radius:999px; font-size:.65rem; font-style:normal; font-weight:700; }.foundation-draft-state.is-action,.foundation-draft-state.is-duplicate { background:var(--accent-red-bg); color:var(--accent-red); }.foundation-draft-state.is-waiting { background:var(--accent-amber-bg); color:var(--accent-amber); }.foundation-draft-state.is-verification,.foundation-draft-state.is-published,.foundation-draft-state.is-acknowledged,.foundation-draft-state.is-started { background:var(--accent-blue-bg); color:var(--accent-blue); }.foundation-draft-state.is-completed { background:var(--accent-green-bg, rgba(34,197,94,.12)); color:var(--accent-green); }
+.foundation-draft-card__actions { display: flex; grid-column: 2; align-items: center; justify-content: flex-end; gap: .4rem; min-width: 0; }.foundation-draft-card__actions form { margin: 0; }
+.draft-owner-note { display:inline-flex; align-items:center; gap:.3rem; color:var(--text-muted); font-size:.65rem; }
+.foundation-empty { display: flex; justify-content: center; gap: .75rem; margin-top: .9rem; padding: 1.5rem; border: 1px dashed var(--border-default); border-radius: .75rem; color: var(--text-muted); }.foundation-empty div { display: grid; }.foundation-empty span { font-size: .78rem; }
+@media(max-width:1100px){.foundation-summary { grid-template-columns:repeat(3,1fr); }.draft-filter-bar { grid-template-columns:1fr 1fr 1fr; }.draft-search { grid-column:1/-1; }}@media (max-width: 800px) { .foundation-page-nav,.foundation-overview,.foundation-includes { grid-template-columns: 1fr; }.foundation-drafts__heading { align-items: stretch; flex-direction: column; }.foundation-published-actions,.foundation-draft-actions { align-items:stretch; flex-direction:column; }.foundation-published-actions form,.foundation-published-actions .btn,.foundation-draft-actions form,.foundation-draft-actions select,.foundation-drafts__heading .btn { width: 100%; }.foundation-personal-filters { display:grid; grid-template-columns:1fr 1fr; }.foundation-personal-filters>small { grid-column:1/-1; margin-left:0; }.foundation-filter-bar,.draft-filter-bar { grid-template-columns:1fr 1fr; }.foundation-search,.draft-search { grid-column:1/-1; }.foundation-status-filters { grid-template-columns:repeat(3,1fr); }.foundation-customer-filter select { width:100%; }.foundation-pagination { justify-content:space-between; } }@media(max-width:520px){.foundation-summary { grid-template-columns:repeat(2,1fr); }.foundation-personal-filters,.foundation-filter-bar,.draft-filter-bar,.draft-view-tabs { grid-template-columns:1fr; }.foundation-personal-filters>small,.foundation-search,.draft-search { grid-column:auto; }}
+</style>
+{% endblock %}

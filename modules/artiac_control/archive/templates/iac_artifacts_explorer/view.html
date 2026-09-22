@@ -1,0 +1,528 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-shell artiac-page">
+
+  {% set hero_title = archive_identity.module %}
+  {% set hero_subtitle = "Terraform/OpenTofu module archive · version " ~ archive_identity.version %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('iac_artifacts_explorer.list_view') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Archives
+  </a>
+  {% set current_artiac_page = "archives" %}
+  {% include "artiac_control/_subnav.html" %}
+
+  <div class="tool-panel tool-panel--compact artiac-archive-context">
+    <div class="artiac-archive-context__identity">
+      <span class="tool-toolbar__label">Currently viewing</span>
+      <strong>{{ archive_identity.module }}</strong>
+      <span class="badge bg-primary">v{{ archive_identity.version }}</span>
+    </div>
+    <nav class="tool-toolbar__group" aria-label="Module archive navigation">
+      {% if archive_navigation.previous %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('iac_artifacts_explorer.view_archive',
+                            key=archive_navigation.previous.key,
+                            sort=sort_key) }}"
+           title="{{ archive_navigation.previous.module }} {{ archive_navigation.previous.version }}">
+          <i class="fa-solid fa-chevron-left me-1"></i>
+          Previous module
+        </a>
+      {% else %}
+        <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+          <i class="fa-solid fa-chevron-left me-1"></i>
+          Previous module
+        </button>
+      {% endif %}
+      {% if archive_navigation.next %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('iac_artifacts_explorer.view_archive',
+                            key=archive_navigation.next.key,
+                            sort=sort_key) }}"
+           title="{{ archive_navigation.next.module }} {{ archive_navigation.next.version }}">
+          Next module
+          <i class="fa-solid fa-chevron-right ms-1"></i>
+        </a>
+      {% else %}
+        <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+          Next module
+          <i class="fa-solid fa-chevron-right ms-1"></i>
+        </button>
+      {% endif %}
+    </nav>
+    <div class="artiac-archive-context__control">
+      <label class="tool-toolbar__label" for="moduleJump">Jump to module</label>
+      <select class="form-select form-select-sm" id="moduleJump">
+        {% for archive in module_choices %}
+          <option value="{{ url_for('iac_artifacts_explorer.view_archive', key=archive.key, sort=sort_key) }}"
+                  {% if archive.module == archive_identity.module %}selected{% endif %}>
+            {{ archive.module }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="artiac-archive-context__control">
+      <label class="tool-toolbar__label" for="versionJump">Archive version</label>
+      <select class="form-select form-select-sm" id="versionJump">
+        {% for archive in module_archives %}
+          <option value="{{ url_for('iac_artifacts_explorer.view_archive', key=archive.key, sort=sort_key) }}"
+                  {% if archive.key == key %}selected{% endif %}>
+            v{{ archive.version }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="artiac-archive-context__control artiac-archive-context__compare">
+      <label class="tool-toolbar__label" for="compareVersion">Compare with older version</label>
+      <div class="input-group input-group-sm">
+        <select class="form-select" id="compareVersion" {% if not comparison_versions %}disabled{% endif %}>
+          {% for archive in comparison_versions %}
+            <option value="{{ url_for('iac_artifacts_explorer.compare_archives', a=archive.key, b=key) }}">
+              v{{ archive.version }}
+            </option>
+          {% else %}
+            <option>No older version</option>
+          {% endfor %}
+        </select>
+        <a class="btn btn-outline-primary {% if not comparison_versions %}disabled{% endif %}"
+           id="compareVersionBtn"
+           href="{{ url_for('iac_artifacts_explorer.compare_archives',
+                            a=comparison_versions[0].key,
+                            b=key) if comparison_versions else '#' }}"
+           {% if not comparison_versions %}aria-disabled="true"{% endif %}>
+          Compare
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="tool-toolbar">
+    <div class="tool-meta-chips mb-0">
+      <div class="tool-meta-chip">Key: {{ key }}</div>
+      {% if metadata.size %}
+        <div class="tool-meta-chip">Size: {{ metadata.size }}</div>
+      {% endif %}
+      {% if metadata.modified %}
+        <div class="tool-meta-chip">Modified: {{ metadata.modified }}</div>
+      {% endif %}
+      {% if metadata.etag %}
+        <div class="tool-meta-chip">ETag: <code>{{ metadata.etag }}</code></div>
+      {% endif %}
+    </div>
+    <div class="tool-toolbar__group">
+      <button class="btn btn-sm btn-outline-secondary" type="button" id="copyKeyBtn" data-key="{{ key }}">
+        Copy Key
+      </button>
+      <a class="btn btn-sm btn-primary" href="{{ url_for('iac_artifacts_explorer.download_archive', key=key) }}">Download Zip</a>
+    </div>
+  </div>
+
+  {% if bucket_cfg.bucket %}
+    <div class="tool-inline-summary">Source: s3://{{ bucket_cfg.bucket }}/{{ bucket_cfg.prefix }}</div>
+  {% endif %}
+
+  {% if inspection %}
+    <div class="artiac-archive-overview">
+      <div class="artiac-catalog-stat">
+        <strong>{{ inspection.safety.file_count }}</strong>
+        <span>files</span>
+      </div>
+      <div class="artiac-catalog-stat">
+        <strong>{{ inspection.safety.uncompressed_bytes }}</strong>
+        <span>uncompressed bytes</span>
+      </div>
+      <div class="artiac-catalog-stat">
+        <strong>{{ inspection.providers|length }}</strong>
+        <span>providers</span>
+      </div>
+      <div class="artiac-catalog-stat">
+        <strong>{{ inspection.variables|length }}</strong>
+        <span>input variables</span>
+      </div>
+      <div class="artiac-catalog-stat">
+        <strong>{{ inspection.outputs|length }}</strong>
+        <span>outputs</span>
+      </div>
+      <div class="artiac-catalog-stat">
+        <strong>{{ inspection.modules|length }}</strong>
+        <span>child modules</span>
+      </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+      <div class="col-lg-6">
+        <div class="tool-panel tool-panel--compact h-100 mb-0">
+          <h5 class="mb-3">Terraform/OpenTofu Contract</h5>
+          <dl class="row small mb-0">
+            <dt class="col-5 text-muted">Required version</dt>
+            <dd class="col-7">{{ inspection.required_versions|join(', ') or 'Not declared' }}</dd>
+            <dt class="col-5 text-muted">Source type</dt>
+            <dd class="col-7">{{ inspection.source.type or 'Not declared' }}</dd>
+            <dt class="col-5 text-muted">Source repository</dt>
+            <dd class="col-7 text-break">
+              {% if inspection.source.browser_url %}
+                <a href="{{ inspection.source.browser_url }}" target="_blank" rel="noopener noreferrer">
+                  Open source at {{ inspection.source.ref or 'main' }}
+                  <i class="fa-solid fa-arrow-up-right-from-square ms-1 small"></i>
+                </a>
+              {% else %}
+                {{ inspection.source.repo or 'Not declared' }}
+              {% endif %}
+              {% if inspection.source.ssh_url %}
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary ms-2"
+                        id="copySourceRepoBtn"
+                        data-repo="{{ inspection.source.ssh_url }}">
+                  Copy SSH URL
+                </button>
+              {% endif %}
+              {% if inspection.source.browser_url and inspection.current_spacelift_url %}
+                <button type="button"
+                        class="btn btn-sm btn-outline-primary mt-2"
+                        id="openSourceContextBtn"
+                        data-git-url="{{ inspection.source.browser_url }}"
+                        data-spacelift-url="{{ inspection.current_spacelift_url }}">
+                  <i class="fa-solid fa-table-columns me-1"></i>
+                  Open Git + Spacelift
+                </button>
+                <div class="small text-muted mt-1">
+                  Opens both module pages while keeping Studio open.
+                </div>
+                <div class="small text-warning mt-1 d-none" id="sourceContextPopupWarning">
+                  The browser blocked an additional tab.
+                  <a href="{{ inspection.current_spacelift_url }}"
+                     target="_blank"
+                     rel="noopener noreferrer">Open Spacelift</a>
+                  manually or allow popups for Studio.
+                </div>
+              {% endif %}
+            </dd>
+            <dt class="col-5 text-muted">Git ref</dt>
+            <dd class="col-7"><code>{{ inspection.source.ref or 'Not declared' }}</code></dd>
+            <dt class="col-5 text-muted">Commit</dt>
+            <dd class="col-7 text-break">
+              {% if inspection.source.commit %}
+                <code title="{{ inspection.source.commit }}">{{ inspection.source.commit[:12] }}</code>
+              {% else %}
+                Not declared
+              {% endif %}
+            </dd>
+            <dt class="col-5 text-muted">Providers</dt>
+            <dd class="col-7">{{ inspection.providers|join(', ') or 'None declared' }}</dd>
+            <dt class="col-5 text-muted">Required inputs</dt>
+            <dd class="col-7">{{ inspection.required_variables }}</dd>
+            <dt class="col-5 text-muted">Optional inputs</dt>
+            <dd class="col-7">{{ inspection.optional_variables }}</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="tool-panel tool-panel--compact h-100 mb-0">
+          <h5 class="mb-3">Referenced Modules</h5>
+          {% if inspection.modules %}
+            <div class="d-flex flex-column gap-2">
+              {% for module in inspection.modules %}
+                <div class="d-flex justify-content-between gap-3 small">
+                  <code>{{ module.name }}</code>
+                  <span class="text-muted text-break text-end">
+                    {% if module.source_url %}
+                      <a href="{{ module.source_url }}"
+                         target="_blank"
+                         rel="noopener noreferrer"
+                         title="Open this module in the Spacelift registry">
+                        {{ module.source }}
+                        <i class="fa-solid fa-arrow-up-right-from-square ms-1 small"></i>
+                      </a>
+                    {% else %}
+                      {{ module.source or 'Source not detected' }}
+                    {% endif %}
+                  </span>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="small text-muted">No child module blocks detected.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <details class="tool-panel tool-panel--compact">
+      <summary class="fw-semibold">Inputs and outputs</summary>
+      <div class="row g-4 mt-1">
+        <div class="col-lg-6">
+          <h6>Variables</h6>
+          <div class="d-flex flex-wrap gap-2">
+            {% for variable in inspection.variables %}
+              <span class="tool-meta-chip">
+                {{ variable.name }}
+                <span class="{% if variable.required %}text-warning{% else %}text-muted{% endif %}">
+                  {{ 'required' if variable.required else 'optional' }}
+                </span>
+              </span>
+            {% else %}
+              <span class="text-muted small">No variables detected.</span>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="col-lg-6">
+          <h6>Outputs</h6>
+          <div class="d-flex flex-wrap gap-2">
+            {% for output in inspection.outputs %}
+              <span class="tool-meta-chip">{{ output }}</span>
+            {% else %}
+              <span class="text-muted small">No outputs detected.</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </details>
+  {% endif %}
+
+  {% if metadata.sha256 %}
+    <details class="tool-panel tool-panel--compact">
+      <summary class="fw-semibold">Archive verification</summary>
+      <dl class="row small mb-0 mt-3">
+        <dt class="col-md-2 text-muted">ETag</dt>
+        <dd class="col-md-10"><code>{{ metadata.etag or '-' }}</code></dd>
+        <dt class="col-md-2 text-muted">SHA-256</dt>
+        <dd class="col-md-10 text-break"><code>{{ metadata.sha256 }}</code></dd>
+      </dl>
+    </details>
+  {% endif %}
+
+  <div class="row g-4">
+    <div class="col-12">
+      <div class="tool-panel">
+        <div class="tool-panel__header">
+          <div>
+            <h2 class="tool-panel__title">Files</h2>
+            <div class="tool-panel__subtitle">{{ files|length }} file{{ '' if files|length == 1 else 's' }} available in this archive.</div>
+          </div>
+          <div class="tool-toolbar__group">
+            <select class="form-select form-select-sm" id="fileSort">
+              <option value="name" {% if sort_key == "name" %}selected{% endif %}>Sort: Name</option>
+              <option value="size" {% if sort_key == "size" %}selected{% endif %}>Sort: Size</option>
+            </select>
+            <input class="form-control form-control-sm iac-file-filter" type="text" placeholder="Filter files...">
+          </div>
+        </div>
+        <div class="tool-list-shell tool-scroll tool-scroll--md">
+          <div class="list-group">
+            {% for f in files %}
+            <a class="list-group-item list-group-item-action iac-file-item {% if selected_file == f.name %}active{% endif %}"
+               href="{{ url_for('iac_artifacts_explorer.view_archive', key=key, file=f.name) }}">
+              <div class="d-flex justify-content-between align-items-center gap-2">
+                <span class="text-truncate iac-file-name">{{ f.name }}</span>
+                <div class="d-flex align-items-center gap-2">
+                  {% if f.ext %}
+                    <span class="tool-meta-chip text-uppercase">{{ f.ext }}</span>
+                  {% endif %}
+                  <small>{{ f.size }}</small>
+                </div>
+              </div>
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="card tool-panel tool-panel--flush">
+        <div class="card-header">
+          <div class="tool-panel__heading">
+            <i class="fa-solid fa-file-code"></i>
+            <div>
+              <div class="tool-panel__title">Preview</div>
+              <div class="tool-panel__meta">{{ total_files }} files • {{ total_size }} bytes</div>
+            </div>
+          </div>
+        </div>
+        <div class="card-body">
+          {% if preview_error %}
+            <div class="alert alert-warning">{{ preview_error }}</div>
+          {% elif selected_file and file_preview is not none %}
+            <div class="tool-panel tool-panel--compact mb-3">
+              <div class="tool-panel__title">{{ selected_file }}</div>
+              <pre class="tool-code-block tool-scroll tool-scroll--lg mt-3"><code id="filePreviewText" class="{{ preview_lang }}">{{ file_preview }}</code></pre>
+            </div>
+            <div class="tool-toolbar mb-0">
+              <div class="tool-toolbar__group">
+                <a class="btn btn-sm btn-outline-primary"
+                   href="{{ url_for('iac_artifacts_explorer.download_file', key=key, file=selected_file) }}">
+                  Download This File
+                </a>
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{{ url_for('iac_artifacts_explorer.raw_file', key=key, file=selected_file) }}"
+                   target="_blank" rel="noopener">
+                  Open Raw
+                </a>
+                <button class="btn btn-sm btn-outline-secondary" type="button" id="copyFileBtn">
+                  Copy This File
+                </button>
+              </div>
+            </div>
+          {% else %}
+            <div class="text-muted">Select a file to preview its contents.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function highlightHcl(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/(\"[^\"]*\")/g, '<span class="iac-hl-string">$1</span>');
+    out = out.replace(/\b(resource|module|variable|provider|data|output|locals|terraform)\b/g, '<span class="iac-hl-keyword">$1</span>');
+    out = out.replace(/\b(true|false|null)\b/g, '<span class="iac-hl-literal">$1</span>');
+    out = out.replace(/\b\d+(\.\d+)?\b/g, '<span class="iac-hl-number">$&</span>');
+    out = out.replace(/(#.*$)/gm, '<span class="iac-hl-comment">$1</span>');
+    return out;
+  }
+
+  function highlightYaml(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/(\"[^\"]*\"|\'[^\']*\')/g, '<span class="iac-hl-string">$1</span>');
+    out = out.replace(/^(\s*[A-Za-z0-9_-]+)(\s*:)/gm, '<span class="iac-hl-key">$1</span>$2');
+    out = out.replace(/\b(true|false|null)\b/g, '<span class="iac-hl-literal">$1</span>');
+    out = out.replace(/\b\d+(\.\d+)?\b/g, '<span class="iac-hl-number">$&</span>');
+    out = out.replace(/(#.*$)/gm, '<span class="iac-hl-comment">$1</span>');
+    return out;
+  }
+
+  function highlightJson(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/(\"[^\"]*\"|\'[^\']*\')/g, '<span class="iac-hl-string">$1</span>');
+    out = out.replace(/\b(true|false|null)\b/g, '<span class="iac-hl-literal">$1</span>');
+    out = out.replace(/\b\d+(\.\d+)?\b/g, '<span class="iac-hl-number">$&</span>');
+    return out;
+  }
+
+  const codeEl = document.getElementById("filePreviewText");
+  if (codeEl) {
+    const langClass = codeEl.className || "";
+    const rawText = codeEl.textContent || "";
+    if (langClass.includes("language-hcl")) {
+      codeEl.innerHTML = highlightHcl(rawText);
+    } else if (langClass.includes("language-yaml")) {
+      codeEl.innerHTML = highlightYaml(rawText);
+    } else if (langClass.includes("language-json")) {
+      codeEl.innerHTML = highlightJson(rawText);
+    }
+  }
+  const filter = document.querySelector(".iac-file-filter");
+  const items = document.querySelectorAll(".iac-file-item");
+  if (filter) {
+    filter.addEventListener("input", () => {
+      const query = filter.value.toLowerCase();
+      items.forEach((item) => {
+        const name = item.querySelector(".iac-file-name").textContent.toLowerCase();
+        item.style.display = name.includes(query) ? "" : "none";
+      });
+    });
+  }
+
+  const sortSelect = document.getElementById("fileSort");
+  if (sortSelect) {
+    sortSelect.addEventListener("change", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("sort", sortSelect.value);
+      window.location.href = url.toString();
+    });
+  }
+
+  ["moduleJump", "versionJump"].forEach((id) => {
+    const select = document.getElementById(id);
+    if (select) {
+      select.addEventListener("change", () => {
+        if (select.value) window.location.href = select.value;
+      });
+    }
+  });
+
+  const compareVersion = document.getElementById("compareVersion");
+  const compareVersionBtn = document.getElementById("compareVersionBtn");
+  if (compareVersion && compareVersionBtn && !compareVersion.disabled) {
+    compareVersion.addEventListener("change", () => {
+      compareVersionBtn.href = compareVersion.value;
+    });
+  }
+
+  const copyBtn = document.getElementById("copyKeyBtn");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(copyBtn.dataset.key);
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => (copyBtn.textContent = "Copy Key"), 1500);
+      } catch (err) {
+        alert("Unable to copy key.");
+      }
+    });
+  }
+
+  const copyFileBtn = document.getElementById("copyFileBtn");
+  const filePreview = document.getElementById("filePreviewText");
+  if (copyFileBtn && filePreview) {
+    copyFileBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(filePreview.textContent || "");
+        copyFileBtn.textContent = "Copied!";
+        setTimeout(() => (copyFileBtn.textContent = "Copy This File"), 1500);
+      } catch (err) {
+        alert("Unable to copy file contents.");
+      }
+    });
+  }
+
+  const copySourceRepoBtn = document.getElementById("copySourceRepoBtn");
+  if (copySourceRepoBtn) {
+    copySourceRepoBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(copySourceRepoBtn.dataset.repo || "");
+        copySourceRepoBtn.textContent = "Copied!";
+        setTimeout(() => (copySourceRepoBtn.textContent = "Copy SSH URL"), 1500);
+      } catch (err) {
+        alert("Unable to copy the Git repository URL.");
+      }
+    });
+  }
+
+  const openSourceContextBtn = document.getElementById("openSourceContextBtn");
+  if (openSourceContextBtn) {
+    openSourceContextBtn.addEventListener("click", () => {
+      const gitUrl = openSourceContextBtn.dataset.gitUrl || "";
+      const spaceliftUrl = openSourceContextBtn.dataset.spaceliftUrl || "";
+      const warning = document.getElementById("sourceContextPopupWarning");
+      const gitWindow = gitUrl ? window.open("about:blank", "_blank") : null;
+      const spaceliftWindow = spaceliftUrl ? window.open("about:blank", "_blank") : null;
+      if (gitWindow) {
+        gitWindow.opener = null;
+        gitWindow.location.replace(gitUrl);
+      }
+      if (spaceliftWindow) {
+        spaceliftWindow.opener = null;
+        spaceliftWindow.location.replace(spaceliftUrl);
+      }
+      if ((!gitWindow || !spaceliftWindow) && warning) {
+        warning.classList.remove("d-none");
+      }
+    });
+  }
+})();
+</script>
+
+{% endblock %}

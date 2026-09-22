@@ -1,0 +1,1054 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-shell artiac-page">
+
+    {% set hero_title = "Artiac Operations" %}
+    {% set hero_subtitle = "Praxis Terraform/OpenTofu modules built and published by Artiac. Monitor publishing health, trigger the predefined build, and inspect versioned archives." %}
+    {% include "_page_hero.html" %}
+
+    <a class="back-btn" href="{{ url_for('tools') }}">
+      <i class="fa-solid fa-arrow-left"></i> Back to Tools
+    </a>
+    {% set current_artiac_page = "status" %}
+    {% include "artiac_control/_subnav.html" %}
+
+        <div class="tool-panel tool-panel--compact">
+          <div class="tool-toolbar mb-0">
+            <div>
+              <div class="tool-panel__title">Runtime Controls</div>
+              <div class="tool-panel__subtitle">Trigger only the complete predefined CronJob and monitor its latest run state.</div>
+            </div>
+            <div class="tool-toolbar__group">
+              <span class="tool-meta-chip">API: <span class="font-monospace">{{ api_base }}</span></span>
+              <button id="trigger-btn" class="btn btn-primary">
+                <i class="fa-solid fa-play me-1"></i> Trigger Job
+              </button>
+              <button id="refresh-btn" class="btn btn-outline-secondary">
+                <i class="fa-solid fa-rotate me-1"></i> Refresh Status
+              </button>
+              <div class="form-check form-switch ms-2">
+                <input class="form-check-input" type="checkbox" id="auto-refresh">
+                <label class="form-check-label" for="auto-refresh">Auto refresh (15s)</label>
+              </div>
+              <div class="small text-muted" id="last-updated">Last updated: never</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="status-alert" class="alert alert-info d-none" role="alert"></div>
+
+        <div id="active-run-banner" class="artiac-active-run d-none" role="status" aria-live="polite">
+          <span class="artiac-active-run__pulse" aria-hidden="true"></span>
+          <div class="flex-grow-1">
+            <div class="fw-semibold">Artiac publishing is running</div>
+            <div class="small text-muted" id="active-run-detail">Waiting for job details…</div>
+          </div>
+          <span class="tool-meta-chip" id="active-run-elapsed">Active</span>
+        </div>
+
+        <section class="tool-panel tool-panel--compact artiac-health-panel" aria-labelledby="artiac-health-title">
+          <div class="tool-toolbar mb-0">
+            <div>
+              <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0" id="artiac-health-title">Integration Health</h5>
+                <span id="integration-overall" class="badge bg-secondary">unknown</span>
+              </div>
+              <div class="tool-panel__subtitle" id="integration-checked">Waiting for Artiac health information.</div>
+            </div>
+          </div>
+          <div class="artiac-health-grid mt-3" id="integration-health-grid">
+            <div class="artiac-health-empty">No integration health reported yet.</div>
+          </div>
+        </section>
+
+        <section id="current-failures-panel"
+                 class="tool-panel tool-panel--compact artiac-failures-panel d-none"
+                 aria-labelledby="current-failures-title">
+          <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+            <div>
+              <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0" id="current-failures-title">Current Module Failures</h5>
+                <span id="current-failures-count" class="badge bg-danger">0</span>
+              </div>
+              <div class="tool-panel__subtitle">Failures reported by the current published status snapshot.</div>
+            </div>
+          </div>
+          <div class="artiac-failures-list" id="current-failures-list"></div>
+        </section>
+
+        <div class="row g-4">
+          <div class="col-lg-4">
+            <div class="tool-panel tool-panel--compact h-100">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <h5 class="mb-0">CronJob Summary</h5>
+                <span id="status-pill" class="badge bg-secondary">idle</span>
+              </div>
+              <dl class="row mb-0 small">
+                <dt class="col-5 text-muted">Status Code</dt>
+                <dd class="col-7" id="status-code">-</dd>
+                <dt class="col-5 text-muted">CronJob</dt>
+                <dd class="col-7" id="cronjob-name">-</dd>
+                <dt class="col-5 text-muted">Schedule</dt>
+                <dd class="col-7" id="cronjob-schedule">-</dd>
+                <dt class="col-5 text-muted">Last Scheduled</dt>
+                <dd class="col-7" id="cronjob-last-scheduled">-</dd>
+                <dt class="col-5 text-muted">Last Success</dt>
+                <dd class="col-7" id="cronjob-last-success">-</dd>
+                <dt class="col-5 text-muted">Schedule Health</dt>
+                <dd class="col-7" id="cronjob-schedule-health">-</dd>
+                <dt class="col-5 text-muted">Active Runs</dt>
+                <dd class="col-7" id="cronjob-active">-</dd>
+                <dt class="col-5 text-muted">API Version</dt>
+                <dd class="col-7" id="api-version">-</dd>
+                <dt class="col-5 text-muted">Publisher Version</dt>
+                <dd class="col-7" id="image-version">-</dd>
+                <dt class="col-5 text-muted">Version Sync</dt>
+                <dd class="col-7" id="version-sync">-</dd>
+              </dl>
+              <div class="mt-3">
+                <h6 class="text-muted small mb-2">Recent Jobs</h6>
+                <div class="small" id="jobs-list">-</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-8">
+            <div class="tool-panel tool-panel--compact h-100">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <h5 class="mb-0">Current Publish Status</h5>
+                <span id="latest-status" class="badge bg-secondary">unknown</span>
+              </div>
+              <div class="row g-3 small">
+                <div class="col-md-6">
+                  <div class="text-muted">Source</div>
+                  <div class="fw-semibold" id="latest-job-name">-</div>
+                </div>
+                <div class="col-md-6">
+                  <div class="text-muted">Snapshot</div>
+                  <div class="fw-semibold" id="latest-duration">-</div>
+                </div>
+                <div class="col-md-6">
+                  <div class="text-muted">CronJob last scheduled</div>
+                  <div class="fw-semibold" id="latest-started">-</div>
+                </div>
+                <div class="col-md-6">
+                  <div class="text-muted">CronJob last success</div>
+                  <div class="fw-semibold" id="latest-finished">-</div>
+                </div>
+                <div class="col-md-4">
+                  <div class="text-muted">Modules</div>
+                  <div class="fw-semibold" id="latest-modules">-</div>
+                </div>
+                <div class="col-md-4">
+                  <div class="text-muted">OK</div>
+                  <div class="fw-semibold text-success" id="latest-ok">-</div>
+                </div>
+                <div class="col-md-4">
+                  <div class="text-muted">Failed</div>
+                  <div class="fw-semibold text-danger" id="latest-failed">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-panel tool-panel--compact mt-4">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <h5 class="mb-0">Published Module Status</h5>
+              <span class="badge bg-warning text-dark d-none" id="module-change-count">0 changes</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <input id="modules-filter" class="form-control form-control-sm tool-filter-select"
+                     placeholder="Filter modules">
+              <span class="text-muted small" id="modules-count">0</span>
+            </div>
+          </div>
+          <div id="module-change-list" class="small text-muted mb-2 d-none"></div>
+          <div class="table-responsive">
+            <table class="table table-sm table-striped align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Module</th>
+                  <th>Version</th>
+                  <th>Change</th>
+                  <th>Status</th>
+                  <th class="text-end">Timestamp</th>
+                </tr>
+              </thead>
+              <tbody id="modules-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="modal fade" id="module-error-modal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Module Error</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <pre class="surface-elevated border p-3 rounded small mb-0" id="module-error-text"></pre>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" id="module-error-copy">
+                  <i class="fa-regular fa-copy me-1"></i> Copy Error
+                </button>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tool-panel tool-panel--compact mt-4">
+          <div class="tool-toolbar mb-0">
+            <div>
+              <h5 class="mb-1">Run History</h5>
+              <div class="tool-panel__subtitle">
+                Full chronological history is maintained by Artiac. Studio does not use the
+                legacy unordered history embedded in the public status response.
+              </div>
+            </div>
+            {% if run_history_url %}
+              <a class="btn btn-outline-primary" href="{{ run_history_url }}" target="_blank" rel="noopener">
+                <i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Open Artiac Run History
+              </a>
+            {% endif %}
+          </div>
+        </div>
+
+        <details class="tool-panel tool-panel--compact mt-4">
+          <summary class="d-flex align-items-center justify-content-between">
+            <span class="fw-semibold">Raw Status Payload</span>
+            <button id="copy-json" class="btn btn-sm btn-outline-secondary">
+              <i class="fa-solid fa-copy me-1"></i> Copy JSON
+            </button>
+          </summary>
+          <pre class="tool-code-block tool-scroll tool-scroll--lg small mb-0 mt-3" id="status-json">{}</pre>
+        </details>
+
+  </div>
+{% endblock %}
+
+{% block step_scripts %}
+<script>
+  const csrfToken = "{{ csrf_token() }}";
+  const scheduleStaleHours = {{ schedule_stale_hours | int }};
+  const statusAlert = document.getElementById('status-alert');
+  const activeRunBanner = document.getElementById('active-run-banner');
+  const activeRunDetail = document.getElementById('active-run-detail');
+  const activeRunElapsed = document.getElementById('active-run-elapsed');
+  const integrationOverall = document.getElementById('integration-overall');
+  const integrationChecked = document.getElementById('integration-checked');
+  const integrationHealthGrid = document.getElementById('integration-health-grid');
+  const currentFailuresPanel = document.getElementById('current-failures-panel');
+  const currentFailuresCount = document.getElementById('current-failures-count');
+  const currentFailuresList = document.getElementById('current-failures-list');
+  const statusJson = document.getElementById('status-json');
+  const statusCode = document.getElementById('status-code');
+  const statusPill = document.getElementById('status-pill');
+  const lastUpdated = document.getElementById('last-updated');
+  const cronjobName = document.getElementById('cronjob-name');
+  const cronjobSchedule = document.getElementById('cronjob-schedule');
+  const cronjobLastScheduled = document.getElementById('cronjob-last-scheduled');
+  const cronjobLastSuccess = document.getElementById('cronjob-last-success');
+  const cronjobScheduleHealth = document.getElementById('cronjob-schedule-health');
+  const cronjobActive = document.getElementById('cronjob-active');
+  const apiVersion = document.getElementById('api-version');
+  const imageVersion = document.getElementById('image-version');
+  const versionSync = document.getElementById('version-sync');
+  const jobsList = document.getElementById('jobs-list');
+  const latestJobName = document.getElementById('latest-job-name');
+  const latestStatus = document.getElementById('latest-status');
+  const latestStarted = document.getElementById('latest-started');
+  const latestFinished = document.getElementById('latest-finished');
+  const latestDuration = document.getElementById('latest-duration');
+  const latestOk = document.getElementById('latest-ok');
+  const latestFailed = document.getElementById('latest-failed');
+  const latestModules = document.getElementById('latest-modules');
+  const modulesTbody = document.getElementById('modules-tbody');
+  const modulesFilter = document.getElementById('modules-filter');
+  const modulesCount = document.getElementById('modules-count');
+  const moduleChangeCount = document.getElementById('module-change-count');
+  const moduleChangeList = document.getElementById('module-change-list');
+  const moduleErrorModal = document.getElementById('module-error-modal');
+  const moduleErrorText = document.getElementById('module-error-text');
+  const moduleErrorCopy = document.getElementById('module-error-copy');
+  const runsContainer = document.getElementById('runs-container');
+  const runsCount = document.getElementById('runs-count');
+  const refreshBtn = document.getElementById('refresh-btn');
+  const triggerBtn = document.getElementById('trigger-btn');
+  const autoRefresh = document.getElementById('auto-refresh');
+  const copyBtn = document.getElementById('copy-json');
+  let refreshTimer = null;
+  let activeRefreshTimer = null;
+  let isRunActive = false;
+  let pageIsUnloading = false;
+  let consecutiveNetworkFailures = 0;
+
+  window.addEventListener('pagehide', () => {
+    pageIsUnloading = true;
+  });
+
+  function setAlert(message, level = 'info') {
+    statusAlert.className = `alert alert-${level}`;
+    statusAlert.textContent = message;
+    statusAlert.classList.remove('d-none');
+  }
+
+  function clearAlert() {
+    statusAlert.classList.add('d-none');
+  }
+
+  function badgeClass(status) {
+    switch (status) {
+      case 'ok':
+        return 'bg-success';
+      case 'failed':
+      case 'error':
+        return 'bg-danger';
+      case 'partial':
+      case 'blocked':
+        return 'bg-warning text-dark';
+      case 'running':
+      case 'triggered':
+        return 'bg-info text-dark';
+      case 'loading':
+        return 'bg-secondary';
+      default:
+        return 'bg-secondary';
+    }
+  }
+
+  function setPill(status) {
+    const normalized = status || 'idle';
+    statusPill.textContent = normalized;
+    statusPill.className = `badge ${badgeClass(normalized)}`;
+  }
+
+  function formatTime(value) {
+    if (!value) {
+      return '-';
+    }
+    const dt = new Date(value);
+    if (Number.isNaN(dt.valueOf())) {
+      return value;
+    }
+    return dt.toLocaleString();
+  }
+
+  function formatRelativeTime(value) {
+    if (!value) {
+      return 'unknown';
+    }
+    const timestamp = new Date(value).getTime();
+    if (Number.isNaN(timestamp)) {
+      return 'unknown';
+    }
+    const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+    if (seconds < 60) {
+      return `${seconds}s ago`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) {
+      return `${minutes}m ago`;
+    }
+    const hours = Math.floor(minutes / 60);
+    if (hours < 48) {
+      return `${hours}h ago`;
+    }
+    return `${Math.floor(hours / 24)}d ago`;
+  }
+
+  function formatDuration(start, end, durationSeconds) {
+    if (Number.isFinite(durationSeconds)) {
+      const totalSeconds = Math.max(durationSeconds, 1);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      if (minutes === 0) {
+        return `${seconds}s`;
+      }
+      return `${minutes}m ${seconds}s`;
+    }
+    if (!start || !end) {
+      return '-';
+    }
+    const startMs = new Date(start).getTime();
+    const endMs = new Date(end).getTime();
+    if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) {
+      return '-';
+    }
+    const totalSeconds = Math.round((endMs - startMs) / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes === 0) {
+      return `${seconds}s`;
+    }
+    return `${minutes}m ${seconds}s`;
+  }
+
+  function updateCronSummary(payload, httpCode) {
+    const cronjob = payload.cronjob || payload.cron || {};
+    const metadata = payload.statusFile?.metadata || {};
+    statusCode.textContent = httpCode || '-';
+    cronjobName.textContent = cronjob.name || cronjob.metadata?.name || '-';
+    cronjobSchedule.textContent = cronjob.schedule || cronjob.spec?.schedule || '-';
+    cronjobLastScheduled.textContent = formatTime(cronjob.lastScheduleTime || cronjob.status?.lastScheduleTime);
+    const lastSuccessfulTime = cronjob.lastSuccessfulTime || cronjob.status?.lastSuccessfulTime;
+    cronjobLastSuccess.textContent = formatTime(lastSuccessfulTime);
+    renderScheduleHealth(lastSuccessfulTime);
+    const active = cronjob.active || cronjob.status?.active || [];
+    const activeCount = Array.isArray(active) ? active.length : (active || 0);
+    cronjobActive.textContent = activeCount;
+    setPill(activeCount > 0 ? 'running' : 'idle');
+    renderVersionConsistency(payload.app?.version, metadata.artiac_image_version || metadata.image_version);
+  }
+
+  function renderVersionConsistency(controlVersion, publisherVersion) {
+    const apiValue = String(controlVersion || '').trim();
+    const publisherValue = String(publisherVersion || '').trim();
+    apiVersion.textContent = apiValue || '-';
+    imageVersion.textContent = publisherValue || '-';
+    if (!apiValue || !publisherValue) {
+      versionSync.innerHTML = '<span class="badge bg-secondary">unknown</span>';
+      return;
+    }
+    if (apiValue === publisherValue) {
+      versionSync.innerHTML = '<span class="badge bg-success">aligned</span>';
+      return;
+    }
+    versionSync.innerHTML = '<span class="badge bg-warning text-dark">different</span>';
+  }
+
+  function renderScheduleHealth(lastSuccessfulTime) {
+    const timestamp = lastSuccessfulTime ? new Date(lastSuccessfulTime).getTime() : NaN;
+    if (Number.isNaN(timestamp)) {
+      cronjobScheduleHealth.innerHTML = '<span class="badge bg-secondary">unknown</span>';
+      return;
+    }
+    const ageHours = Math.max(0, (Date.now() - timestamp) / 3600000);
+    const relative = formatRelativeTime(lastSuccessfulTime);
+    if (ageHours > scheduleStaleHours) {
+      cronjobScheduleHealth.innerHTML = `<span class="badge bg-warning text-dark">overdue</span> <span class="text-muted">${relative}</span>`;
+      return;
+    }
+    cronjobScheduleHealth.innerHTML = `<span class="badge bg-success">on schedule</span> <span class="text-muted">${relative}</span>`;
+  }
+
+  function normalizedHealthStatus(value) {
+    const status = String(value || 'unknown').toLowerCase();
+    if (status === 'ok') {
+      return {label: 'OK', css: 'is-ok', badge: 'bg-success'};
+    }
+    if (status === 'not_ok' || status === 'failed' || status === 'error') {
+      return {label: 'Issue', css: 'is-error', badge: 'bg-danger'};
+    }
+    if (status === 'not_configured') {
+      return {label: 'Not configured', css: 'is-muted', badge: 'bg-secondary'};
+    }
+    return {label: status.replaceAll('_', ' '), css: 'is-warning', badge: 'bg-warning text-dark'};
+  }
+
+  function renderIntegrationHealth(health) {
+    const items = Array.isArray(health?.items) ? health.items : [];
+    const overall = normalizedHealthStatus(health?.overall);
+    integrationOverall.textContent = overall.label;
+    integrationOverall.className = `badge ${overall.badge}`;
+    integrationChecked.textContent = health?.checked_at
+      ? `Checked by Artiac ${formatRelativeTime(health.checked_at)}`
+      : 'Artiac did not report a health-check timestamp.';
+    integrationHealthGrid.innerHTML = '';
+    if (!items.length) {
+      integrationHealthGrid.innerHTML = '<div class="artiac-health-empty">No integration health information reported.</div>';
+      return;
+    }
+    items.forEach((item) => {
+      const state = normalizedHealthStatus(item.status);
+      const card = document.createElement('div');
+      card.className = `artiac-health-item ${state.css}`;
+      const top = document.createElement('div');
+      top.className = 'artiac-health-item__top';
+      const label = document.createElement('span');
+      label.className = 'fw-semibold';
+      label.textContent = item.label || item.key || 'Integration';
+      const badge = document.createElement('span');
+      badge.className = `badge ${state.badge}`;
+      badge.textContent = state.label;
+      top.append(label, badge);
+      const detail = document.createElement('div');
+      detail.className = 'artiac-health-item__detail';
+      detail.textContent = item.detail || 'No detail reported.';
+      card.append(top, detail);
+      integrationHealthGrid.appendChild(card);
+    });
+  }
+
+  function renderActiveRun(cronjob, jobs) {
+    const active = Array.isArray(cronjob?.active) ? cronjob.active : [];
+    const activeName = active[0]?.name || active[0]?.metadata?.name || '';
+    const matchingJob = (jobs || []).find((job) => job.name === activeName)
+      || (jobs || []).find((job) => Number(job.active || 0) > 0);
+    const isActive = active.length > 0 || Boolean(matchingJob);
+    isRunActive = isActive;
+    activeRunBanner.classList.toggle('d-none', !isActive);
+    triggerBtn.disabled = isActive;
+    if (!isActive) {
+      if (activeRefreshTimer) {
+        clearInterval(activeRefreshTimer);
+        activeRefreshTimer = null;
+      }
+      return;
+    }
+    const name = activeName || matchingJob?.name || 'Artiac job';
+    const started = matchingJob?.startTime || '';
+    activeRunDetail.textContent = started
+      ? `${name} · started ${formatTime(started)}`
+      : `${name} · waiting for Kubernetes job details`;
+    activeRunElapsed.textContent = started ? formatRelativeTime(started) : 'Active';
+    if (!activeRefreshTimer && !autoRefresh.checked) {
+      activeRefreshTimer = setInterval(fetchStatus, 10000);
+    }
+  }
+
+  function renderJobs(jobs) {
+    jobsList.textContent = '';
+    if (!jobs || jobs.length === 0) {
+      jobsList.textContent = 'No recent jobs reported.';
+      return;
+    }
+    const list = document.createElement('ul');
+    list.className = 'mb-0 ps-3';
+    jobs.slice(0, 5).forEach((job) => {
+      const item = document.createElement('li');
+      const name = job.name || '-';
+      const statusBits = [];
+      if (typeof job.succeeded === 'number') {
+        statusBits.push(`ok:${job.succeeded}`);
+      }
+      if (typeof job.failed === 'number') {
+        statusBits.push(`failed:${job.failed}`);
+      }
+      item.textContent = `${name}${statusBits.length ? ' (' + statusBits.join(', ') + ')' : ''}`;
+      list.appendChild(item);
+    });
+    jobsList.appendChild(list);
+  }
+
+
+  function stripAnsi(value) {
+    if (!value) {
+      return '';
+    }
+    return value.replace(/\u001b\[[0-9;]*m/g, '');
+  }
+
+  function formatError(value) {
+    if (!value) {
+      return '';
+    }
+    const clean = stripAnsi(value);
+    return clean.replace(/\r\n/g, '\n').trim();
+  }
+
+  function buildErrorMap(failures) {
+    const map = {};
+    (failures || []).forEach((item) => {
+      if (!item || !item.name) {
+        return;
+      }
+      const key = `${item.name}@@${item.version || ''}`;
+      map[key] = item.detail || item.summary || '';
+    });
+    return map;
+  }
+
+  function renderCurrentFailures(failures) {
+    const items = Array.isArray(failures) ? failures : [];
+    currentFailuresPanel.classList.toggle('d-none', items.length === 0);
+    currentFailuresCount.textContent = String(items.length);
+    currentFailuresList.innerHTML = '';
+    items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'artiac-failure-item';
+      const content = document.createElement('div');
+      content.className = 'artiac-failure-item__content';
+      const heading = document.createElement('div');
+      heading.className = 'd-flex flex-wrap align-items-center gap-2';
+      const moduleLink = document.createElement('a');
+      moduleLink.className = 'fw-semibold text-decoration-none';
+      moduleLink.href = `/iac-artifacts/list?module=${encodeURIComponent(item.name || '')}`;
+      moduleLink.textContent = item.name || 'Unknown module';
+      heading.appendChild(moduleLink);
+      if (item.version) {
+        const version = document.createElement('span');
+        version.className = 'tool-meta-chip';
+        version.textContent = `v${item.version}`;
+        heading.appendChild(version);
+      }
+      const errorText = formatError(item.detail || item.summary || item.error || '');
+      const detail = document.createElement('div');
+      detail.className = 'artiac-failure-item__detail';
+      detail.textContent = errorText || 'No diagnostic detail was reported.';
+      content.append(heading, detail);
+      row.appendChild(content);
+      if (errorText) {
+        const copy = document.createElement('button');
+        copy.type = 'button';
+        copy.className = 'btn btn-sm btn-outline-secondary error-copy';
+        copy.dataset.error = errorText;
+        copy.innerHTML = '<i class="fa-regular fa-copy me-1"></i> Copy error';
+        row.appendChild(copy);
+      }
+      currentFailuresList.appendChild(row);
+    });
+  }
+
+  async function copyText(value) {
+    if (!value) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      setAlert('Error copied to clipboard.', 'success');
+    } catch (err) {
+      setAlert(`Copy failed: ${err}`, 'warning');
+    }
+  }
+
+  function initTooltips(root) {
+    if (!window.bootstrap || !bootstrap.Tooltip) {
+      return;
+    }
+    const scope = root || document;
+    scope.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+      if (!bootstrap.Tooltip.getInstance(el)) {
+        new bootstrap.Tooltip(el);
+      }
+    });
+  }
+  function renderLatestRun(run, jobs, summary) {
+    if (!run) {
+      latestJobName.textContent = '-';
+      latestStarted.textContent = '-';
+      latestFinished.textContent = '-';
+      latestDuration.textContent = '-';
+      latestOk.textContent = '-';
+      latestFailed.textContent = '-';
+      latestModules.textContent = '-';
+      latestStatus.textContent = 'unknown';
+      latestStatus.className = 'badge bg-secondary';
+      return;
+    }
+    const computedStatus = computeRunStatus(run, summary);
+    const jobMatch = jobs && run.job_name ? jobs.find((job) => job.name === run.job_name) : null;
+    const durationStart = jobMatch?.startTime || run.started_at;
+    const durationEnd = jobMatch?.completionTime || run.finished_at;
+    const durationSeconds = jobMatch?.durationSeconds ?? run.durationSeconds;
+    latestJobName.textContent = run.job_name || '-';
+    latestStarted.textContent = formatTime(run.started_at);
+    latestFinished.textContent = formatTime(run.finished_at);
+    latestDuration.textContent = formatDuration(durationStart, durationEnd, durationSeconds);
+    const summaryOk = Number.isFinite(summary?.ok) ? summary.ok : run.ok;
+    const summaryFailed = Number.isFinite(summary?.failed) ? summary.failed : run.failed;
+    const summaryTotal = Number.isFinite(summary?.total) ? summary.total : run.module_count;
+    latestOk.textContent = Number.isFinite(summaryOk) ? summaryOk : '-';
+    latestFailed.textContent = Number.isFinite(summaryFailed) ? summaryFailed : '-';
+    latestModules.textContent = Number.isFinite(summaryTotal) ? summaryTotal : '-';
+    latestStatus.textContent = computedStatus;
+    latestStatus.className = `badge ${badgeClass(computedStatus)}`;
+  }
+
+  function renderPublishedStatus(payload) {
+    const summary = payload.statusSummary || {};
+    const cronjob = payload.cronjob || {};
+    const modules = payload.statusFile?.modules || [];
+    const status = computeRunStatus(null, summary);
+    latestJobName.textContent = 'Artiac status file';
+    latestDuration.textContent = 'Current published snapshot';
+    latestStarted.textContent = formatTime(cronjob.lastScheduleTime);
+    latestFinished.textContent = formatTime(cronjob.lastSuccessfulTime);
+    latestOk.textContent = Number.isFinite(summary.ok) ? summary.ok : '-';
+    latestFailed.textContent = Number.isFinite(summary.failed) ? summary.failed : '-';
+    latestModules.textContent = Number.isFinite(summary.total) ? summary.total : modules.length;
+    latestStatus.textContent = status;
+    latestStatus.className = `badge ${badgeClass(status)}`;
+  }
+
+  function computeRunStatus(run, summary) {
+    const ok = Number.isFinite(summary?.ok) ? summary.ok : run?.ok;
+    const failed = Number.isFinite(summary?.failed) ? summary.failed : run?.failed;
+    const total = Number.isFinite(summary?.total) ? summary.total : run?.module_count;
+    if (Number.isFinite(failed) && failed > 0) {
+      return 'failed';
+    }
+    if (Number.isFinite(ok) && ok > 0) {
+      if (Number.isFinite(total) && total > 0 && ok === total) {
+        return 'ok';
+      }
+      return 'partial';
+    }
+    return (summary?.status || run?.status || 'unknown');
+  }
+
+  function renderModules(modules, previousModules, errorMap) {
+    modulesTbody.innerHTML = '';
+    if (!modules || modules.length === 0) {
+      modulesCount.textContent = '0';
+      return;
+    }
+    const previousByName = {};
+    const hasComparison = Boolean(previousModules && previousModules.length);
+    if (hasComparison) {
+      previousModules.forEach((mod) => {
+        if (mod && mod.name) {
+          previousByName[mod.name] = mod.version || '';
+        }
+      });
+    }
+    const sorted = [...modules].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    sorted.forEach((mod) => {
+      const previousVersion = mod.name ? previousByName[mod.name] : '';
+      const changed = previousVersion && mod.version && previousVersion !== mod.version;
+      const row = document.createElement('tr');
+      if (changed) {
+        row.classList.add('table-warning');
+      }
+      const name = document.createElement('td');
+      name.textContent = mod.name || '-';
+      const version = document.createElement('td');
+      version.textContent = mod.version || '-';
+      if (changed) {
+        const prev = document.createElement('div');
+        prev.className = 'text-muted small';
+        prev.textContent = `prev: ${previousVersion}`;
+        version.appendChild(prev);
+      }
+      const change = document.createElement('td');
+      if (changed) {
+        change.innerHTML = `<span class="badge bg-warning text-dark">updated</span>`;
+      } else if (hasComparison && !previousVersion && mod.version) {
+        change.innerHTML = `<span class="badge bg-info text-dark">added</span>`;
+      } else {
+        change.innerHTML = `<span class="badge bg-light text-muted border">-</span>`;
+      }
+      const status = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = `badge ${mod.status === 'ok' ? 'bg-success' : 'bg-danger'}`;
+      badge.textContent = mod.status || 'unknown';
+      if (mod.status !== 'ok') {
+        const key = `${mod.name || ''}@@${mod.version || ''}`;
+        const errorText = mod.error || errorMap?.[key] || '';
+        if (errorText) {
+          const clean = formatError(errorText);
+          badge.setAttribute('data-bs-toggle', 'tooltip');
+          badge.setAttribute('data-bs-title', clean);
+          badge.title = clean;
+          badge.dataset.error = clean;
+          badge.classList.add('error-badge');
+        }
+      }
+      status.appendChild(badge);
+      if (badge.dataset.error) {
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'btn btn-link btn-sm p-0 ms-2 error-copy';
+        copyBtn.setAttribute('aria-label', 'Copy error');
+        copyBtn.dataset.error = badge.dataset.error;
+        copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i>';
+        status.appendChild(copyBtn);
+      }
+      const ts = document.createElement('td');
+      ts.className = 'text-end';
+      ts.textContent = formatTime(mod.ts);
+      row.appendChild(name);
+      row.appendChild(version);
+      row.appendChild(change);
+      row.appendChild(status);
+      row.appendChild(ts);
+      modulesTbody.appendChild(row);
+    });
+    modulesCount.textContent = String(sorted.length);
+    applyModulesFilter();
+    initTooltips(modulesTbody);
+  }
+
+  function applyModulesFilter() {
+    if (!modulesFilter) {
+      return;
+    }
+    const query = modulesFilter.value.toLowerCase().trim();
+    const rows = modulesTbody.querySelectorAll('tr');
+    let visible = 0;
+    rows.forEach((row) => {
+      const text = row.textContent.toLowerCase();
+      const show = !query || text.includes(query);
+      row.classList.toggle('d-none', !show);
+      if (show) {
+        visible += 1;
+      }
+    });
+    modulesCount.textContent = String(visible);
+  }
+
+  function renderRuns(runs) {
+    runsContainer.innerHTML = '';
+    if (!runs || runs.length === 0) {
+      runsContainer.textContent = 'No run history available.';
+      runsCount.textContent = '0';
+      return;
+    }
+    runsCount.textContent = String(runs.length);
+    runs.forEach((run) => {
+      const details = document.createElement('details');
+      details.className = 'border rounded p-2 surface-elevated';
+      const summary = document.createElement('summary');
+      summary.className = 'd-flex align-items-center justify-content-between';
+      const left = document.createElement('span');
+      const right = document.createElement('span');
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `badge ${run.status === 'ok' ? 'bg-success' : 'bg-danger'} me-2`;
+      statusBadge.textContent = run.status || 'unknown';
+      left.appendChild(statusBadge);
+      left.appendChild(document.createTextNode(run.job_name || 'unknown job'));
+      right.className = 'text-muted small';
+      const finish = run.finished_at ? formatTime(run.finished_at) : '-';
+      const duration = formatDuration(run.started_at, run.finished_at, run.durationSeconds);
+      const info = `modules:${run.module_count || 0} ok:${run.ok || 0} failed:${run.failed || 0} duration:${duration} finished:${finish}`;
+      right.textContent = info;
+      summary.appendChild(left);
+      summary.appendChild(right);
+      details.appendChild(summary);
+      const body = document.createElement('div');
+      body.className = 'mt-2';
+      if (run.modules && run.modules.length) {
+        const table = document.createElement('table');
+        table.className = 'table table-sm table-striped align-middle mb-0';
+        const head = document.createElement('thead');
+        head.innerHTML = '<tr><th>Module</th><th>Version</th><th>Status</th><th class="text-end">Timestamp</th></tr>';
+        const tbody = document.createElement('tbody');
+        [...run.modules].sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach((mod) => {
+          const row = document.createElement('tr');
+          const name = document.createElement('td');
+          name.textContent = mod.name || '-';
+          const version = document.createElement('td');
+          version.textContent = mod.version || '-';
+          const status = document.createElement('td');
+          const badge = document.createElement('span');
+          badge.className = `badge ${mod.status === 'ok' ? 'bg-success' : 'bg-danger'}`;
+          badge.textContent = mod.status || 'unknown';
+          if (mod.status !== 'ok' && mod.error) {
+            const clean = formatError(mod.error);
+            badge.setAttribute('data-bs-toggle', 'tooltip');
+            badge.setAttribute('data-bs-title', clean);
+            badge.title = clean;
+            badge.dataset.error = clean;
+            badge.classList.add('error-badge');
+          }
+          status.appendChild(badge);
+          if (badge.dataset.error) {
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'btn btn-link btn-sm p-0 ms-2 error-copy';
+            copyBtn.setAttribute('aria-label', 'Copy error');
+            copyBtn.dataset.error = badge.dataset.error;
+            copyBtn.innerHTML = '<i class="fa-regular fa-copy"></i>';
+            status.appendChild(copyBtn);
+          }
+          const ts = document.createElement('td');
+          ts.className = 'text-end';
+          ts.textContent = formatTime(mod.ts);
+          row.appendChild(name);
+          row.appendChild(version);
+          row.appendChild(status);
+          row.appendChild(ts);
+          tbody.appendChild(row);
+        });
+        table.appendChild(head);
+        table.appendChild(tbody);
+        body.appendChild(table);
+        initTooltips(table);
+      } else {
+        body.textContent = 'No module details for this run.';
+      }
+      details.appendChild(body);
+      runsContainer.appendChild(details);
+    });
+  }
+
+  function renderModuleChanges(moduleChanges) {
+    if (!moduleChanges || !moduleChanges.summary) {
+      moduleChangeCount.classList.add('d-none');
+      moduleChangeList.classList.add('d-none');
+      return;
+    }
+    const total = moduleChanges.summary.total || 0;
+    moduleChangeCount.textContent = `${total} changes`;
+    moduleChangeCount.classList.toggle('d-none', total === 0);
+    if (!moduleChanges.items || moduleChanges.items.length === 0) {
+      moduleChangeList.classList.add('d-none');
+      moduleChangeList.textContent = '';
+      return;
+    }
+    const lines = moduleChanges.items.map((item) => {
+      if (item.change === 'version') {
+        return `${item.name}: ${item.from_version} → ${item.to_version}`;
+      }
+      if (item.change === 'added') {
+        return `${item.name}: added ${item.to_version || ''}`.trim();
+      }
+      if (item.change === 'removed') {
+        return `${item.name}: removed ${item.from_version || ''}`.trim();
+      }
+      return item.name || 'unknown';
+    });
+    moduleChangeList.textContent = lines.join(' • ');
+    moduleChangeList.classList.remove('d-none');
+  }
+
+  async function fetchStatus() {
+    clearAlert();
+    setPill('loading');
+    try {
+      const resp = await fetch('/artiac/api/status?refresh=true');
+      const data = await resp.json();
+      const payload = data && data.data ? data.data : {};
+      consecutiveNetworkFailures = 0;
+      statusJson.textContent = JSON.stringify(payload, null, 2);
+      updateCronSummary(payload, resp.status);
+      const jobs = payload.jobs || [];
+      renderJobs(jobs);
+      renderIntegrationHealth(payload.integrationHealth);
+      renderActiveRun(payload.cronjob || {}, jobs);
+      renderCurrentFailures(payload.failedModules || []);
+      renderModuleChanges(null);
+      const errorMap = buildErrorMap(payload.failedModules || []);
+      renderPublishedStatus(payload);
+      renderModules(
+        payload.statusFile?.modules || [],
+        [],
+        errorMap
+      );
+      if (!payload?.cronjobStatus) {
+        updateCronSummary(payload, resp.status);
+      }
+      lastUpdated.textContent = `Last updated: ${new Date().toLocaleString()}`;
+      if (!resp.ok) {
+        setAlert(`Status request failed (${resp.status}).`, 'warning');
+      }
+    } catch (err) {
+      if (pageIsUnloading || document.visibilityState === 'hidden') {
+        return;
+      }
+      consecutiveNetworkFailures += 1;
+      setPill('error');
+      if (consecutiveNetworkFailures === 1) {
+        setPill('retrying');
+        window.setTimeout(() => {
+          if (!pageIsUnloading && document.visibilityState === 'visible') {
+            fetchStatus();
+          }
+        }, 1000);
+        return;
+      }
+      setAlert(`Status request failed after retry: ${err}`, 'danger');
+    }
+  }
+
+  async function triggerJob() {
+    if (!window.confirm('Trigger the complete predefined Artiac CronJob now?')) {
+      return;
+    }
+    clearAlert();
+    triggerBtn.disabled = true;
+    triggerBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i> Triggering...';
+    try {
+      const resp = await fetch('/artiac/api/trigger', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+      const data = await resp.json();
+      const payload = data && data.data ? data.data : {};
+      if (resp.ok) {
+        const jobName = payload.job || payload.run_id || 'pending';
+        await fetchStatus();
+        setAlert(`Job triggered successfully: ${jobName}`, 'success');
+      } else if (resp.status === 409) {
+        setAlert('A job is already running. See details in the payload.', 'warning');
+      } else {
+        statusJson.textContent = JSON.stringify(payload, null, 2);
+        setAlert(`Trigger failed (${resp.status}).`, 'danger');
+      }
+      lastUpdated.textContent = `Last updated: ${new Date().toLocaleString()}`;
+    } catch (err) {
+      setPill('error');
+      setAlert(`Trigger failed: ${err}`, 'danger');
+    } finally {
+      triggerBtn.disabled = isRunActive;
+      triggerBtn.innerHTML = '<i class="fa-solid fa-play me-1"></i> Trigger Job';
+    }
+  }
+
+  refreshBtn.addEventListener('click', fetchStatus);
+  triggerBtn.addEventListener('click', triggerJob);
+  modulesFilter.addEventListener('input', applyModulesFilter);
+
+  autoRefresh.addEventListener('change', () => {
+    if (autoRefresh.checked) {
+      if (activeRefreshTimer) {
+        clearInterval(activeRefreshTimer);
+        activeRefreshTimer = null;
+      }
+      fetchStatus();
+      refreshTimer = setInterval(fetchStatus, 15000);
+    } else if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+      fetchStatus();
+    }
+  });
+
+  copyBtn.addEventListener('click', async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(statusJson.textContent);
+      setAlert('Status JSON copied to clipboard.', 'success');
+    } catch (err) {
+      setAlert(`Copy failed: ${err}`, 'warning');
+    }
+  });
+
+  if (moduleErrorCopy) {
+    moduleErrorCopy.addEventListener('click', () => {
+      copyText(moduleErrorText?.textContent || '');
+    });
+  }
+
+  document.addEventListener('click', (event) => {
+    const copyButton = event.target.closest('.error-copy');
+    if (copyButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      copyText(copyButton.dataset.error || '');
+      return;
+    }
+    const badge = event.target.closest('.error-badge');
+    if (!badge || !moduleErrorModal || !moduleErrorText) {
+      return;
+    }
+    const errorText = badge.dataset.error || '';
+    if (!errorText) {
+      return;
+    }
+    moduleErrorText.textContent = errorText;
+    const modal = bootstrap.Modal.getOrCreateInstance(moduleErrorModal);
+    modal.show();
+  });
+
+  fetchStatus();
+</script>
+{% endblock %}

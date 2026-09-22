@@ -1,0 +1,497 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro archive_status(archive) %}
+  <span class="iac-status-line">
+    {% if archive.version %}
+      <span class="iac-status-version text-muted small">v{{ archive.version }}</span>
+    {% endif %}
+    {% if archive.is_current and archive.current_status %}
+      <span class="badge bg-primary">current</span>
+      <span class="badge {% if archive.current_status.status == 'ok' %}bg-success{% else %}bg-danger{% endif %}">
+        {{ archive.current_status.status }}
+      </span>
+    {% else %}
+      <span class="badge bg-secondary">historical</span>
+    {% endif %}
+  </span>
+  {% if archive.is_current and archive.current_status and archive.current_status.error %}
+    <div class="text-danger small" title="{{ archive.current_status.error }}">
+      {{ archive.current_status.error[:80] }}{% if archive.current_status.error | length > 80 %}...{% endif %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% set title = "Artiac Operations" %}
+{% set subtitle = "Praxis Terraform/OpenTofu modules built and published by Artiac. Review current and historical versions, publishing status, contracts, and source information." %}
+
+<div class="page-shell artiac-page">
+
+  {% set hero_title = title %}
+  {% set hero_subtitle = subtitle %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+  {% set current_artiac_page = "archives" %}
+  {% include "artiac_control/_subnav.html" %}
+
+  <div class="tool-panel">
+    <div class="tool-panel__header">
+      <div>
+        <h2 class="tool-panel__title">Archive Catalog</h2>
+        <div class="tool-panel__subtitle">Filter the latest module archives or drill into a module to compare versions.</div>
+      </div>
+      {% if bucket_cfg.bucket %}
+        <div class="text-end">
+          <div class="tool-panel__meta">s3://{{ bucket_cfg.bucket }}/{{ bucket_cfg.prefix }}</div>
+          <div class="small text-muted mt-1">
+            Catalog refreshed:
+            <span class="iac-cache-time" data-epoch="{{ cache_info.refreshed_at or '' }}">
+              {% if cache_info.refreshed_at %}loading…{% else %}not cached{% endif %}
+            </span>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <form method="get" id="iac-filter-form" class="artiac-archive-filter">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-5 col-lg-4">
+          <label class="form-label tool-toolbar__label" for="iac-module-filter">Module</label>
+          <select name="module" id="iac-module-filter" class="form-select">
+            <option value="">All Modules</option>
+            {% for m in modules %}
+            <option value="{{ m }}" {% if form.module.data == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-4 col-lg-3">
+          <label class="form-label tool-toolbar__label" for="iac-version-filter">Version contains</label>
+          <input name="version"
+                 id="iac-version-filter"
+                 class="form-control"
+                 placeholder="For example 1.2.3"
+                 value="{{ form.version.data or '' }}">
+        </div>
+
+        <div class="col-md-auto">
+          <button class="btn btn-primary px-4">
+            <i class="fa-solid fa-filter me-1"></i> Apply filters
+          </button>
+        </div>
+        <div class="col-md-auto ms-md-auto">
+          <a class="btn btn-outline-secondary"
+             href="{{ url_for('iac_artifacts_explorer.list_view',
+                              module=form.module.data,
+                              version=form.version.data,
+                              refresh=1,
+                              **preserved_params) }}">
+            <i class="fa-solid fa-rotate me-1"></i> Refresh catalog
+          </a>
+        </div>
+      </div>
+      <div class="artiac-category-filters mt-4">
+        <div class="tool-toolbar__label mb-2">Categories</div>
+        <div class="d-flex flex-wrap gap-3">
+          <div class="form-check form-switch">
+            <input type="hidden" name="cat_praxis_generic" value="0">
+            <input class="form-check-input" type="checkbox" name="cat_praxis_generic" id="cat_praxis_generic"
+                   value="1" {% if cat_flags["praxis_generic"] %}checked{% endif %}>
+            <label class="form-check-label" for="cat_praxis_generic">PRAXIS Generic Wrappers</label>
+          </div>
+          <div class="form-check form-switch">
+            <input type="hidden" name="cat_praxis_custom" value="0">
+            <input class="form-check-input" type="checkbox" name="cat_praxis_custom" id="cat_praxis_custom"
+                   value="1" {% if cat_flags["praxis_custom"] %}checked{% endif %}>
+            <label class="form-check-label" for="cat_praxis_custom">PRAXIS Custom Wrappers</label>
+          </div>
+          <div class="form-check form-switch">
+            <input type="hidden" name="cat_custom_builds" value="0">
+            <input class="form-check-input" type="checkbox" name="cat_custom_builds" id="cat_custom_builds"
+                   value="1" {% if cat_flags["custom_builds"] %}checked{% endif %}>
+            <label class="form-check-label" for="cat_custom_builds">Custom Build Bundle Wrappers</label>
+          </div>
+        </div>
+      </div>
+      <div class="row g-3 mt-2">
+        <div class="col-md-4">
+          <label class="form-label tool-toolbar__label" for="iac-text-filter">Search</label>
+          <input class="form-control" id="iac-text-filter" name="q"
+                 placeholder="Module or archive filename" value="{{ filter_values.q }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label tool-toolbar__label" for="iac-state-filter">Archive state</label>
+          <select class="form-select" id="iac-state-filter" name="state">
+            <option value="">All states</option>
+            <option value="current" {% if filter_values.state == 'current' %}selected{% endif %}>Current</option>
+            <option value="historical" {% if filter_values.state == 'historical' %}selected{% endif %}>Historical</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label tool-toolbar__label" for="iac-status-filter">Current status</label>
+          <select class="form-select" id="iac-status-filter" name="status">
+            <option value="">All statuses</option>
+            <option value="ok" {% if filter_values.status == 'ok' %}selected{% endif %}>OK</option>
+            <option value="failed" {% if filter_values.status == 'failed' %}selected{% endif %}>Failed</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label tool-toolbar__label" for="iac-from-filter">Published from</label>
+          <input class="form-control" type="date" id="iac-from-filter" name="published_from"
+                 value="{{ filter_values.published_from }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label tool-toolbar__label" for="iac-to-filter">Published to</label>
+          <input class="form-control" type="date" id="iac-to-filter" name="published_to"
+                 value="{{ filter_values.published_to }}">
+        </div>
+      </div>
+    </form>
+  </div>
+
+  {% set warning_count = (
+    catalog_warnings.missing_current|length
+    + catalog_warnings.orphan_modules|length
+    + catalog_warnings.duplicate_versions|length
+    + catalog_warnings.highest_version_mismatches|length
+  ) %}
+  {% if warning_count %}
+    <details class="tool-panel tool-panel--compact artiac-catalog-warnings">
+      <summary class="d-flex align-items-center gap-2">
+        <span class="fw-semibold">Catalog consistency</span>
+        <span class="badge bg-warning text-dark">{{ warning_count }} warning{{ '' if warning_count == 1 else 's' }}</span>
+      </summary>
+      <div class="row g-4 mt-1 small">
+        {% if catalog_warnings.missing_current %}
+          <div class="col-lg-6">
+            <h6>Current status without matching archive</h6>
+            {% for item in catalog_warnings.missing_current %}
+              <div><code>{{ item.module }}</code> expects v{{ item.version or '?' }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if catalog_warnings.highest_version_mismatches %}
+          <div class="col-lg-6">
+            <h6>Highest archive version differs from current status</h6>
+            {% for item in catalog_warnings.highest_version_mismatches %}
+              <div><code>{{ item.module }}</code>: highest v{{ item.highest_version }} · current v{{ item.current_version }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if catalog_warnings.duplicate_versions %}
+          <div class="col-lg-6">
+            <h6>Duplicate archive versions</h6>
+            {% for item in catalog_warnings.duplicate_versions %}
+              <div><code>{{ item.module }}</code> v{{ item.version }} appears {{ item.count }} times</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% if catalog_warnings.orphan_modules %}
+          <div class="col-lg-6">
+            <h6>Archives absent from current status</h6>
+            <div>{{ catalog_warnings.orphan_modules|join(', ') }}</div>
+          </div>
+        {% endif %}
+      </div>
+    </details>
+  {% endif %}
+
+  <div class="artiac-catalog-summary">
+    <div class="artiac-catalog-stat">
+      <strong>{{ catalog_summary.modules }}</strong>
+      <span>published modules</span>
+    </div>
+    <div class="artiac-catalog-stat">
+      <strong>{{ catalog_summary.archives }}</strong>
+      <span>archive versions</span>
+    </div>
+    <div class="artiac-catalog-stat">
+      <strong>{{ catalog_summary.current }}</strong>
+      <span>matching current status</span>
+    </div>
+    <div class="artiac-catalog-stat{% if catalog_summary.current_failures %} is-error{% endif %}">
+      <strong>{{ catalog_summary.current_failures }}</strong>
+      <span>current failures</span>
+    </div>
+    <div class="artiac-catalog-stat{% if catalog_summary.missing_current %} is-warning{% endif %}">
+      <strong>{{ catalog_summary.missing_current }}</strong>
+      <span>current versions missing archives</span>
+    </div>
+  </div>
+  {% if status_error %}
+    <div class="alert alert-warning d-flex align-items-center gap-2" title="{{ status_error }}">
+      <i class="fa-solid fa-circle-exclamation"></i>
+      <span>Artiac status unavailable. Check port-forward or service connectivity.</span>
+    </div>
+  {% endif %}
+
+  {% if error %}
+    <div class="alert alert-warning">{{ error }}</div>
+  {% endif %}
+
+  <div class="card tool-panel tool-panel--flush">
+    <div class="card-header">
+      <div class="tool-panel__heading">
+        <i class="fa-solid fa-boxes-stacked"></i>
+        <div>
+          <div class="tool-panel__title">Published Archives</div>
+          <div class="tool-panel__meta">{% if form.module.data %}Focused on {{ form.module.data }}{% else %}Default view shows the latest archive per module{% endif %}</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-0">
+          <thead>
+            <tr>
+              <th>Module Name</th>
+              <th>Date Created</th>
+              <th>Size</th>
+              <th class="text-nowrap">Archive state</th>
+              <th class="text-nowrap text-center">Actions</th>
+              {% if form.module.data %}
+              <th class="text-nowrap text-center">Compare</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% if module_groups %}
+              {% for section in module_sections %}
+                <tr class="iac-section-header">
+                  <td colspan="{{ 5 + (1 if form.module.data else 0) }}" class="fw-semibold text-uppercase small">
+                    {{ section.title }}
+                  </td>
+                </tr>
+                {% for mod in section.modules %}
+                  {% set items = module_groups[mod] %}
+                  {% set latest = items[0] %}
+                  <tr class="iac-row-latest" data-module="{{ mod }}">
+                    <td>
+                      {% set parts = latest.module.split('_') %}
+                      <div class="iac-module">
+                        <span class="iac-module-prefix">{{ parts[0] }}</span>
+                        <span class="iac-module-name">{{ parts[1:] | join('_') if parts | length > 1 else latest.module }}</span>
+                      </div>
+                    </td>
+                    <td class="iac-published-time" data-time="{{ latest.modified.isoformat() if latest.modified else '' }}">{{ latest.modified }}</td>
+                    <td class="iac-byte-size" data-bytes="{{ latest.size or 0 }}">{{ latest.size or '-' }}</td>
+                    <td class="text-nowrap">
+                      {{ archive_status(latest) }}
+                    </td>
+                    <td class="text-center text-nowrap">
+                      <a href="{{ url_for('iac_artifacts_explorer.view_archive', key=latest.key) }}"
+                         class="btn btn-sm btn-secondary">View</a>
+                      <a href="{{ url_for('iac_artifacts_explorer.download_archive', key=latest.key) }}"
+                         class="btn btn-sm btn-outline-primary">Download</a>
+                      <button class="btn btn-sm btn-outline-secondary ms-1 iac-toggle"
+                              type="button"
+                              data-module="{{ mod }}">
+                        Versions
+                      </button>
+                    </td>
+                    {% if form.module.data %}
+                    <td class="text-center text-nowrap">
+                    <a href="{{ url_for('iac_artifacts_explorer.list_view',
+                                        module=form.module.data,
+                                        version=form.version.data,
+                                        a=latest.key,
+                                        b=selected_b,
+                                        **preserved_params) }}"
+                       class="btn btn-sm {% if selected_a == latest.key %}btn-primary{% else %}btn-outline-secondary{% endif %} me-1">
+                      Set A
+                    </a>
+                    <a href="{{ url_for('iac_artifacts_explorer.list_view',
+                                        module=form.module.data,
+                                        version=form.version.data,
+                                        a=selected_a,
+                                        b=latest.key,
+                                        **preserved_params) }}"
+                       class="btn btn-sm {% if selected_b == latest.key %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                      Set B
+                    </a>
+                  </td>
+                    {% endif %}
+                  </tr>
+                  {% for item in items[1:] %}
+                  <tr class="iac-row-old d-none" data-module="{{ mod }}">
+                    <td class="iac-subrow">
+                      <span class="iac-subrow-dot">↳</span>
+                      <span class="text-muted">{{ item.module }}</span>
+                    </td>
+                    <td class="iac-published-time" data-time="{{ item.modified.isoformat() if item.modified else '' }}">{{ item.modified }}</td>
+                    <td class="iac-byte-size" data-bytes="{{ item.size or 0 }}">{{ item.size or '-' }}</td>
+                    <td class="text-nowrap">
+                      {{ archive_status(item) }}
+                    </td>
+                    <td class="text-center text-nowrap">
+                      <a href="{{ url_for('iac_artifacts_explorer.view_archive', key=item.key) }}"
+                         class="btn btn-sm btn-secondary">View</a>
+                      <a href="{{ url_for('iac_artifacts_explorer.download_archive', key=item.key) }}"
+                         class="btn btn-sm btn-outline-primary">Download</a>
+                    </td>
+                    {% if form.module.data %}
+                    <td class="text-center text-nowrap">
+                    <a href="{{ url_for('iac_artifacts_explorer.list_view',
+                                        module=form.module.data,
+                                        version=form.version.data,
+                                        a=item.key,
+                                        b=selected_b,
+                                        **preserved_params) }}"
+                       class="btn btn-sm {% if selected_a == item.key %}btn-primary{% else %}btn-outline-secondary{% endif %} me-1">
+                      Set A
+                    </a>
+                    <a href="{{ url_for('iac_artifacts_explorer.list_view',
+                                        module=form.module.data,
+                                        version=form.version.data,
+                                        a=selected_a,
+                                        b=item.key,
+                                        **preserved_params) }}"
+                       class="btn btn-sm {% if selected_b == item.key %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                      Set B
+                    </a>
+                  </td>
+                    {% endif %}
+                  </tr>
+                  {% endfor %}
+                {% endfor %}
+              {% endfor %}
+            {% else %}
+              {% for a in archives %}
+              <tr>
+                <td>
+                  {% set parts = a.module.split('_') %}
+                  <div class="iac-module">
+                    <span class="iac-module-prefix">{{ parts[0] }}</span>
+                    <span class="iac-module-name">{{ parts[1:] | join('_') if parts | length > 1 else a.module }}</span>
+                  </div>
+                </td>
+                <td class="iac-published-time" data-time="{{ a.modified.isoformat() if a.modified else '' }}">{{ a.modified }}</td>
+                <td class="iac-byte-size" data-bytes="{{ a.size or 0 }}">{{ a.size or '-' }}</td>
+                <td class="text-nowrap">
+                  {{ archive_status(a) }}
+                </td>
+                <td class="text-center text-nowrap">
+                  <a href="{{ url_for('iac_artifacts_explorer.view_archive', key=a.key) }}"
+                     class="btn btn-sm btn-secondary">View</a>
+                  <a href="{{ url_for('iac_artifacts_explorer.download_archive', key=a.key) }}"
+                     class="btn btn-sm btn-outline-primary">Download</a>
+                </td>
+                {% if form.module.data %}
+                <td class="text-center text-nowrap">
+                  <a href="{{ url_for('iac_artifacts_explorer.list_view',
+                                      module=form.module.data,
+                                      version=form.version.data,
+                                      a=a.key,
+                                      b=selected_b,
+                                      **preserved_params) }}"
+                     class="btn btn-sm {% if selected_a == a.key %}btn-primary{% else %}btn-outline-secondary{% endif %} me-1">
+                    Set A
+                  </a>
+                  <a href="{{ url_for('iac_artifacts_explorer.list_view',
+                                      module=form.module.data,
+                                      version=form.version.data,
+                                      a=selected_a,
+                                      b=a.key,
+                                      **preserved_params) }}"
+                     class="btn btn-sm {% if selected_b == a.key %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    Set B
+                  </a>
+                </td>
+                {% endif %}
+              </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% if total_pages > 1 %}
+    <div class="d-flex justify-content-center gap-2 mt-3">
+      {% for p in range(1, total_pages + 1) %}
+        <a class="btn btn-sm {% if p == page %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           href="{{ url_for('iac_artifacts_explorer.list_view',
+                            module=form.module.data,
+                            version=form.version.data,
+                            page=p,
+                            **preserved_params) }}">
+          {{ p }}
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+</div>
+
+{% if form.module.data and selected_a and selected_b %}
+<div class="tool-compare-bar">
+  <div class="tool-compare-bar__inner">
+    <div class="tool-compare-bar__summary">
+      Comparing: <strong>{{ selected_a }}</strong> vs <strong>{{ selected_b }}</strong>
+    </div>
+    <div class="tool-compare-bar__actions">
+      <a href="{{ url_for('iac_artifacts_explorer.list_view',
+                         module=form.module.data,
+                         version=form.version.data,
+                         **preserved_params) }}"
+         class="btn btn-sm btn-outline-secondary me-3">Clear</a>
+      <a class="btn btn-primary"
+         href="{{ url_for('iac_artifacts_explorer.compare_archives',
+                          a=selected_a, b=selected_b,
+                          module=form.module.data,
+                          version=form.version.data) }}">
+        Compare Files
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function() {
+  document.querySelectorAll(".iac-cache-time[data-epoch]").forEach((element) => {
+    const epoch = Number(element.dataset.epoch);
+    if (Number.isFinite(epoch) && epoch > 0) {
+      element.textContent = new Date(epoch * 1000).toLocaleString();
+    }
+  });
+  document.querySelectorAll(".iac-published-time[data-time]").forEach((element) => {
+    const value = new Date(element.dataset.time);
+    if (!Number.isNaN(value.valueOf())) {
+      element.textContent = value.toLocaleString();
+      element.title = element.dataset.time;
+    }
+  });
+  document.querySelectorAll(".iac-byte-size[data-bytes]").forEach((element) => {
+    const bytes = Number(element.dataset.bytes);
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return;
+    }
+    const units = ["B", "KB", "MB", "GB"];
+    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    element.textContent = `${(bytes / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
+    element.title = `${bytes} bytes`;
+  });
+  const filterForm = document.getElementById("iac-filter-form");
+  const catSwitches = filterForm ? filterForm.querySelectorAll("input.form-check-input[type='checkbox']") : [];
+  catSwitches.forEach((sw) => {
+    sw.addEventListener("change", () => {
+      filterForm.submit();
+    });
+  });
+  const toggles = document.querySelectorAll(".iac-toggle");
+  toggles.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mod = btn.dataset.module;
+      const rows = document.querySelectorAll(`.iac-row-old[data-module='${mod}']`);
+      rows.forEach((row) => row.classList.toggle("d-none"));
+    });
+  });
+})();
+</script>
+
+{% endblock %}

@@ -1,0 +1,87 @@
+<!-- Correct Ingress fields partial -->
+
+<div class="row mb-3">
+  <div class="col-md-4">
+    <label class="form-label">{{ form.platform.label }}</label>
+    {{ form.platform(class="form-select", id="ncr-platform") }}
+    <div class="text-muted small mt-1">Controls the env token and default endpoint pack.</div>
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">{{ form.environment_prefix.label }}</label>
+    {{ form.environment_prefix(class="form-control", id="ncr-environment-prefix") }}
+    {% if form.environment_prefix.errors %}
+      <div class="text-danger small">{{ form.environment_prefix.errors[0] }}</div>
+    {% else %}
+      <div class="text-muted small mt-1">Example: `ak` or `eu-ngl`</div>
+    {% endif %}
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">{{ form.environment_suffix.label }}</label>
+    {{ form.environment_suffix(class="form-control", id="ncr-environment-suffix") }}
+    {% if form.environment_suffix.errors %}
+      <div class="text-danger small">{{ form.environment_suffix.errors[0] }}</div>
+    {% else %}
+      <div class="text-muted small mt-1">Example: `staging` or `prod`</div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row mb-3">
+  <div class="col-md-6">
+    <label class="form-label">{{ form.environment.label }}</label>
+    {{ form.environment(class="form-control", id="ncr-environment", readonly=true) }}
+    {% if form.environment.errors %}
+      <div class="text-danger small">{{ form.environment.errors[0] }}</div>
+    {% else %}
+      <div class="text-muted small mt-1">Built automatically from prefix + platform + suffix.</div>
+    {% endif %}
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">{{ form.domain.label }}</label>
+    {{ form.domain(class="form-control", id="ncr-domain") }}
+    {% if form.domain.errors %}
+      <div class="text-danger small">{{ form.domain.errors[0] }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<hr>
+
+<div class="row mb-3">
+  <div class="col-md-4">
+    <label class="form-label">{{ form.outgoing_paysafe_allowed.label }}</label>
+    {{ form.outgoing_paysafe_allowed(class="form-select") }}
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">{{ form.port_8080_cross_vpc.label }}</label>
+    {{ form.port_8080_cross_vpc(class="form-select") }}
+  </div>
+
+  <div class="col-md-4">
+    <label class="form-label">{{ form.eu_ngl_dev_ad_access.label }}</label>
+    {{ form.eu_ngl_dev_ad_access(class="form-select") }}
+  </div>
+</div>
+
+<div class="row mb-3">
+  <div class="col-md-6">
+    <label class="form-label">{{ form.ad_protocol_url.label }}</label>
+    {{ form.ad_protocol_url(class="form-control") }}
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">{{ form.shared_vault_url.label }}</label>
+    {{ form.shared_vault_url(class="form-control") }}
+  </div>
+</div>
+
+<div class="mb-3">
+  <label class="form-label">{{ form.allow_ips.label }}</label>
+  {{ form.allow_ips(class="form-control", rows="3") }}
+</div>
+
+<!-- Endpoints rendered in main form, not here -->

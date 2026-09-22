@@ -1,0 +1,1169 @@
+{% extends "base.html" %}
+{% block content %}
+{% macro info_bubble(key, help_map=field_help) %}<button type="button" class="readiness-info" title="{{ help_map.get(key, 'Required for the environment readiness handoff.') }}" aria-label="Why is this required?"><i class="fa-solid fa-circle-info"></i></button>{% endmacro %}
+{% macro server_step_warning(step) %}{% if step_errors.get(step) %}<details class="readiness-step-warning" data-warning-disclosure="step-{{ step }}"><summary><strong>{{ step_errors[step]|length }} item{% if step_errors[step]|length != 1 %}s{% endif %} needs attention in this step</strong><span>Show details</span></summary><ul class="mb-0 mt-2">{% for message in step_errors[step] %}<li>{{ message }}</li>{% endfor %}</ul></details>{% endif %}{% endmacro %}
+{% macro prerequisite_shortcuts(scope) %}
+{% set group = scope|replace('-', '_') %}
+{% set ticket = data.get('ncr_ticket') if group == 'networking' else data.get('aws_service_request') %}
+<div class="readiness-section-defaults" data-section-defaults>
+  <label>Responsible team / person<input class="form-control" name="{{ group }}_default_owner" value="{{ data.get(group ~ '_default_owner', '') }}" placeholder="Owner for this section" data-section-owner></label>
+  <label>Ticket / evidence<input class="form-control" name="{{ group }}_default_evidence" value="{{ data.get(group ~ '_default_evidence') or ticket or '' }}" placeholder="Ticket or evidence link" data-section-evidence></label>
+  <small>Applies to every check. Use Details only for exceptions or blockers.</small>
+</div>
+{% endmacro %}
+<div class="page-shell readiness-page">
+  {% set hero_title = data.get('environment_name') or data.get('title') or "New Foundation Handoff" %}
+  {% set hero_subtitle = "Define the need, raise ServiceNow requests, record allocated values, verify readiness, and publish for DevOps." %}
+  {% set hero_eyebrow = "Foundation Readiness Wizard" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('environment_readiness.index') }}"><i class="fa-solid fa-arrow-left"></i> Back to Foundation Readiness</a>
+
+  {% if notice %}
+  <div class="readiness-notice{% if notice_is_error %} readiness-notice--error{% endif %}" role="status">{{ notice }}</div>
+  {% endif %}
+  {% if errors %}
+  <div class="alert alert-danger" role="alert">
+    <div class="fw-semibold">The foundation provisioning handoff is still locked.</div>
+    <div class="small mb-2">Resolve all {{ errors|length }} missing or unverified items.</div>
+    <details>
+      <summary>Show everything that still needs attention</summary>
+      <ul class="small mt-2 mb-0">
+      {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+      </ul>
+    </details>
+  </div>
+  {% endif %}
+
+  <form method="post" id="readinessForm">
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <input type="hidden" name="wizard_step" id="wizardStep" value="{{ current_step }}">
+    <input type="hidden" name="draft_id" id="activeDraftId" value="{{ active_draft_id }}">
+    <input type="hidden" name="draft_version" id="draftVersion" value="{{ data.get('_version', 0) }}">
+    <input type="hidden" name="share_token" value="{{ share_token }}">
+
+    {% include "environment_readiness/_readiness_summary.html" %}
+
+    <nav class="readiness-steps" aria-label="Environment readiness steps">
+      {% for label in ['Environment', 'Requirements', 'ServiceNow', 'Allocated details', 'Networking', 'AWS & Platform', 'Sign-off'] %}
+      <button type="button" class="readiness-step{% if loop.index == current_step %} is-active{% endif %}" data-go-step="{{ loop.index }}" aria-current="{% if loop.index == current_step %}step{% else %}false{% endif %}">
+        <span>{{ loop.index }}</span><strong>{{ label }}</strong>
+      </button>
+      {% endfor %}
+    </nav>
+
+    <section class="readiness-section" data-step-panel="1">
+      <div class="readiness-section__heading">
+        <span class="readiness-section__number">1</span>
+        <div><h2>Environment Request</h2><p>Identify exactly what is being requested and who owns the handoff.</p></div>
+      </div>
+      {{ server_step_warning(1) }}
+      <details class="readiness-guidance mb-3"><summary>Naming conventions</summary><div class="readiness-conventions">
+        <strong><i class="fa-solid fa-ruler-combined me-1"></i> Naming conventions are enforced</strong>
+        <span>Customer: <code>LNL</code></span>
+        <span>Environment: <code>lnl-ctlst-staging-e</code></span>
+        <span>Tickets: <code>PROJECT-123</code></span>
+        <span>Names use lowercase hyphens; ticket/customer codes use uppercase.</span>
+      </div></details>
+      <div class="readiness-request-fields">
+        {% for key, label, placeholder in [
+          ('title', 'Foundation readiness title', 'LNL Catalyst Staging E Foundation'),
+          ('customer', 'Customer', 'LNL'),
+          ('setup_type', 'Environment setup', 'Select setup type'),
+          ('product', 'Product / platform', 'Catalyst'),
+          ('environment_type', 'Environment type', 'staging'),
+          ('environment_suffix', 'Prefix', 'Optional, for example e'),
+          ('environment_name', 'Environment name', 'Generated automatically'),
+          ('aws_region', 'AWS region', 'eu-west-1'),
+          ('target_date', 'Target date', 'YYYY-MM-DD'),
+          ('requester', 'Requester / owner', 'Person preparing this handoff'),
+          ('architect', 'Architect', 'Responsible architect'),
+          ('devops_receiver', 'Receiving DevOps owner', 'Exact signed-in username or email receiving the handoff'),
+          ('jira_epic', 'Jira environment epic', 'EPIC-123 or URL'),
+          ('spec_link', 'Spec / Workbench link', 'Optional Confluence or Spec Workbench URL')
+        ] %}
+        <div class="readiness-request-field">
+          <label class="form-label" for="field_{{ key }}">{{ label }} {{ info_bubble(key) }} {% if key in ('spec_link', 'environment_suffix') %}<span class="text-muted small">Optional</span>{% endif %}</label>
+          {% if key == 'setup_type' %}
+          <select id="field_{{ key }}" class="form-select" name="{{ key }}" required>
+            <option value="">Select environment setup</option>
+            {% for value, setup in setup_types.items() %}<option value="{{ value }}"{% if data.get(key) == value %} selected{% endif %}>{{ setup.label }}</option>{% endfor %}
+          </select>
+          {% elif key == 'environment_type' %}
+          <select id="field_{{ key }}" class="form-select" name="{{ key }}" required>
+            <option value="">Select environment type</option>
+            {% for option in environment_types %}<option value="{{ option }}"{% if data.get(key) == option %} selected{% endif %}>{{ option }}</option>{% endfor %}
+          </select>
+          {% elif key == 'aws_region' %}
+          <input id="field_{{ key }}" class="form-control" name="{{ key }}" value="{{ data.get(key, '') }}" placeholder="{{ placeholder }}" list="awsRegionOptions" pattern="[a-z]{2}(-gov)?-[a-z]+-[0-9]" title="AWS region such as eu-west-1" required>
+          {% else %}
+          <input id="field_{{ key }}" class="form-control" name="{{ key }}" value="{{ data.get(key, '') }}" placeholder="{{ placeholder }}"
+            {% if key == 'target_date' %}type="date"
+            {% elif key == 'customer' %}pattern="[A-Z0-9]{2,12}" maxlength="12" data-uppercase title="2–12 uppercase letters or numbers"
+            {% elif key == 'product' %}list="productOptions"
+            {% elif key == 'environment_suffix' %}pattern="[a-z0-9]{1,8}" maxlength="8" data-lowercase title="1–8 lowercase letters or numbers"
+            {% elif key == 'environment_name' %}pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="40" data-lowercase readonly title="Generated from the customer, environment setup, environment type, and optional prefix"
+            {% elif key == 'aws_account_id' %}inputmode="numeric" pattern="[0-9]{12}" maxlength="12" list="awsAccountOptions" title="Exactly 12 digits"
+            {% elif key == 'jira_epic' %}data-uppercase-ticket pattern="(https?://.+|[A-Z][A-Z0-9]+-[0-9]+)" title="Uppercase Jira key such as PROJECT-123, or a URL"
+            {% elif key == 'spec_link' %}type="url"
+            {% elif key == 'requester' %}list="praxisUserOptions"{% if config.get('AUTH_ENABLED', False) %} readonly{% endif %}
+            {% elif key in ('architect', 'devops_receiver') %}list="praxisUserOptions"
+            {% endif %}{% if key not in ('spec_link', 'environment_suffix') %} required{% endif %}>
+          {% endif %}
+          {% if key == 'environment_name' %}
+          <div class="form-text" id="environmentNameHelp">Generated as <code>&lt;customer&gt;-&lt;setup&gt;-&lt;environment-type&gt;[-prefix]</code>.</div>
+          {% elif key == 'title' %}
+          <div class="form-text" id="titleEnvironmentHelp" role="status" aria-live="polite">The title must name the selected environment type.</div>
+          {% elif key == 'target_date' %}
+          <div class="readiness-target-warning" id="targetDateWarning" role="status" aria-live="polite" hidden>
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span></span>
+          </div>
+          {% elif key == 'requester' and data.get(key) %}
+          <div class="form-text"><i class="fa-solid fa-user-check me-1"></i>Setup ownership is tied to the signed-in account{% if session.get('auth_method') == 'aad' %} through Azure AD{% endif %}. After publication, use the audited ownership-transfer action to delegate it.</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <datalist id="awsRegionOptions">{% for value, label in aws_region_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</datalist>
+      <datalist id="productOptions">{% for product in product_prefixes %}<option value="{{ product|title }}">{% endfor %}</datalist>
+      <datalist id="praxisUserOptions">{% for user in known_praxis_users %}<option value="{{ user }}">{% endfor %}</datalist>
+    </section>
+
+    <section class="readiness-section" data-step-panel="2">
+      <div class="readiness-section__heading">
+        <span class="readiness-section__number">2</span>
+        <div><h2>Technical Requirements</h2><p>Describe what must be requested. Allocated account and network values are captured only after ServiceNow fulfillment.</p></div>
+      </div>
+      {{ server_step_warning(2) }}
+      <div class="row g-3">
+        {% for key, label, placeholder in [
+          ('production_classification', 'PROD / NONPROD classification', 'Choose classification'),
+          ('requested_network_size', 'Requested network size', 'For example /21 or standard Catalyst VPC'),
+          ('dns_domain', 'Base DNS domain', 'Choose the shared base domain'),
+          ('rancher_target', 'Rancher target', 'Preprod / Nonprod / Prod'),
+          ('release_archive', 'Release archive / version', 'catalyst-x.y.z.tar.gz')
+        ] %}
+        <div class="col-md-6 col-xl-4">
+          <label class="form-label" for="field_{{ key }}">{{ label }} {{ info_bubble(key) }}</label>
+          {% if key == 'production_classification' %}
+          <select id="field_{{ key }}" class="form-select" name="{{ key }}" required><option value="">Choose PROD or NONPROD</option><option value="NONPROD"{% if data.get(key) == 'NONPROD' %} selected{% endif %}>NONPROD</option><option value="PROD"{% if data.get(key) == 'PROD' %} selected{% endif %}>PROD</option></select>
+          {% elif key == 'dns_domain' %}
+          <input id="field_{{ key }}" class="form-control" name="{{ key }}" value="{{ data.get(key, '') }}" placeholder="example.com" list="baseDnsDomainOptions" data-lowercase pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?\.[a-z0-9]([a-z0-9-]*[a-z0-9])?" title="Base domain such as example.com or natlot.be" required>
+          <datalist id="baseDnsDomainOptions">{% for domain in base_dns_domains %}<option value="{{ domain }}">{% endfor %}</datalist>
+          <div class="form-text">Enter only the base suffix. The wizard creates the complete environment DNS names.</div>
+          {% elif key == 'release_archive' %}
+          <select id="field_{{ key }}" class="form-select" name="{{ key }}" data-release-select data-selected-release="{{ data.get(key, '') }}" required>
+            <option value="">Select Customer and Environment Setup first</option>
+            {% if data.get(key) %}<option value="{{ data.get(key) }}" selected>{{ data.get(key) }}</option>{% endif %}
+          </select>
+          <div class="form-text" data-release-status>The available archives come from the Releases module and are filtered for this setup.</div>
+          {% elif key == 'rancher_target' %}
+          <select id="field_{{ key }}" class="form-select" name="{{ key }}" required>
+            <option value="">Select Rancher target cluster</option>
+            {% for value, label in rancher_clusters %}<option data-url="{{ rancher_urls.get(value, '') }}" value="{{ value }}"{% if data.get(key) == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            {% if data.get(key) and data.get(key) not in rancher_clusters|map(attribute=0)|list %}<option value="{{ data.get(key) }}" selected>{{ data.get(key) }} (saved legacy value)</option>{% endif %}
+          </select>
+          <div class="form-text" id="rancher-target-url"></div>
+          <script>(() => {const select = document.getElementById('field_rancher_target'); const show = () => { document.getElementById('rancher-target-url').textContent = select.selectedOptions[0]?.dataset.url || 'Select a target with a configured Rancher URL.'; }; select.addEventListener('change', show); show();})();</script>
+          <div class="form-text">Shared with the Rancher card in the Praxis setup wizards. Select it once here so DevOps receives the exact target cluster.</div>
+          {% else %}
+          <input id="field_{{ key }}" class="form-control" name="{{ key }}" value="{{ data.get(key, '') }}" placeholder="{{ placeholder }}"
+            required>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <div class="readiness-capacity" data-technical-capacity>
+        {% if not data.get('component_profile') %}
+        <label class="form-check mb-3">
+          <input type="checkbox" class="form-check-input" name="upgrade_component_profile" value="yes">
+          Include the current Catalyst defaults (Camunda OpenSearch) in this revision. Save to review the new prerequisites.
+        </label>
+        {% endif %}
+        <div class="readiness-capacity__heading">
+          <span class="readiness-service-icon readiness-service-icon--region" aria-hidden="true"><i class="fa-solid fa-globe"></i></span>
+          <div class="readiness-capacity__title"><h3>Regional platform configuration</h3><p>Versions and instance sizes available in <strong data-capacity-region>{{ data.get('aws_region') or 'your selected region' }}</strong>.</p></div>
+          <span class="readiness-catalog-badge" data-capacity-status role="status" aria-live="polite">Select an AWS region</span>
+          <p class="readiness-capacity__help">Options come from the shared AWS catalogs for the region selected in Step 1. Remaining choices use the same guarded fallbacks as the wizards.</p>
+        </div>
+        <div class="readiness-cluster-grid">
+          {% for title, icon, tone, subtitle, fields in [
+            ('EKS cluster', 'fa-dharmachakra', 'compute', 'Compute · Kubernetes', [('eks_version', 'Kubernetes version'), ('eks_instance_types', 'Worker instance size')]),
+            ('Aurora database', 'fa-database', 'database', 'Managed database', [('aurora_version', 'Engine version'), ('aurora_instance_type', 'Database instance size')]),
+            ('Redis cluster', 'fa-layer-group', 'cache', 'Cache', [('redis_instance_type', 'Cache instance type')])
+          ] %}
+          {% if loop.last %}<div class="readiness-cluster-stack">{% endif %}
+          <section class="readiness-cluster-card">
+            <header class="readiness-service-heading"><span class="readiness-service-icon readiness-service-icon--{{ tone }}" aria-hidden="true"><i class="fa-solid {{ icon }}"></i></span><div><h3>{{ title }}</h3><p>{{ subtitle }}</p></div></header>
+            {% for key, label in fields %}
+            <div><label class="form-label" for="field_{{ key }}">{{ label }} {{ info_bubble(key) }}</label><select id="field_{{ key }}" class="form-select" name="{{ key }}" data-capacity-field="{{ key }}" data-selected="{{ data.get(key, '') }}" required><option value="">Load regional choices</option></select></div>
+            {% endfor %}
+          </section>
+          {% endfor %}
+          <section class="readiness-cluster-card readiness-vault-capacity" data-vault-capacity{% if not data.get('setup_type', '').startswith('catalyst-') %} hidden{% endif %}>
+            <header class="readiness-service-heading"><span class="readiness-service-icon readiness-service-icon--vault" aria-hidden="true"><i class="fa-solid fa-vault"></i></span><div><h3>Vault database</h3><p>PostgreSQL · Secrets and configuration</p></div><span class="readiness-service-badge">Catalyst only</span></header>
+            {% for key, label in [('vault_database_version', 'PostgreSQL engine version'), ('vault_database_instance_type', 'Database instance type')] %}
+            <div><label class="form-label" for="field_{{ key }}">{{ label }} {{ info_bubble(key) }}</label><select id="field_{{ key }}" class="form-select" name="{{ key }}" data-capacity-field="{{ key }}" data-selected="{{ data.get(key, '') }}" required><option value="">Load regional choices</option></select></div>
+            {% endfor %}
+          </section>
+          </div>
+          {% if data.get('component_profile', {}).get('version') == 1 %}
+          <section class="readiness-cluster-card" data-catalyst-component{% if not data.get('setup_type', '').startswith('catalyst-') %} hidden{% endif %}>
+            <header class="readiness-service-heading"><span class="readiness-service-icon readiness-service-icon--search" aria-hidden="true"><i class="fa-solid fa-magnifying-glass"></i></span><div><h3>Camunda OpenSearch</h3><p>Search · OpenSearch</p></div><span class="readiness-service-badge">Catalyst only</span></header>
+            <div><label class="form-label" for="field_opensearch_engine_version">Engine version</label><select id="field_opensearch_engine_version" class="form-select" name="opensearch_engine_version" data-capacity-field="opensearch_engine_version" data-selected="{{ data.get('opensearch_engine_version') or '3.3' }}" required><option value="{{ data.get('opensearch_engine_version') or '3.3' }}">{{ data.get('opensearch_engine_version') or '3.3' }}</option></select></div>
+            {% for title, type_key, count_key, default in [('Data nodes', 'opensearch_instance_type', 'opensearch_instance_count', 'r7g.large.search'), ('Master nodes', 'opensearch_master_type', 'opensearch_master_count', 'm7g.medium.search')] %}
+            <fieldset class="readiness-node-group">
+              <legend>{{ title }}</legend>
+              <div class="readiness-node-fields">
+                <div><label class="form-label" for="field_{{ type_key }}">Instance type</label><select id="field_{{ type_key }}" class="form-select" name="{{ type_key }}" data-capacity-field="{{ type_key }}" data-selected="{{ data.get(type_key) or default }}" required><option value="{{ data.get(type_key) or default }}">{{ data.get(type_key) or default }}</option></select></div>
+                <div><label class="form-label" for="field_{{ count_key }}">Count</label><input id="field_{{ count_key }}" class="form-control" name="{{ count_key }}" type="number" min="1" step="1" value="{{ data.get(count_key) or 3 }}" required></div>
+              </div>
+            </fieldset>
+            {% endfor %}
+          </section>
+          {% endif %}
+        </div>
+      </div>
+      <div class="readiness-name-check" data-name-limit-check>
+        <i class="fa-solid fa-spinner fa-spin"></i>
+        <div><strong>EKS node-group prefix check {{ info_bubble('name_limit_confirmation') }}</strong><span data-name-limit-status>Checking the documented Terraform 38-character prefix limit…</span></div>
+      </div>
+      <div class="readiness-applicability mt-3">
+        <h3>Conditional requirements</h3><p>Answer these now so the correct work is included in the ServiceNow requests and later verification.</p>
+        <div class="row g-3">
+        {% for item in conditional_requirements %}<div class="col-md-6"><label class="form-label" for="flag_{{ item.flag }}">{{ item.question }} {{ info_bubble(item.key, requirement_help) }}</label><select id="flag_{{ item.flag }}" class="form-select" name="{{ item.flag }}" data-conditional-flag="{{ item.key }}" required><option value="">Choose Yes or No</option><option value="yes"{% if data.get(item.flag) == 'yes' %} selected{% endif %}>Yes — required</option><option value="no"{% if data.get(item.flag) == 'no' %} selected{% endif %}>No — not applicable</option></select></div>{% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="readiness-section" data-step-panel="3">
+      <div class="readiness-section__heading">
+        <span class="readiness-section__number">3</span>
+        <div><h2>Create ServiceNow Requests</h2><p>Start AWS account and Networking fulfillment from the information already entered. Creating a request does not mark the prerequisite complete.</p></div>
+      </div>
+      {{ server_step_warning(3) }}
+      <div class="readiness-servicenow-state"><i class="fa-solid fa-plug-circle-{% if servicenow.oauth %}check{% else %}exclamation{% endif %}"></i><div><strong>{% if servicenow.oauth %}ServiceNow OAuth configured{% else %}ServiceNow automatic creation is not configured yet{% endif %}</strong><span>{% if servicenow.oauth %}Requests are submitted through the Service Catalog using Praxis’s OAuth integration identity.{% else %}You can attach existing request numbers now. Automatic creation unlocks after the instance URL, OAuth client credentials, catalog item IDs, and variable mappings are configured.{% endif %}</span></div></div>
+      <div class="readiness-request-cards">
+        {% for request_type, field, title, description, configured in [
+          ('aws', 'aws_service_request', 'AWS account service request', 'Requests creation and access setup for the target AWS account.', servicenow.aws),
+          ('ncr', 'ncr_ticket', 'Networking / NCR request', 'Requests CIDR allocation, firewall zone, Transit Gateway, routing, DNS, and required connectivity.', servicenow.ncr)
+        ] %}
+        <article class="readiness-request-card{% if data.get(field) %} is-created{% endif %}"><div class="readiness-request-card__heading"><i class="fa-solid {% if request_type == 'aws' %}fa-cloud{% else %}fa-network-wired{% endif %}"></i><div><h3>{{ title }}</h3><p>{{ description }}</p></div></div>
+          <label class="form-label" for="field_{{ field }}">ServiceNow REQ / RITM reference {{ info_bubble(field) }}</label>
+          <div class="input-group"><input id="field_{{ field }}" class="form-control" name="{{ field }}" value="{{ data.get(field, '') }}" placeholder="REQ or RITM number" data-uppercase-ticket pattern="[A-Z][A-Z0-9]+-?[0-9]+" required>{% if data.get(field + '_url') %}<a class="btn btn-outline-primary" href="{{ data.get(field + '_url') }}" target="_blank" rel="noopener noreferrer">Open</a>{% endif %}</div>
+          <input type="hidden" name="{{ field }}_url" value="{{ data.get(field + '_url', '') }}"><input type="hidden" name="{{ field }}_status" value="{{ data.get(field + '_status', '') }}">
+          {% if data.get(field) %}<div class="readiness-request-card__status"><i class="fa-solid fa-circle-check"></i> {{ data.get(field) }} attached · fulfillment still requires verification</div>{% else %}<div class="readiness-request-card__actions"><button class="btn btn-primary" type="submit" name="_action" value="create_servicenow_{{ request_type }}" formnovalidate><i class="fa-solid fa-file-pen me-1"></i>Create in ServiceNow</button><small>{% if configured %}Review the generated request, then submit through OAuth.{% else %}Review and copy the request into the ServiceNow portal.{% endif %}</small></div>{% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="readiness-section" data-step-panel="4">
+      <div class="readiness-section__heading"><span class="readiness-section__number">4</span><div><h2>Allocated Environment Details</h2><p>Record the actual values returned by the completed AWS and Networking requests. These are outputs—not information required to raise the requests.</p></div></div>
+      {{ server_step_warning(4) }}
+      <div class="readiness-allocation-source"><i class="fa-solid fa-arrows-rotate"></i><span>Use the ServiceNow requests above as the source of truth. Automatic status/value synchronization can be enabled after the catalog response mappings are confirmed.</span></div>
+      <div class="readiness-allocation-group">
+        <div class="readiness-allocation-group__heading"><i class="fa-solid fa-cloud"></i><div><h3>AWS account and network assignment</h3><p>Values returned by the AWS account and Networking requests.</p></div></div>
+        <div class="row g-3">
+          {% for key, label, placeholder in [('aws_account_id', 'Allocated AWS account ID', '12-digit account ID'), ('firewall_zone', 'Assigned firewall zone', 'Customer PROD or NONPROD zone')] %}<div class="col-md-6"><label class="form-label" for="field_{{ key }}">{{ label }} {{ info_bubble(key) }}</label><input id="field_{{ key }}" class="form-control" name="{{ key }}" value="{{ data.get(key, '') }}" placeholder="{{ placeholder }}" required {% if key == 'aws_account_id' %}inputmode="numeric" pattern="[0-9]{12}" maxlength="12" list="awsAccountOptions"{% endif %}></div>{% endfor %}
+        </div>
+      </div>
+      <div class="readiness-allocation-group mt-3" data-single-vpc-cidr>
+        <div class="readiness-allocation-group__heading"><i class="fa-solid fa-network-wired"></i><div><h3>VPC CIDR allocation</h3><p>The approved, non-overlapping network returned by Networking.</p></div></div>
+        <label class="form-label" for="field_vpc_cidr">Allocated VPC CIDR {{ info_bubble('vpc_cidr') }}</label><input id="field_vpc_cidr" class="form-control" name="vpc_cidr" value="{{ data.get('vpc_cidr', '') }}" placeholder="10.226.128.0/21" pattern="(?:[0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}">
+      </div>
+      <div class="readiness-allocation-group mt-3" data-multi-vpc-cidr hidden>
+        <div class="readiness-allocation-group__heading"><i class="fa-solid fa-diagram-project"></i><div><h3>Multi-VPC CIDR allocations</h3><p>Record all four approved, non-overlapping Catalyst network ranges together.</p></div></div>
+        <div class="readiness-vpc-grid">{% for deployment in ('ilp', 'cgs', 'pmv', 'cr') %}<label><span>{{ deployment|upper }} VPC CIDR {{ info_bubble('vpc_cidr_' ~ deployment) }}</span><input id="field_vpc_cidr_{{ deployment }}" class="form-control" name="vpc_cidr_{{ deployment }}" value="{{ data.get('vpc_cidr_' ~ deployment, '') }}" placeholder="10.226.128.0/21" pattern="(?:[0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}"></label>{% endfor %}</div>
+        <div class="readiness-vpc-validation" data-vpc-validation hidden><i class="fa-solid fa-triangle-exclamation"></i><span></span></div>
+      </div>
+      <datalist id="awsAccountOptions">{% for value, label in aws_account_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</datalist>
+    </section>
+
+    <section class="readiness-section" data-step-panel="5">
+      <div class="readiness-section__heading">
+        <span class="readiness-section__number">5</span>
+        <div><h2>Networking Prerequisites</h2><p>Check each item after verification. <a href="{{ url_for('environment_readiness.origins') }}#origin-networking" target="_blank" rel="noopener">Why are these required?</a></p></div><button class="btn btn-sm btn-outline-primary readiness-share" type="button" data-share-verification="5"><i class="fa-solid fa-link me-1"></i>Copy verification link</button>
+      </div>
+      {{ server_step_warning(5) }}
+      <details class="readiness-guidance"><summary>How to confirm checks</summary><div class="readiness-gate-rule"><i class="fa-solid fa-shield-halved"></i><span><strong>Foundation gate rule:</strong> check an item only after verifying it. Use <em>Details / report blocker</em> for exceptions. Confirm completed checks to save; the section is attested when every applicable item is verified.</span></div></details>
+      {{ prerequisite_shortcuts('networking') }}
+      {% set requirements = data.get('requirements', {}) %}
+      {% for group in requirement_groups %}
+      {% if group.key == 'networking' %}
+      <div class="readiness-group">
+        <h3>{{ group.title }}</h3>
+        <p>{{ group.description }}</p>
+        {% for key, label in group['items'] %}
+          {% set values = requirements.get(key, {}) %}
+          {% include "environment_readiness/_requirement_row.html" %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endfor %}
+      <div class="readiness-group">
+        <h3>Conditional Networking Services</h3>
+        <p>These rows appear only when marked applicable above. <a href="{{ url_for('environment_readiness.origins') }}#origin-conditional" target="_blank" rel="noopener">See their documented origins.</a></p>
+        {% for item in conditional_requirements if item.group == 'networking' %}
+          {% set key = item.key %}{% set label = item.label %}{% set values = requirements.get(key, {}) %}
+          <div data-conditional-row="{{ key }}"{% if data.get(item.flag) != 'yes' %} hidden{% endif %}>
+            {% include "environment_readiness/_requirement_row.html" %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="readiness-section-confirm" data-attestation="networking">
+        <input type="checkbox" name="networking_attested" value="yes" hidden{% if data.get('networking_attested') == 'yes' %} checked{% endif %}>
+        <button type="button" class="btn btn-primary" data-confirm-section>Confirm completed checks</button>
+        <small data-confirm-feedback role="status">Checking an item confirms it has been verified. This action saves your confirmation and records your identity.</small>
+      </div>
+    </section>
+
+    <section class="readiness-section" data-step-panel="6">
+      <div class="readiness-section__heading">
+        <span class="readiness-section__number">6</span>
+        <div><h2>AWS Account and Platform Prerequisites</h2><p>Check each item after verification. <a href="{{ url_for('environment_readiness.origins') }}#origin-aws_platform" target="_blank" rel="noopener">Why are these required?</a></p></div><button class="btn btn-sm btn-outline-primary readiness-share" type="button" data-share-verification="6"><i class="fa-solid fa-link me-1"></i>Copy verification link</button>
+      </div>
+      {{ server_step_warning(6) }}
+      <details class="readiness-guidance"><summary>How to confirm checks</summary><div class="readiness-gate-rule"><i class="fa-solid fa-shield-halved"></i><span><strong>Foundation gate rule:</strong> check an item only after verifying it. Use <em>Details / report blocker</em> for exceptions. Confirm completed checks to save; the section is attested when every applicable item is verified.</span></div></details>
+      {{ prerequisite_shortcuts('aws-platform') }}
+      {% for group in requirement_groups %}
+      {% if group.key == 'aws_platform' %}
+      <div class="readiness-group">
+        <h3>{{ group.title }}</h3>
+        <p>{{ group.description }}</p>
+        {% for key, label in group['items'] %}
+          {% set values = requirements.get(key, {}) %}
+          {% include "environment_readiness/_requirement_row.html" %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endfor %}
+      <div class="readiness-group">
+        <h3>Conditional Services</h3>
+        <p>These rows appear only when marked applicable above. <a href="{{ url_for('environment_readiness.origins') }}#origin-conditional" target="_blank" rel="noopener">See their documented origins.</a></p>
+        {% for item in conditional_requirements if item.group != 'networking' %}
+          {% set key = item.key %}{% set label = item.label %}{% set values = requirements.get(key, {}) %}
+          <div data-conditional-row="{{ key }}"{% if data.get(item.flag) != 'yes' %} hidden{% endif %}>
+            {% include "environment_readiness/_requirement_row.html" %}
+          </div>
+        {% endfor %}
+      </div>
+      <div class="readiness-section-confirm" data-attestation="aws_platform">
+        <input type="checkbox" name="aws_platform_attested" value="yes" hidden{% if data.get('aws_platform_attested') == 'yes' %} checked{% endif %}>
+        <button type="button" class="btn btn-primary" data-confirm-section>Confirm completed checks</button>
+        <small data-confirm-feedback role="status">Checking an item confirms it has been verified. This action saves your confirmation and records your identity.</small>
+      </div>
+    </section>
+
+    <section class="readiness-section" data-step-panel="7">
+      <div class="readiness-section__heading">
+        <span class="readiness-section__number">7</span>
+        <div><h2>Risks and Sign-off</h2><p>Use “None” explicitly rather than leaving risks or assumptions blank.</p></div>
+      </div>
+      {{ server_step_warning(7) }}
+      <div class="row g-3">
+        {% for key, label, placeholder in [
+          ('risks', 'Known risks', 'List risks, or enter None'),
+          ('assumptions', 'Assumptions', 'List assumptions, or enter None'),
+          ('testing_owner', 'Testing / sign-off owner', 'Person accountable for verification'),
+          ('additional_notes', 'Additional notes', 'Optional context for the receiving team')
+        ] %}
+        <div class="{% if key == 'additional_notes' %}col-12{% else %}col-md-4{% endif %}">
+          <label class="form-label" for="field_{{ key }}">{{ label }} {{ info_bubble(key) }}{% if key == 'additional_notes' %} <span class="text-muted small">Optional</span>{% endif %}</label>
+          <textarea id="field_{{ key }}" class="form-control" name="{{ key }}" rows="3" placeholder="{{ placeholder }}"{% if key != 'additional_notes' %} required{% endif %}>{{ data.get(key, '') }}</textarea>
+          {% if key in ('risks', 'assumptions') %}<button class="btn btn-sm btn-link px-0" type="button" data-set-none="field_{{ key }}">No known {{ label|lower }}</button>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <div class="readiness-actions">
+      {% if share_token %}
+      <span class="flex-grow-1 readiness-save-state" id="readinessSaveState"><i class="fa-solid fa-user-shield"></i> Scoped verification link · only this verification section can be saved</span>
+      <button class="btn btn-primary" type="button" id="saveVerification"><i class="fa-solid fa-check me-1"></i>Save progress</button>
+      {% else %}
+      <button class="btn btn-outline-danger" type="submit" name="_action" value="reset" formnovalidate onclick="return confirm('{% if active_draft_id %}Delete this saved environment draft?{% else %}Clear this form?{% endif %}');">{% if active_draft_id %}Delete Draft{% else %}Clear Form{% endif %}</button>
+      <button class="btn btn-outline-secondary" type="button" id="previousStep"><i class="fa-solid fa-arrow-left me-1"></i> Back</button>
+      <span class="flex-grow-1 readiness-save-state" id="readinessSaveState">{% if data.get('_saved_at') %}<i class="fa-solid fa-cloud-arrow-up"></i> Saved {{ data.get('_saved_at') }}{% else %}Not saved yet{% endif %}</span>
+      <button class="btn btn-outline-primary" type="submit" name="_action" value="save" formnovalidate>Save Progress</button>
+      <button class="btn btn-primary" type="button" id="nextStep">Continue <i class="fa-solid fa-arrow-right ms-1"></i></button>
+      <button class="btn {% if complete %}btn-success{% else %}btn-primary{% endif %}" type="submit" name="_action" value="publish" id="generateHandoff" formnovalidate>
+        <i class="fa-solid {% if complete %}fa-share-nodes{% else %}fa-lock{% endif %} me-1"></i> Publish Setup for DevOps
+      </button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("readinessForm");
+  const stepInput = document.getElementById("wizardStep");
+  const panels = [...document.querySelectorAll("[data-step-panel]")];
+  const stepButtons = [...document.querySelectorAll("[data-go-step]")];
+  const previous = document.getElementById("previousStep");
+  const next = document.getElementById("nextStep");
+  const generate = document.getElementById("generateHandoff");
+  const activeDraftId = document.getElementById("activeDraftId");
+  const draftVersion = document.getElementById("draftVersion");
+  const saveState = document.getElementById("readinessSaveState");
+  const sharedStep = {{ shared_step or 0 }};
+  const warningStateKey = `foundation-warning-state:${document.querySelector('[name="draft_id"]')?.value || "new"}`;
+  let warningState = {};
+  try { warningState = JSON.parse(sessionStorage.getItem(warningStateKey) || "{}"); } catch (_error) { warningState = {}; }
+  const wireWarningDisclosure = (warning) => {
+    if (!warning?.dataset.warningDisclosure) return;
+    warning.open = Boolean(warningState[warning.dataset.warningDisclosure]);
+    const initialLabel = warning.querySelector("summary span");
+    if (initialLabel) initialLabel.textContent = warning.open ? "Hide details" : "Show details";
+    warning.addEventListener("toggle", () => {
+      warningState[warning.dataset.warningDisclosure] = warning.open;
+      sessionStorage.setItem(warningStateKey, JSON.stringify(warningState));
+      const label = warning.querySelector("summary span");
+      if (label) label.textContent = warning.open ? "Hide details" : "Show details";
+    });
+  };
+  document.querySelectorAll("[data-warning-disclosure]").forEach(wireWarningDisclosure);
+  let currentStep = Math.max(1, Math.min(7, Number(stepInput.value) || 1));
+  let maxVisitedStep = currentStep;
+  const validatePanel = (panel) => {
+    const fields = [...panel.querySelectorAll("input, select, textarea")].filter((field) => !field.closest("[hidden]"));
+    const invalidFields = fields.filter((field) => !field.checkValidity());
+    fields.forEach((field) => {
+      const invalid = invalidFields.includes(field);
+      field.classList.toggle("is-invalid", invalid);
+      let feedback = field.parentElement.querySelector(":scope > .readiness-field-warning");
+      if (invalid && !feedback) {
+        feedback = document.createElement("div");
+        feedback.className = "readiness-field-warning";
+        field.insertAdjacentElement("afterend", feedback);
+      }
+      if (feedback) {
+        feedback.textContent = invalid ? (field.validationMessage || "Complete this item before continuing.") : "";
+        feedback.hidden = !invalid;
+      }
+    });
+    let warning = panel.querySelector("[data-step-warning]");
+    if (!warning) {
+      warning = document.createElement("details");
+      warning.className = "readiness-step-warning";
+      warning.dataset.stepWarning = "";
+      warning.dataset.warningDisclosure = `client-step-${currentStep}`;
+      warning.innerHTML = '<summary><strong></strong><span>Show details</span></summary><div class="mt-2" data-warning-body></div>';
+      panel.querySelector(".readiness-section__heading")?.insertAdjacentElement("afterend", warning);
+      wireWarningDisclosure(warning);
+    }
+    const warningTitle = warning.querySelector("summary strong");
+    const warningBody = warning.querySelector("[data-warning-body]");
+    if (warningTitle) warningTitle.textContent = `${invalidFields.length} item${invalidFields.length === 1 ? "" : "s"} need attention in this step`;
+    if (warningBody) warningBody.textContent = `Complete the highlighted fields before continuing.`;
+    warning.hidden = invalidFields.length === 0;
+    if (invalidFields.length) {
+      invalidFields[0].closest('details')?.setAttribute('open', '');
+      invalidFields[0].focus();
+      invalidFields[0].reportValidity();
+      return false;
+    }
+    return true;
+  };
+  const showStep = (step, validateCurrent = false) => {
+    const currentPanel = document.querySelector(`[data-step-panel="${currentStep}"]`);
+    if (validateCurrent && currentPanel && !validatePanel(currentPanel)) return;
+    currentStep = sharedStep || Math.max(1, Math.min(7, Number(step) || 1));
+    maxVisitedStep = Math.max(maxVisitedStep, currentStep);
+    stepInput.value = currentStep;
+    panels.forEach((panel) => { panel.hidden = Number(panel.dataset.stepPanel) !== currentStep; });
+    stepButtons.forEach((button) => {
+      const active = Number(button.dataset.goStep) === currentStep;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-current", active ? "step" : "false");
+      button.disabled = sharedStep ? Number(button.dataset.goStep) !== sharedStep : Number(button.dataset.goStep) > maxVisitedStep;
+    });
+    if (previous) previous.hidden = Boolean(sharedStep) || currentStep === 1;
+    if (next) { next.hidden = Boolean(sharedStep) || currentStep === 7; next.textContent = [5, 6].includes(currentStep) ? 'Confirm and continue' : 'Continue →'; }
+    if (generate) generate.hidden = Boolean(sharedStep) || currentStep !== 7;
+    window.scrollTo({ top: form.offsetTop - 16, behavior: "smooth" });
+  };
+  const refreshResolvedStepWarning = (panel) => {
+    if (!panel) return;
+    const visibleFields = [...panel.querySelectorAll("input, select, textarea")].filter((field) => !field.closest("[hidden]"));
+    if (visibleFields.some((field) => !field.checkValidity())) return;
+    const warning = panel.querySelector("[data-step-warning]");
+    if (warning) warning.hidden = true;
+  };
+  const autosaveCompletedStep = async (nextStep, reviewKind = "") => {
+    const payload = new FormData(form);
+    payload.set("wizard_step", String(nextStep));
+    payload.set("_action", "autosave");
+    if (reviewKind) payload.set("acknowledge_request_review", reviewKind);
+    if (saveState) saveState.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving completed step…';
+    if (next) next.disabled = true;
+    try {
+      const response = await fetch("{{ url_for('environment_readiness.autosave') }}", {
+        method: "POST",
+        body: payload,
+        headers: { "X-Requested-With": "XMLHttpRequest" },
+      });
+      const result = await response.json();
+      if (!response.ok || !result.ok) {
+        if (saveState) {
+          saveState.replaceChildren();
+          const message = document.createElement("span");
+          message.textContent = result.error || "Autosave failed";
+          saveState.appendChild(message);
+          if (result.conflict_url) {
+            const link = document.createElement("a");
+            link.href = result.conflict_url;
+            link.className = "ms-2";
+            link.textContent = result.conflict_link_label || "Open existing draft";
+            saveState.appendChild(link);
+          }
+          saveState.classList.add("text-warning");
+        }
+        return false;
+      }
+      if (result.summary_html) {
+        const summary = document.getElementById("readinessSummary");
+        const wasOpen = summary.querySelector('[data-readiness-overview]')?.open;
+        summary.outerHTML = result.summary_html;
+        document.querySelector('[data-readiness-overview]').open = Boolean(wasOpen);
+      }
+      for (const [key, audit] of Object.entries(result.verification_audit || {})) {
+        const label = form.querySelector(`[data-verification-audit="${key}"]`);
+        if (label) { label.hidden = !audit.verified_at; label.textContent = `Verified by ${audit.verified_by || "Not recorded"} · ${audit.verified_at || ""}.`; }
+      }
+      if (result.verification) {
+        for (const [name, value] of Object.entries(result.verification)) {
+          const field = form.elements.namedItem(name);
+          if (!field) continue;
+          if (field.type === "checkbox") field.checked = value === "yes";
+          else field.value = value;
+          if (field.matches("[data-requirement-status]")) syncRequirementStatus(field);
+        }
+      }
+      if (activeDraftId) activeDraftId.value = result.draft_id;
+      if (draftVersion && result.version != null) draftVersion.value = String(result.version);
+      if (saveState) {
+        saveState.classList.remove("text-warning");
+        saveState.innerHTML = `<i class="fa-solid fa-cloud-arrow-up"></i> Autosaved ${result.saved_at}`;
+      }
+      return true;
+    } catch (error) {
+      if (saveState) saveState.textContent = error.message || "Autosave failed — retry Continue or use Save Progress";
+      saveState?.classList.add("text-warning");
+      return false;
+    } finally {
+      if (next) next.disabled = false;
+    }
+  };
+  form.addEventListener("click", async (event) => {
+    const review = event.target.closest('[data-acknowledge-request-review]');
+    if (!review) return;
+    review.disabled = true;
+    try { await autosaveCompletedStep(currentStep, review.dataset.acknowledgeRequestReview); }
+    finally { review.disabled = false; }
+  });
+  form.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-summary-step]");
+    if (button && !sharedStep) showStep(button.dataset.summaryStep);
+  });
+  const dependencyInputs = {{ verification_inputs|tojson }};
+  for (const [group, names] of Object.entries(dependencyInputs)) {
+    for (const name of names) {
+      const field = form.elements.namedItem(name);
+      if (!field) continue;
+      field.addEventListener("change", () => {
+        const checkbox = form.elements.namedItem(`${group}_attested`);
+        if (checkbox) checkbox.checked = false;
+        const impact = document.getElementById("readinessLiveImpact");
+        if (impact) {
+          impact.hidden = false;
+          impact.textContent = "Unsaved changes affect verification. Save progress, then review Readiness overview.";
+          impact.title = "Save before re-verifying affected Networking or AWS checks. Review existing ServiceNow requests and publish a revision before refreshing a linked wizard.";
+        }
+      });
+    }
+  }
+  previous?.addEventListener("click", () => showStep(currentStep - 1));
+  next?.addEventListener("click", async () => {
+    const currentPanel = document.querySelector(`[data-step-panel="${currentStep}"]`);
+    if (currentPanel && !validatePanel(currentPanel)) return;
+    const nextStep = Math.min(7, currentStep + 1);
+    if ([5, 6].includes(currentStep)) { if (await currentPanel.confirmChecks()) showStep(nextStep); }
+    else if (await autosaveCompletedStep(nextStep)) showStep(nextStep);
+  });
+  stepButtons.forEach((button) => button.addEventListener("click", () => showStep(button.dataset.goStep)));
+  document.getElementById("saveVerification")?.addEventListener("click", async () => {
+    const panel = document.querySelector(`[data-step-panel="${currentStep}"]`);
+    await autosaveCompletedStep(currentStep);
+  });
+  form.querySelectorAll("input, select, textarea").forEach((field) => {
+    const clearOwnWarning = () => {
+      window.setTimeout(() => {
+        if (field.checkValidity()) {
+          field.classList.remove("is-invalid");
+          field.parentElement.querySelectorAll(":scope > .readiness-field-warning").forEach((feedback) => {
+            feedback.hidden = true;
+            feedback.textContent = "";
+          });
+        }
+        refreshResolvedStepWarning(field.closest("[data-step-panel]"));
+      }, 0);
+    };
+    field.addEventListener("input", clearOwnWarning);
+    field.addEventListener("change", clearOwnWarning);
+  });
+  const syncRequirementStatus = (status) => {
+    const row = status.closest('[data-requirement-row]');
+    const confirmed = status.value === 'confirmed';
+    const blocked = status.value === 'blocked';
+    row.querySelector('[data-verified-check]').checked = confirmed;
+    row.querySelector('[data-blocker-check]').checked = blocked;
+    row.querySelector('[data-requirement-notes]').required = blocked;
+    row.querySelector('[data-check-state]').textContent = blocked ? 'Blocked' : confirmed ? 'Verified' : 'Not yet verified';
+    row.classList.toggle('is-confirmed', confirmed);
+    row.classList.toggle('is-blocked', blocked);
+  };
+  document.querySelectorAll('[data-requirement-row]').forEach(row => {
+    const status = row.querySelector('[data-requirement-status]');
+    row.querySelector('[data-verified-check]').addEventListener('change', event => {
+      status.value = event.target.checked ? 'confirmed' : 'requested';
+      syncRequirementStatus(status);
+    });
+    row.querySelector('[data-blocker-check]').addEventListener('change', event => {
+      status.value = event.target.checked ? 'blocked' : 'requested';
+      syncRequirementStatus(status);
+    });
+    syncRequirementStatus(status);
+  });
+  document.querySelectorAll('[data-attestation]').forEach(attestation => {
+    const panel = attestation.closest('[data-step-panel]');
+    const checkbox = attestation.querySelector('input');
+    panel.addEventListener('input', () => { checkbox.checked = false; });
+    panel.addEventListener('change', () => { checkbox.checked = false; });
+    panel.confirmChecks = async () => {
+      const rows = [...panel.querySelectorAll('[data-requirement-row]')].filter(row => !row.closest('[hidden]'));
+      const defaultOwner = panel.querySelector('[data-section-owner]').value.trim();
+      const defaultEvidence = panel.querySelector('[data-section-evidence]').value.trim();
+      const missing = rows.find(row => row.querySelector('[data-verified-check]').checked &&
+        (!(row.querySelector('[data-row-owner]').value.trim() || defaultOwner) || !(row.querySelector('[data-row-evidence]').value.trim() || defaultEvidence)));
+      const feedback = attestation.querySelector('[data-confirm-feedback]');
+      if (missing) { feedback.textContent = 'Provide a section owner and evidence, or an override for each verified check.'; return; }
+      const blockedMissingNotes = rows.find(row => row.querySelector('[data-blocker-check]').checked && !row.querySelector('[data-requirement-notes]').value.trim());
+      if (blockedMissingNotes) { blockedMissingNotes.querySelector('details').open = true; blockedMissingNotes.querySelector('[data-requirement-notes]').reportValidity(); return; }
+      checkbox.checked = rows.length > 0 && rows.every(row => row.querySelector('[data-verified-check]').checked);
+      const saved = await autosaveCompletedStep(currentStep);
+      feedback.textContent = saved ? (checkbox.checked ? 'Section confirmed and saved.' : 'Completed checks saved. Remaining checks still need verification.') : 'Could not save. Please retry.';
+      return saved;
+    };
+    attestation.querySelector('[data-confirm-section]').addEventListener('click', panel.confirmChecks);
+  });
+  document.querySelectorAll("[data-share-verification]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const step = Number(button.dataset.shareVerification);
+      const original = button.innerHTML;
+      button.disabled = true;
+      button.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Preparing link…';
+      try {
+        const payload = new FormData(form);
+        payload.set("wizard_step", String(step));
+        payload.set("_action", "autosave");
+        const savedResponse = await fetch("{{ url_for('environment_readiness.autosave') }}", {
+          method: "POST", body: payload, headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        const saved = await savedResponse.json();
+        if (!savedResponse.ok || !saved.ok) throw new Error(saved.error || "Could not save the draft");
+        activeDraftId.value = saved.draft_id;
+        if (draftVersion && saved.version != null) draftVersion.value = String(saved.version);
+        const linkPayload = new FormData();
+        linkPayload.set("draft_id", saved.draft_id);
+        linkPayload.set("step", String(step));
+        const csrf = form.querySelector('[name="csrf_token"]');
+        if (csrf) linkPayload.set("csrf_token", csrf.value);
+        const linkResponse = await fetch("{{ url_for('environment_readiness.verification_link') }}", {
+          method: "POST", body: linkPayload, headers: { "X-Requested-With": "XMLHttpRequest" },
+        });
+        const result = await linkResponse.json();
+        if (!linkResponse.ok || !result.ok) throw new Error(result.error || "Could not create the link");
+        await navigator.clipboard.writeText(result.url);
+        button.innerHTML = '<i class="fa-solid fa-check me-1"></i>Link copied';
+      } catch (_error) {
+        button.innerHTML = '<i class="fa-solid fa-triangle-exclamation me-1"></i>Copy failed';
+      } finally {
+        window.setTimeout(() => { button.disabled = false; button.innerHTML = original; }, 2200);
+      }
+    });
+  });
+  showStep(currentStep);
+  const date = document.getElementById("field_target_date");
+  const targetDateWarning = document.getElementById("targetDateWarning");
+  const productPrefixes = {{ product_prefixes|tojson }};
+  const setupTypes = {{ setup_types|tojson }};
+  const customerField = document.getElementById("field_customer");
+  const productField = document.getElementById("field_product");
+  const setupTypeField = document.getElementById("field_setup_type");
+  const titleField = document.getElementById("field_title");
+  const titleEnvironmentHelp = document.getElementById("titleEnvironmentHelp");
+  const environmentTypeField = document.getElementById("field_environment_type");
+  const environmentSuffixField = document.getElementById("field_environment_suffix");
+  const environmentNameField = document.getElementById("field_environment_name");
+  const environmentNameHelp = document.getElementById("environmentNameHelp");
+  const awsRegionField = document.getElementById("field_aws_region");
+  const capacityStatus = document.querySelector("[data-capacity-status]");
+  const vaultCapacity = document.querySelector("[data-vault-capacity]");
+  const nameLimitCheck = document.querySelector("[data-name-limit-check]");
+  const nameLimitStatus = document.querySelector("[data-name-limit-status]");
+  const releaseSelect = document.querySelector("[data-release-select]");
+  const releaseStatus = document.querySelector("[data-release-status]");
+  const syncCidrFields = () => {
+    const multiVpc = setupTypeField?.value === "catalyst-multi-vpc";
+    document.querySelectorAll("[data-single-vpc-cidr]").forEach((container) => {
+      container.hidden = multiVpc;
+      const input = container.querySelector("input"); if (input) input.required = !multiVpc;
+    });
+    document.querySelectorAll("[data-multi-vpc-cidr]").forEach((container) => {
+      container.hidden = !multiVpc;
+      container.querySelectorAll("input").forEach((input) => { input.required = multiVpc; });
+    });
+  };
+  const validateMultiVpcCidrs = () => {
+    const inputs = [...document.querySelectorAll('[name^="vpc_cidr_"]')];
+    const notice = document.querySelector("[data-vpc-validation]");
+    inputs.forEach((input) => { input.setCustomValidity(""); input.classList.remove("is-invalid"); });
+    const ranges = [];
+    const parse = (value) => {
+      const match = value.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d|[12]\d|3[0-2])$/);
+      if (!match) return null;
+      const octets = match.slice(1, 5).map(Number);
+      if (octets.some((part) => part > 255)) return null;
+      const prefix = Number(match[5]);
+      const address = (((octets[0] * 256 + octets[1]) * 256 + octets[2]) * 256 + octets[3]);
+      const size = 2 ** (32 - prefix);
+      const start = Math.floor(address / size) * size;
+      return { start, end: start + size - 1 };
+    };
+    inputs.forEach((input) => {
+      if (!input.value.trim()) return;
+      const range = parse(input.value);
+      if (range) ranges.push({ input, ...range });
+    });
+    const conflicts = new Set();
+    for (let left = 0; left < ranges.length; left += 1) {
+      for (let right = left + 1; right < ranges.length; right += 1) {
+        if (ranges[left].start <= ranges[right].end && ranges[right].start <= ranges[left].end) {
+          conflicts.add(ranges[left].input);
+          conflicts.add(ranges[right].input);
+        }
+      }
+    }
+    conflicts.forEach((input) => {
+      input.setCustomValidity("Each VPC must use a unique, non-overlapping CIDR.");
+      input.classList.add("is-invalid");
+    });
+    if (notice) {
+      notice.hidden = conflicts.size === 0;
+      notice.querySelector("span").textContent = conflicts.size
+        ? "VPC CIDRs must be unique and non-overlapping. Correct the highlighted allocations before continuing."
+        : "";
+    }
+    return conflicts.size === 0;
+  };
+  document.querySelectorAll('[name^="vpc_cidr_"]').forEach((input) => {
+    input.addEventListener("input", validateMultiVpcCidrs);
+    input.addEventListener("change", validateMultiVpcCidrs);
+  });
+  form?.addEventListener("submit", validateMultiVpcCidrs);
+  validateMultiVpcCidrs();
+  let releaseRequest = 0;
+  let capacityRequest = 0;
+  const capacityFields = {
+    opensearch_engine_version: document.getElementById("field_opensearch_engine_version"),
+    opensearch_instance_type: document.getElementById("field_opensearch_instance_type"),
+    opensearch_master_type: document.getElementById("field_opensearch_master_type"),
+    eks_versions: document.getElementById("field_eks_version"),
+    eks_instance_types: document.getElementById("field_eks_instance_types"),
+    aurora_versions: document.getElementById("field_aurora_version"),
+    aurora_instance_types: document.getElementById("field_aurora_instance_type"),
+    redis_instance_types: document.getElementById("field_redis_instance_type"),
+    vault_versions: document.getElementById("field_vault_database_version"),
+    vault_instance_types: document.getElementById("field_vault_database_instance_type"),
+  };
+  const fillCapacitySelect = (select, catalog, placeholder) => {
+    if (!select) return;
+    const selected = select.multiple
+      ? [...select.selectedOptions].map((option) => option.value).filter(Boolean).concat((select.dataset.selected || "").split(",").filter(Boolean))
+      : [select.value || select.dataset.selected || ""].filter(Boolean);
+    select.innerHTML = "";
+    if (!select.multiple) select.add(new Option(placeholder, ""));
+    (catalog?.options || []).forEach((option) => select.add(new Option(option.label, option.value, false, selected.includes(option.value))));
+    selected.filter((value) => !(catalog?.options || []).some((option) => option.value === value)).forEach((value) => select.add(new Option(`${value} (saved; unavailable in region)`, value, true, true)));
+    select.disabled = !(catalog?.options || []).length && !selected.length;
+  };
+  const loadCapacityOptions = async () => {
+    const region = awsRegionField?.value.trim();
+    const setupType = setupTypeField?.value || "";
+    const catalyst = setupType.startsWith("catalyst-");
+    const regionLabel = document.querySelector('[data-capacity-region]');
+    if (regionLabel) regionLabel.textContent = region || 'your selected region';
+    if (capacityStatus) { capacityStatus.dataset.state = ''; capacityStatus.removeAttribute('title'); }
+    document.querySelectorAll('[data-catalyst-component]').forEach((section) => {
+      section.hidden = !catalyst;
+      section.querySelectorAll('input, select, textarea').forEach((field) => { field.disabled = !catalyst; });
+    });
+    if (vaultCapacity) vaultCapacity.hidden = !catalyst;
+    [capacityFields.vault_versions, capacityFields.vault_instance_types].forEach((field) => { if (field) { field.disabled = !catalyst; field.required = catalyst; } });
+    if (!region) { if (capacityStatus) capacityStatus.textContent = "Select an AWS region to load choices."; return; }
+    const requestNumber = ++capacityRequest;
+    if (capacityStatus) capacityStatus.textContent = `Loading AWS catalogs…`;
+    try {
+      const params = new URLSearchParams({ region, setup_type: setupType, aurora_version: capacityFields.aurora_versions?.value || "", opensearch_version: capacityFields.opensearch_engine_version?.value || "3.3", vault_version: capacityFields.vault_versions?.value || "" });
+      const response = await fetch(`{{ url_for('environment_readiness.technical_options') }}?${params}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Catalog request failed");
+      if (requestNumber !== capacityRequest) return;
+      fillCapacitySelect(capacityFields.eks_versions, payload.eks_versions, "Select EKS version");
+      fillCapacitySelect(capacityFields.eks_instance_types, payload.eks_instance_types, "Select EKS instance sizes");
+      fillCapacitySelect(capacityFields.aurora_versions, payload.aurora_versions, `Select ${payload.aurora_engine} version`);
+      fillCapacitySelect(capacityFields.aurora_instance_types, payload.aurora_instance_types, "Select Aurora instance size");
+      fillCapacitySelect(capacityFields.redis_instance_types, payload.redis_instance_types, "Select Redis instance type");
+      if (catalyst) {
+        ["opensearch_engine_version", "opensearch_instance_type", "opensearch_master_type"].forEach((key) => fillCapacitySelect(capacityFields[key], payload[key], "Select OpenSearch option"));
+        fillCapacitySelect(capacityFields.vault_versions, payload.vault_versions, "Select PostgreSQL version");
+        fillCapacitySelect(capacityFields.vault_instance_types, payload.vault_instance_types, "Select Vault DB instance type");
+      }
+      const catalogs = Object.values(payload).filter((value) => value && typeof value === "object" && "source" in value);
+      const cached = catalogs.filter((catalog) => catalog.source === "aws_cache").length;
+      if (capacityStatus) {
+        capacityStatus.textContent = `AWS catalog ${cached}/${catalogs.length}`;
+        capacityStatus.dataset.state = cached ? 'cached' : 'error';
+        capacityStatus.title = `${cached} of ${catalogs.length} catalogs from AWS cache; ${catalogs.filter(catalog => catalog.stale).length} stale. Remaining choices use guarded fallbacks.`;
+      }
+    } catch (error) {
+      if (requestNumber !== capacityRequest) return;
+      if (capacityStatus) { capacityStatus.textContent = 'AWS catalogs unavailable'; capacityStatus.dataset.state = 'error'; capacityStatus.title = error.message; }
+    }
+  };
+  const loadReleaseOptions = async (preserveSaved = true) => {
+    if (!releaseSelect) return;
+    const customer = customerField?.value.trim();
+    const setupType = setupTypeField?.value;
+    if (!customer || !setupType) {
+      releaseSelect.innerHTML = '<option value="">Select Customer and Environment Setup first</option>';
+      releaseSelect.disabled = true;
+      if (releaseStatus) releaseStatus.textContent = "Choose Customer and Environment Setup to load compatible releases.";
+      return;
+    }
+    const requestNumber = ++releaseRequest;
+    const selected = preserveSaved ? (releaseSelect.value || releaseSelect.dataset.selectedRelease || "") : "";
+    releaseSelect.disabled = false;
+    releaseSelect.innerHTML = "";
+    releaseSelect.add(new Option("Loading releases…", selected, true, true));
+    if (releaseStatus) releaseStatus.textContent = "Loading compatible archives from the Releases module…";
+    try {
+      const params = new URLSearchParams({ customer, setup_type: setupType });
+      const response = await fetch(`{{ url_for('environment_readiness.release_options') }}?${params}`);
+      const payload = await response.json();
+      if (requestNumber !== releaseRequest) return;
+      releaseSelect.innerHTML = '<option value="">Select release archive</option>';
+      (payload.releases || []).forEach((release) => releaseSelect.add(new Option(release, release, false, release === selected)));
+      if (selected && !(payload.releases || []).includes(selected)) releaseSelect.add(new Option(`${selected} (saved; no longer listed)`, selected, true, true));
+      releaseSelect.disabled = false;
+      if (releaseStatus) releaseStatus.textContent = payload.error || `${payload.releases.length} compatible release${payload.releases.length === 1 ? "" : "s"} available for ${payload.customer || customer}.`;
+    } catch (_error) {
+      if (requestNumber !== releaseRequest) return;
+      releaseSelect.innerHTML = '<option value="">Release catalog unavailable</option>';
+      if (selected) releaseSelect.add(new Option(`${selected} (saved selection)`, selected, true, true));
+      releaseSelect.disabled = false;
+      if (releaseStatus) releaseStatus.textContent = "Could not load the release catalog. Try again or check the Releases module.";
+    }
+  };
+  const expectedEnvironmentName = () => {
+    const customer = customerField?.value.trim().toLowerCase();
+    const setup = setupTypes[setupTypeField?.value] || {};
+    const prefix = setup.prefix || productPrefixes[productField?.value.trim().toLowerCase()];
+    const environment = environmentTypeField?.value;
+    const suffix = environmentSuffixField?.value.trim().toLowerCase();
+    const base = customer && prefix && environment ? `${customer}-${prefix}-${environment}` : "";
+    return base && suffix ? `${base}-${suffix}` : base;
+  };
+  const updateNameLimitCheck = () => {
+    if (!nameLimitCheck) return;
+    const name = environmentNameField?.value.trim() || "";
+    const nodeGroupPrefix = name ? `${name}-vault-eks-node-group-` : "";
+    const confirmed = Boolean(nodeGroupPrefix && nodeGroupPrefix.length <= 38);
+    nameLimitCheck.classList.toggle("is-confirmed", confirmed);
+    nameLimitCheck.classList.toggle("is-blocked", !confirmed);
+    const icon = nameLimitCheck.querySelector("i");
+    if (icon) icon.className = `fa-solid ${confirmed ? "fa-circle-check" : "fa-triangle-exclamation"}`;
+    if (nameLimitStatus) {
+      nameLimitStatus.textContent = confirmed
+        ? `Pass: ${nodeGroupPrefix} is ${nodeGroupPrefix.length}/38 characters.`
+        : (nodeGroupPrefix
+          ? `Risk: ${nodeGroupPrefix} is ${nodeGroupPrefix.length} characters; Terraform allows 1–38. Configure a short explicit prefix such as eks-ng.`
+          : `Enter the Environment name to calculate <environment>-vault-eks-node-group-.`);
+      nameLimitStatus.classList.toggle("text-success", confirmed);
+      nameLimitStatus.classList.toggle("text-danger", Boolean(name) && !confirmed);
+    }
+  };
+  const validateEnvironmentName = () => {
+    const expected = expectedEnvironmentName();
+    if (!environmentNameField || !environmentNameHelp) return;
+    const matches = !expected || environmentNameField.value === expected;
+    environmentNameField.setCustomValidity(matches ? "" : `The generated name must be ${expected}.`);
+    environmentNameHelp.innerHTML = expected
+      ? `Generated name: <code>${expected}</code>. Catalyst is shortened to <code>ctlst</code>.`
+      : 'Choose the customer, environment setup, product, and environment type to generate the name.';
+    environmentNameHelp.classList.toggle("text-danger", Boolean(environmentNameField.value && !matches));
+    updateNameLimitCheck();
+  };
+  const environmentTitleAliases = {{ environment_type_title_aliases|tojson }};
+  const validateTitleEnvironment = () => {
+    if (!titleField || !environmentTypeField) return true;
+    const environmentType = environmentTypeField.value;
+    const normalizedTitle = titleField.value.toLowerCase().match(/[a-z0-9]+/g)?.join(" ") || "";
+    const aliases = environmentTitleAliases[environmentType] || [];
+    const matches = !titleField.value.trim() || !environmentType || aliases.some((alias) => (` ${normalizedTitle} `).includes(` ${alias} `));
+    const message = matches ? "" : `The title must identify the selected ${environmentType.toUpperCase()} environment type.`;
+    titleField.setCustomValidity(message);
+    titleField.classList.toggle("is-invalid", !matches);
+    if (titleEnvironmentHelp) {
+      titleEnvironmentHelp.textContent = matches
+        ? "The title and selected environment type must describe the same lifecycle tier."
+        : `${message} Update the title or select the matching environment type.`;
+      titleEnvironmentHelp.classList.toggle("text-danger", !matches);
+    }
+    return matches;
+  };
+  const syncEnvironmentName = () => {
+    const expected = expectedEnvironmentName();
+    if (environmentNameField) environmentNameField.value = expected;
+    validateEnvironmentName();
+  };
+  setupTypeField?.addEventListener("change", () => {
+    const setup = setupTypes[setupTypeField.value];
+    if (setup?.product && (!productField.value.trim() || Object.values(setupTypes).some((item) => item.product === productField.value.trim()))) productField.value = setup.product;
+    syncCidrFields();
+  });
+  customerField?.addEventListener("change", () => loadReleaseOptions(false));
+  customerField?.addEventListener("blur", () => loadReleaseOptions(false));
+  setupTypeField?.addEventListener("change", () => loadReleaseOptions(false));
+  awsRegionField?.addEventListener("change", loadCapacityOptions);
+  awsRegionField?.addEventListener("blur", loadCapacityOptions);
+  setupTypeField?.addEventListener("change", loadCapacityOptions);
+  capacityFields.aurora_versions?.addEventListener("change", loadCapacityOptions);
+  capacityFields.opensearch_engine_version?.addEventListener("change", loadCapacityOptions);
+  capacityFields.vault_versions?.addEventListener("change", loadCapacityOptions);
+  [customerField, productField, setupTypeField, environmentTypeField, environmentSuffixField].forEach((field) => {
+    field?.addEventListener("input", syncEnvironmentName);
+    field?.addEventListener("change", syncEnvironmentName);
+  });
+  titleField?.addEventListener("input", validateTitleEnvironment);
+  environmentTypeField?.addEventListener("change", validateTitleEnvironment);
+  form?.addEventListener("submit", validateTitleEnvironment);
+  validateTitleEnvironment();
+  syncEnvironmentName();
+  syncCidrFields();
+  loadReleaseOptions();
+  loadCapacityOptions();
+  const updateTargetDateWarning = () => {
+    if (!date || !targetDateWarning) return;
+    const selected = date.value ? new Date(`${date.value}T00:00:00`) : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = selected && !Number.isNaN(selected.getTime())
+      ? Math.round((selected.getTime() - today.getTime()) / 86400000)
+      : null;
+    const shouldWarn = days !== null && days >= 0 && days <= 5;
+    targetDateWarning.hidden = !shouldWarn;
+    if (!shouldWarn) return;
+    const leadTime = days === 0 ? "today" : days === 1 ? "only 1 day away" : `only ${days} days away`;
+    targetDateWarning.querySelector("span").textContent =
+      `Priority handling likely required: this target is ${leadTime}. Completing every prerequisite and provisioning the foundation in this timeframe may require rushed approvals and immediate owner availability.`;
+    targetDateWarning.classList.remove("is-alerting");
+    requestAnimationFrame(() => targetDateWarning.classList.add("is-alerting"));
+  };
+  if (date) {
+    date.min = new Date().toISOString().slice(0, 10);
+    date.addEventListener("change", updateTargetDateWarning);
+    date.addEventListener("input", updateTargetDateWarning);
+    updateTargetDateWarning();
+  }
+  document.querySelectorAll("[data-uppercase]").forEach((input) => input.addEventListener("input", () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); }));
+  document.querySelectorAll("[data-lowercase]").forEach((input) => input.addEventListener("blur", () => { input.value = input.value.trim().toLowerCase(); }));
+  document.querySelectorAll("[data-uppercase-ticket]").forEach((input) => input.addEventListener("blur", () => { if (!/^https?:\/\//i.test(input.value)) input.value = input.value.trim().toUpperCase(); }));
+  document.querySelectorAll("[data-set-none]").forEach((button) => button.addEventListener("click", () => {
+    const input = document.getElementById(button.dataset.setNone); if (input) input.value = "None";
+  }));
+  document.querySelectorAll("[data-conditional-flag]").forEach((select) => {
+    const sync = () => {
+      const row = document.querySelector(`[data-conditional-row="${select.dataset.conditionalFlag}"]`);
+      if (row) row.hidden = select.value !== "yes";
+    };
+    select.addEventListener("change", sync);
+    sync();
+  });
+});
+</script>
+
+<style>
+.readiness-page { margin: 0 auto; }
+.readiness-scope { display: flex; gap: .8rem; align-items: flex-start; padding: .9rem 1rem; border: 1px solid var(--accent-blue-border, var(--border-default)); border-radius: .9rem; background: var(--accent-blue-bg); }
+.readiness-scope__icon { display: grid; place-items: center; flex: 0 0 2.1rem; width: 2.1rem; height: 2.1rem; border-radius: .6rem; background: var(--bg-surface); color: var(--accent-blue); }
+.readiness-scope p { margin: .2rem 0 0; color: var(--text-secondary); font-size: .82rem; }
+.readiness-drafts { padding: 1rem; border: 1px solid var(--border-default); border-radius: 1rem; background: var(--bg-surface); }
+.readiness-drafts__heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.readiness-drafts__heading h2 { margin: 0; font-size: 1rem; }
+.readiness-drafts__heading p { margin: .15rem 0 0; color: var(--text-muted); font-size: .8rem; }
+.readiness-draft-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: .7rem; margin-top: .85rem; }
+.readiness-draft-card { display: flex; align-items: center; gap: .65rem; min-width: 0; padding: .75rem; border: 1px solid var(--border-subtle); border-radius: .75rem; background: var(--bg-elevated); }
+.readiness-draft-card.is-active { border-color: var(--accent-blue); background: var(--accent-blue-bg); }
+.readiness-draft-card__icon { display: grid; place-items: center; flex: 0 0 2rem; width: 2rem; height: 2rem; border-radius: .55rem; background: var(--bg-surface); color: var(--accent-blue); }
+.readiness-draft-card__body { display: grid; min-width: 0; flex: 1; }
+.readiness-draft-card__body strong, .readiness-draft-card__body span, .readiness-draft-card__body small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.readiness-draft-card__body span, .readiness-draft-card__body small, .readiness-drafts__empty { color: var(--text-muted); font-size: .75rem; }
+.readiness-draft-card__actions { display: flex; align-items: center; gap: .4rem; }
+.readiness-drafts__empty { margin-top: .8rem; padding: .7rem; border-radius: .6rem; background: var(--bg-elevated); }
+.readiness-steps { display: grid; grid-template-columns: repeat(7, 1fr); gap: .5rem; margin-bottom: 1rem; }
+.readiness-step { display: flex; align-items: center; justify-content: center; gap: .45rem; min-height: 2.8rem; border: 1px solid var(--border-default); border-radius: .75rem; background: var(--bg-surface); color: var(--text-muted); }
+.readiness-step span { display: grid; place-items: center; width: 1.45rem; height: 1.45rem; border-radius: 50%; background: var(--bg-elevated); font-size: .72rem; }
+.readiness-step strong { font-size: .78rem; }
+.readiness-step.is-active { border-color: var(--accent-blue); background: var(--accent-blue-bg); color: var(--text-primary); }
+.readiness-step.is-active span { background: var(--accent-blue); color: white; }
+.readiness-section { margin-bottom: 1rem; padding: 1.1rem; border: 1px solid var(--border-default); border-radius: 1rem; background: var(--bg-surface); }
+.readiness-section[hidden] { display: none; }
+.readiness-section__heading { display: flex; gap: .75rem; align-items: flex-start; margin-bottom: 1rem; }
+.readiness-section__heading h2 { margin: 0; font-size: 1.05rem; }
+.readiness-section__heading p, .readiness-group > p { margin: .15rem 0 0; color: var(--text-muted); font-size: .84rem; }
+.readiness-section__number { display: grid; place-items: center; flex: 0 0 1.7rem; width: 1.7rem; height: 1.7rem; border-radius: 50%; color: white; background: var(--accent-blue); font-weight: 700; font-size: .8rem; }
+.readiness-request-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.readiness-request-field { min-width: 0; }
+.readiness-applicability { padding-top:1rem; border-top:1px solid var(--border-subtle); }.readiness-applicability h3 { margin:0; font-size:.92rem; }.readiness-applicability>p { color:var(--text-muted); font-size:.78rem; }
+.readiness-servicenow-state,.readiness-allocation-source { display:flex; align-items:flex-start; gap:.65rem; margin-bottom:1rem; padding:.75rem .85rem; border:1px solid var(--accent-blue-border,var(--border-default)); border-radius:.75rem; background:var(--accent-blue-bg); }.readiness-servicenow-state>i,.readiness-allocation-source>i { margin-top:.15rem; color:var(--accent-blue); }.readiness-servicenow-state>div { display:grid; }.readiness-servicenow-state span,.readiness-allocation-source span { color:var(--text-secondary); font-size:.76rem; }
+.readiness-allocation-group { padding:1rem; border:1px solid var(--border-subtle); border-radius:.8rem; background:var(--bg-elevated); }.readiness-allocation-group__heading { display:flex; align-items:flex-start; gap:.65rem; margin-bottom:.85rem; }.readiness-allocation-group__heading>i { display:grid; place-items:center; flex:0 0 2rem; width:2rem; height:2rem; border-radius:.55rem; background:var(--accent-blue-bg); color:var(--accent-blue); }.readiness-allocation-group__heading h3 { margin:0; font-size:.9rem; }.readiness-allocation-group__heading p { margin:.15rem 0 0; color:var(--text-muted); font-size:.74rem; }.readiness-vpc-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.8rem; }.readiness-vpc-grid label { display:grid; gap:.35rem; min-width:0; }.readiness-vpc-grid label>span { color:var(--text-secondary); font-size:.78rem; font-weight:700; }
+.readiness-vpc-validation { display:flex; align-items:flex-start; gap:.45rem; margin-top:.75rem; padding:.65rem .75rem; border:1px solid var(--accent-red, #ef4444); border-radius:.6rem; background:var(--accent-red-bg, rgba(239,68,68,.1)); color:var(--accent-red, #ef4444); font-size:.75rem; font-weight:700; }.readiness-vpc-validation[hidden] { display:none; }
+.readiness-request-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }.readiness-request-card { padding:1rem; border:1px solid var(--border-default); border-radius:.85rem; background:var(--bg-elevated); }.readiness-request-card.is-created { border-color:var(--accent-green-border); background:var(--accent-green-bg); }.readiness-request-card__heading { display:flex; gap:.65rem; margin-bottom:.85rem; }.readiness-request-card__heading>i { margin-top:.2rem; color:var(--accent-blue); }.readiness-request-card h3 { margin:0; font-size:.92rem; }.readiness-request-card p { margin:.2rem 0 0; color:var(--text-muted); font-size:.75rem; }.readiness-request-card__actions { display:flex; align-items:center; gap:.7rem; margin-top:.75rem; }.readiness-request-card__actions small { color:var(--text-muted); }.readiness-request-card__status { margin-top:.7rem; color:var(--accent-green); font-size:.75rem; font-weight:700; }
+.readiness-info { display: inline-grid; place-items: center; padding: 0 .15rem; border: 0; background: transparent; color: var(--accent-blue); cursor: help; vertical-align: middle; }
+.readiness-info:hover, .readiness-info:focus-visible { color: var(--text-primary); }
+.readiness-name-check { display: flex; align-items: center; gap: .65rem; margin-top: 1rem; padding: .75rem .85rem; border: 1px solid var(--border-default); border-radius: .7rem; background: var(--bg-elevated); }
+.readiness-capacity { margin-top:1.2rem; }
+.readiness-capacity__heading { display:flex; align-items:center; flex-wrap:wrap; gap:1rem; padding:1.25rem; margin-bottom:1rem; border:1px solid var(--border-default); border-radius:1rem; background:var(--bg-surface); }
+.readiness-capacity__title { flex:1 1 18rem; }
+.readiness-capacity__heading h3 { margin:0; font-size:1.2rem; font-weight:700; }
+.readiness-capacity__heading p { margin:.3rem 0 0; color:var(--text-secondary); font-size:.86rem; }
+.readiness-capacity__heading strong { color:var(--accent-blue); }
+.readiness-capacity__heading .readiness-capacity__help { flex:1 1 20rem; font-size:.78rem; line-height:1.65; margin:0; }
+.readiness-catalog-badge { border:1px solid var(--border-default); border-radius:.65rem; padding:.6rem .85rem; color:var(--text-secondary); font-size:.82rem; font-weight:600; }
+.readiness-catalog-badge[data-state="cached"] { color:var(--accent-green); border-color:var(--accent-green-border); background:var(--accent-green-bg); }
+.readiness-catalog-badge[data-state="error"] { color:var(--accent-amber); border-color:var(--accent-amber-border); background:var(--accent-amber-bg); }
+.readiness-cluster-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:1rem; }
+.readiness-cluster-stack { display:grid; gap:1rem; min-width:0; }
+.readiness-cluster-card { display:grid; align-content:start; gap:1rem; min-width:0; padding:1.25rem; border:1px solid var(--border-default); border-radius:1rem; background:var(--bg-surface); }
+.readiness-service-heading { display:flex; align-items:center; flex-wrap:wrap; gap:.9rem; margin-bottom:.15rem; }
+.readiness-service-heading > div { flex:1; min-width:9rem; }
+.readiness-service-heading h3 { margin:0; font-size:1.05rem; font-weight:700; }
+.readiness-service-heading p { margin:.25rem 0 0; color:var(--text-secondary); font-size:.84rem; }
+.readiness-service-icon { display:inline-grid; place-items:center; flex:0 0 3rem; width:3rem; height:3rem; border-radius:.7rem; font-size:1.6rem; color:#b7dbff; background:linear-gradient(140deg,#285aa0,#193b6b); }
+.readiness-service-icon--region { background:var(--bg-elevated); color:var(--accent-blue); }
+.readiness-service-icon--cache { background:linear-gradient(140deg,#7b344b,#48263b); color:#ffaca5; }
+.readiness-service-icon--search { background:linear-gradient(140deg,#6948a5,#382462); color:#e3d8ff; }
+.readiness-service-icon--vault { background:linear-gradient(140deg,#ffd168,#e5a321); color:#263241; }
+.readiness-service-badge { padding:.3rem .5rem; border:1px solid #9872ce; color:var(--accent-purple, #b18ae7); border-radius:.6rem; font-size:.65rem; font-weight:700; text-transform:uppercase; white-space:nowrap; }
+.readiness-node-group { min-width:0; padding:.85rem 1rem 1rem; margin:0; border:1px solid var(--border-subtle); border-radius:.8rem; background:var(--bg-elevated); }
+.readiness-node-group legend { float:none; width:auto; margin:0 0 .4rem; padding:0 .25rem; font-size:.86rem; font-weight:600; }
+.readiness-node-fields { display:grid; grid-template-columns:minmax(0,3fr) minmax(5rem,1fr); gap:1rem; }
+.readiness-node-fields > div { min-width:0; }
+@media (max-width: 480px) { .readiness-node-fields { grid-template-columns:1fr; gap:.65rem; } .readiness-cluster-card,.readiness-capacity__heading { padding:1rem; } }
+.readiness-cluster-card[hidden] { display: none; }
+@media (max-width: 1000px) { .readiness-vpc-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }@media (max-width: 767px) { .readiness-cluster-grid,.readiness-vpc-grid { grid-template-columns:1fr; } }
+.readiness-name-check > div { display: grid; }
+.readiness-name-check span { color: var(--text-secondary); font-size: .75rem; }
+.readiness-name-check.is-confirmed { border-color:transparent; background:transparent; padding:.3rem 0; color:var(--text-secondary); }
+.readiness-name-check.is-blocked { border-color: var(--accent-red-border); background: var(--accent-red-bg); color: var(--accent-red); }
+.readiness-step-warning { margin: 0 0 .85rem; padding: .65rem .8rem; font-size: .8rem; }
+.readiness-step-warning summary { display: flex; justify-content: space-between; gap: 1rem; align-items: center; cursor: pointer; list-style: none; }
+.readiness-step-warning summary::-webkit-details-marker { display: none; }
+.readiness-step-warning summary span { color: var(--text-secondary); font-size: .72rem; font-weight: 500; }
+.readiness-field-warning { margin-top: .22rem; color: var(--accent-red); font-size: .7rem; line-height: 1.25; }
+.readiness-gate-rule { display: flex; align-items: flex-start; gap: .55rem; margin-bottom: .75rem; padding: .65rem .75rem; border: 1px solid var(--accent-amber-border); border-radius: .65rem; background: var(--accent-amber-bg); color: var(--text-secondary); font-size: .78rem; line-height: 1.4; }
+.readiness-gate-rule i, .readiness-gate-rule strong { color: var(--accent-amber); }
+.readiness-status-warning { margin-top: .25rem; color: var(--accent-red); font-size: .68rem; line-height: 1.25; }
+.readiness-requirement.is-confirmed, .readiness-requirement.is-in-progress, .readiness-requirement.is-blocked { margin-inline: -.4rem; padding-inline: .4rem; border-radius: .45rem; }
+.readiness-requirement.is-confirmed { background: var(--accent-green-bg); box-shadow: inset .22rem 0 0 var(--accent-green); }
+.readiness-requirement.is-in-progress { background: var(--accent-amber-bg); }
+.readiness-requirement.is-blocked { background: var(--accent-red-bg); }
+.readiness-requirement select.is-confirmed { border-color: var(--accent-green) !important; background-color: var(--accent-green-bg) !important; color: var(--accent-green) !important; box-shadow: 0 0 0 .12rem var(--accent-green-border); font-weight: 700; }
+.readiness-requirement__status { position: relative; }
+.readiness-confirmed-mark { display: inline-flex; align-items: center; gap: .25rem; margin-top: .25rem; color: var(--accent-green); font-size: .67rem; font-weight: 700; }
+.readiness-confirmed-mark[hidden] { display: none; }
+.readiness-target-warning { display: flex; align-items: flex-start; gap: .5rem; margin-top: .55rem; padding: .65rem .75rem; border: 1px solid var(--accent-amber-border); border-radius: .65rem; background: var(--accent-amber-bg); color: var(--accent-amber); font-size: .78rem; line-height: 1.4; }
+.readiness-target-warning[hidden] { display: none; }
+.readiness-target-warning.is-alerting { animation: readiness-target-alert .7s ease-out; }
+@keyframes readiness-target-alert { 0% { transform: scale(.985); box-shadow: 0 0 0 0 var(--accent-amber-border); } 55% { transform: scale(1); box-shadow: 0 0 0 .3rem transparent; } 100% { box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .readiness-target-warning.is-alerting { animation: none; } }
+.readiness-conventions, .readiness-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem .9rem; padding: .7rem .8rem; border: 1px solid var(--border-subtle); border-radius: .7rem; background: var(--bg-elevated); color: var(--text-secondary); font-size: .78rem; }
+.readiness-conventions strong { color: var(--text-primary); }
+.readiness-shortcuts small { color: var(--text-muted); }
+.readiness-shortcuts__explanation { display: grid; flex: 1 1 100%; }
+.readiness-shortcuts__explanation strong { color: var(--text-primary); }
+.readiness-ticket-default { display:flex; align-items:flex-start; gap:.55rem; flex:1 1 100%; padding:.6rem .7rem; border:1px solid var(--accent-blue-border,var(--border-default)); border-radius:.6rem; background:var(--accent-blue-bg); }.readiness-ticket-default>i { margin-top:.15rem; color:var(--accent-blue); }.readiness-ticket-default>span { display:grid; }.readiness-ticket-default strong { color:var(--accent-blue); }
+.readiness-shortcuts__controls { display: flex; flex: 1 1 390px; gap: .45rem; align-items: center; }
+.readiness-shortcuts__controls .form-control { min-width: 180px; }
+.readiness-shortcuts__ticket-check { flex: 1 1 300px; margin: 0; }
+.readiness-shortcuts__confirm { display:flex; align-items:center; gap:.6rem; flex:1 1 100%; padding-top:.6rem; border-top:1px solid var(--border-subtle); }
+
+.readiness-group { margin-top: 1rem; }
+.readiness-group h3 { margin: 0; font-size: .92rem; }
+.readiness-attestation { display:flex; align-items:flex-start; gap:.75rem; margin-top:1rem; padding:1rem; border:1px solid var(--accent-blue-border); border-radius:.7rem; background:var(--accent-blue-bg); cursor:pointer; }
+.readiness-attestation .form-check-input { flex:0 0 auto; margin-top:.15rem; }
+.readiness-attestation span { display:grid; gap:.2rem; }
+.readiness-attestation strong { color:var(--text-primary); font-size:.86rem; line-height:1.4; }
+.readiness-attestation small { color:var(--text-secondary); font-size:.72rem; }
+.readiness-attestation:has(.form-check-input:checked) { border-color:var(--accent-green); background:var(--accent-green-bg); }
+.readiness-share { flex:0 0 auto; margin-left:auto; white-space:nowrap; }
+.readiness-actions { position: sticky; bottom: .75rem; z-index: 10; display: flex; flex-wrap: wrap; gap: .65rem; padding: .8rem; border: 1px solid var(--border-default); border-radius: .9rem; background: var(--bg-elevated); box-shadow: 0 12px 28px var(--border-subtle); }
+.readiness-save-state { align-self: center; color: var(--text-muted); font-size: .75rem; text-align: right; }
+.readiness-requirement { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(4, minmax(145px, 1fr)); gap: .55rem; align-items: center; padding: .65rem 0; border-bottom: 1px solid var(--border-subtle); }
+.readiness-requirement__label { display: grid; font-size: .82rem; }
+.readiness-requirement__label span { color: var(--text-muted); font-size: .7rem; }
+@media (max-width: 1100px) { .readiness-request-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } .readiness-requirement { grid-template-columns: 1fr 1fr; } .readiness-requirement__label { grid-column: 1 / -1; } }
+@media (max-width: 575.98px) { .readiness-request-fields,.readiness-request-cards { grid-template-columns: 1fr; } .readiness-steps { grid-template-columns: repeat(7, auto); overflow-x: auto; } .readiness-step { padding: .45rem; } .readiness-step strong { display: none; } .readiness-requirement { grid-template-columns: 1fr; } .readiness-requirement__label { grid-column: auto; } .readiness-save-state { width: 100%; order: 5; } }
+
+.readiness-notice { margin:.5rem 0; color:var(--text-secondary); font-size:.78rem; }
+.readiness-notice--error { color:var(--accent-red); }
+.readiness-overview { margin:1rem 0; border:1px solid var(--border-default); border-radius:.7rem; background:var(--bg-surface); }
+.readiness-overview__summary { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.2rem; padding:.85rem 1rem; cursor:pointer; font-size:.8rem; color:var(--text-secondary); }
+.readiness-overview__summary strong { color:var(--text-primary); }
+.readiness-overview__summary i { margin-right:.4rem; color:var(--accent-blue); }
+.readiness-overview__toggle { margin-left:auto; color:var(--accent-blue); }
+.readiness-overview__toggle::after { content:' ▾'; }
+.readiness-overview details[open] > summary .readiness-overview__toggle::after { content:' ▴'; }
+.readiness-overview__summary .readiness-overview__review { color:var(--accent-amber); }
+.readiness-overview__body { padding:0 1rem 1rem; border-top:1px solid var(--border-subtle); }
+.readiness-overview__milestone { padding:1rem 0; font-size:.8rem; }
+.readiness-overview__milestone h2 { font-size:.9rem; }
+.readiness-overview__disclosure { padding:.65rem 0; border-top:1px solid var(--border-subtle); font-size:.8rem; }
+.readiness-overview__disclosure summary,.readiness-guidance summary { cursor:pointer; }
+.readiness-review-note { margin:.6rem 0 0; font-size:.8rem; }
+.readiness-change-note { padding:.55rem 1rem; border-top:1px solid var(--border-subtle); color:var(--text-secondary); font-size:.78rem; }
+.readiness-guidance { margin:.25rem 0 .85rem; color:var(--text-secondary); font-size:.78rem; }
+.readiness-guidance[open] > summary { margin-bottom:.6rem; }
+.readiness-step-warning { border:0; border-left:2px solid var(--accent-amber); border-radius:0; background:transparent; color:var(--text-secondary); }
+.readiness-bulk-tools .readiness-shortcuts { margin-top:.6rem; }
+
+
+.readiness-section-defaults { display:grid; grid-template-columns:1fr 1fr; gap:.75rem 1rem; margin:1rem 0; }
+.readiness-section-defaults label { font-size:.8rem; font-weight:600; }
+.readiness-section-defaults small { grid-column:1/-1; color:var(--text-secondary); }
+.readiness-check { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.4rem 1rem; padding:.85rem 0; }
+.readiness-check__label { display:flex; align-items:flex-start; gap:.7rem; font-size:.84rem; cursor:pointer; }
+.readiness-check__label input { flex:0 0 auto; }
+.readiness-check__state { color:var(--text-secondary); font-size:.75rem; }
+.readiness-check__details { grid-column:1/-1; margin-left:1.7rem; font-size:.75rem; }
+.readiness-check__details summary { cursor:pointer; color:var(--text-secondary); }
+.readiness-check__overrides { display:grid; grid-template-columns:1fr 1fr; gap:.7rem; margin:.75rem 0; }
+.readiness-section-confirm { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; margin-top:1rem; }
+.readiness-section-confirm small { color:var(--text-secondary); flex:1 1 15rem; }
+@media(max-width:600px) { .readiness-section-defaults,.readiness-check__overrides { grid-template-columns:1fr; } }
+</style>
+{% endblock %}

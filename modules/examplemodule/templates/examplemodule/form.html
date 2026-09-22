@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4">
+
+  <h1 class="mb-4">Example Form</h1>
+
+  <form method="POST">
+    {{ form.hidden_tag() }}
+
+    <div class="mb-3">
+      {{ form.name.label(class="form-label") }}
+      {{ form.name(class="form-control") }}
+      {% for error in form.name.errors %}
+        <div class="text-danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+
+    <div class="mb-3">
+      {{ form.count.label(class="form-label") }}
+      {{ form.count(class="form-control") }}
+      {% for error in form.count.errors %}
+        <div class="text-danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+
+    <div class="mb-3">
+      {{ form.mode.label(class="form-label") }}
+      {{ form.mode(class="form-select") }}
+      {% for error in form.mode.errors %}
+        <div class="text-danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+
+    {{ form.submit(class="btn btn-primary") }}
+  </form>
+
+  {% if result %}
+    <hr class="my-4">
+    <h4>Processed Result</h4>
+    <pre>{{ result | tojson(indent=2) }}</pre>
+  {% endif %}
+
+</div>
+{% endblock %}

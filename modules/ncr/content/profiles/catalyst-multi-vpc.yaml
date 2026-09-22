@@ -1,0 +1,36 @@
+schema_version: 1
+extends: catalyst-common
+presentation: networking-multi-vpc
+vpcs:
+  ilp:
+    cidr_field: vpc_cidr_ilp
+    requested_prefix: 21
+  cgs:
+    cidr_field: vpc_cidr_cgs
+    requested_prefix: 21
+  pmv:
+    cidr_field: vpc_cidr_pmv
+    requested_prefix: 21
+  cr:
+    cidr_field: vpc_cidr_cr
+    requested_prefix: 22
+allocation:
+  source_placeholder: NEEDS_CONFIRMATION (ILP/CGS/PMV/CR source CIDRs)
+  review: ILP /21, CGS /21, PMV /21, CR /22. CR is used only from jump hosts.
+  requirement: Confirm customer-specific VPC requirements before allocation.
+cross_vpc:
+  host: '*.{{ subdomain }}.int.{{ root_domain }}'
+  protocol: HTTPS
+  port: 443
+  tcp_ports:
+  - 4316
+  - 5672
+  - 5552
+  - 8080
+  - 8200
+  ilp_egress:
+    source: ILP VPC
+    destination: Other environment VPCs
+    protocol: TCP
+    ports: [5432]
+    attribution: Explicit user requirement from colleague discussion, 2026-09-15; additional to PDF.

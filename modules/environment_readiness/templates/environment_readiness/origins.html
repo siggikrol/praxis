@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell readiness-origins">
+  {% set hero_title = "Why these prerequisites exist" %}
+  {% set hero_subtitle = "The incident and playbook evidence behind the Foundation Readiness networking and AWS checks." %}
+  {% set hero_eyebrow = "Foundation Readiness Sources" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ request.referrer if request.referrer and '/environment-readiness' in request.referrer else url_for('environment_readiness.index') }}"><i class="fa-solid fa-arrow-left"></i> Back to Foundation Readiness</a>
+
+  <section class="origin-intro">
+    <i class="fa-solid fa-book-open"></i>
+    <div><h2>This is the audit trail for the gate</h2><p>Most checks came from real Catalyst DEV/STG blockers. Each card states what happened and where it was documented. A checklist item should remain blocking only when its source shows that Praxis or a required Spacelift stack cannot safely proceed without it.</p><p>The Responsible team/person field on each prerequisite addresses the fragmented ownership recorded in Retro LNL. Ownership is captured on the actual task instead of being duplicated as a separate blocking prerequisite.</p></div>
+  </section>
+
+  <nav class="origin-nav" aria-label="Source groups">
+    {% for group in origin_groups %}<a href="#origin-{{ group.key }}">{{ group.title }}</a>{% endfor %}
+  </nav>
+
+  {% for group in origin_groups %}
+  <section class="origin-group" id="origin-{{ group.key }}">
+    <div class="origin-group__heading"><span>{{ loop.index }}</span><div><h2>{{ group.title }}</h2><p>{{ group['items']|length }} documented reasons</p></div></div>
+    <div class="origin-grid">
+      {% for key, title, source, _legacy_location, reason in group['items'] %}
+      <article class="origin-card" id="origin-{{ key }}">
+        <div class="origin-card__title"><h3>{{ title }}</h3><span>{{ source_documents[source].title }}</span></div>
+        <p>{{ reason }}</p>
+        {% if source_documents[source].url %}<a href="{{ source_documents[source].url }}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open source in Confluence</a>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+
+  <section class="origin-sources" id="source-documents">
+    <h2>Confluence sources</h2>
+    <p>These canonical Confluence pages provide the incident and playbook evidence used by the Foundation Readiness gate.</p>
+    <ul>{% for _key, document in source_documents.items() %}<li>{% if document.url %}<a href="{{ document.url }}" target="_blank" rel="noopener noreferrer">{{ document.title }} <i class="fa-solid fa-arrow-up-right-from-square"></i></a>{% else %}{{ document.title }}{% endif %}</li>{% endfor %}</ul>
+  </section>
+</div>
+
+<style>
+.readiness-origins { margin: 0 auto; }
+.origin-intro { display: flex; gap: .8rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--accent-blue-border, var(--border-default)); border-radius: .9rem; background: var(--accent-blue-bg); }
+.origin-intro > i { margin-top: .15rem; color: var(--accent-blue); }.origin-intro h2 { margin: 0; font-size: 1rem; }.origin-intro p { margin: .25rem 0 0; color: var(--text-secondary); font-size: .82rem; }
+.origin-nav { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }.origin-nav a { padding: .45rem .7rem; border: 1px solid var(--border-default); border-radius: 999px; background: var(--bg-surface); font-size: .78rem; text-decoration: none; }
+.origin-group { margin-bottom: 1.2rem; scroll-margin-top: 1rem; }.origin-group__heading { display: flex; align-items: center; gap: .65rem; margin-bottom: .7rem; }.origin-group__heading > span { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--accent-blue); color: white; font-weight: 700; }.origin-group__heading h2 { margin: 0; font-size: 1.05rem; }.origin-group__heading p { margin: .1rem 0 0; color: var(--text-muted); font-size: .72rem; }
+.origin-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }.origin-card { padding: .9rem; border: 1px solid var(--border-default); border-radius: .8rem; background: var(--bg-surface); scroll-margin-top: 1rem; }.origin-card__title { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }.origin-card h3 { margin: 0; font-size: .88rem; }.origin-card__title span { flex: 0 0 auto; padding: .18rem .4rem; border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); font-size: .65rem; }.origin-card p { margin: .45rem 0; color: var(--text-secondary); font-size: .78rem; line-height: 1.45; }.origin-card a { font-size: .7rem; }
+.origin-sources { padding: 1rem; border: 1px solid var(--border-default); border-radius: .9rem; background: var(--bg-elevated); }.origin-sources h2 { margin: 0; font-size: .95rem; }.origin-sources p,.origin-sources li { color: var(--text-secondary); font-size: .76rem; }.origin-sources ul { margin-bottom: 0; }
+@media (max-width: 800px) { .origin-grid { grid-template-columns: 1fr; }.origin-card__title { display: grid; }.origin-card__title span { justify-self: start; } }
+</style>
+{% endblock %}

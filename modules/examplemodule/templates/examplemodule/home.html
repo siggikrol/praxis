@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+
+  <h1 class="mb-4">Example Module</h1>
+
+  <p>This module demonstrates WTForms integration.</p>
+
+  <a href="{{ url_for('examplemodule.form') }}"
+     class="btn btn-primary btn-lg">
+     Open Example Form
+  </a>
+
+</div>
+{% endblock %}

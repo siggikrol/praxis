@@ -1,0 +1,1519 @@
+{% extends "wizard_step.html" %}
+
+{% block step_body %}
+  {# Jinja 3.x doesn't let assignments inside loops escape to the outer scope. #}
+  {% set ns = namespace(meta=none) %}
+  {% set ami_ns = namespace(meta=none) %}
+  {% for f in form if f.type == 'FormField' %}
+    {% if ns.meta is none and f.form._eks_instance_types_meta is defined %}
+      {% set ns.meta = f.form._eks_instance_types_meta %}
+    {% endif %}
+    {% if ami_ns.meta is none and f.form._eks_ami_meta is defined %}
+      {% set ami_ns.meta = f.form._eks_ami_meta %}
+    {% endif %}
+  {% endfor %}
+  {% set _meta = ns.meta %}
+  {% set _ami_meta = ami_ns.meta %}
+  {% set _ver_meta = form._eks_cluster_versions_meta if form._eks_cluster_versions_meta is defined else none %}
+
+  <div class="d-flex align-items-start flex-wrap gap-2 mb-3">
+    <div class="alert alert-info py-2 mb-0 flex-grow-1 wizard-inline-alert">
+      <div class="small">
+        <div>
+          Cluster versions are fetched from the AWS EKS API and cached (24h by default).
+          {% if _ver_meta is not none %}
+            {% set _src_class = "bg-success" if _ver_meta.source == "aws_cache" else "bg-warning text-dark" %}
+            {% set _state_class = "bg-warning text-dark" if _ver_meta.stale else "bg-success" %}
+            <span class="badge {{ _src_class }} ms-2" title="{{ _ver_meta.cache_path }}">source={{ _ver_meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _ver_meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _ver_meta.count }}</span>
+            <span class="badge {{ _state_class }} ms-1">{{ "stale" if _ver_meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+        <div class="mt-1">
+          Instance types are fetched from the AWS EC2 API and cached (24h by default).
+          {% if _meta is not none %}
+            {% set _src_class = "bg-success" if _meta.source == "aws_cache" else "bg-warning text-dark" %}
+            {% set _state_class = "bg-warning text-dark" if _meta.stale else "bg-success" %}
+            <span class="badge {{ _src_class }} ms-2" title="{{ _meta.cache_path }}">source={{ _meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _meta.count }}</span>
+            <span class="badge {{ _state_class }} ms-1">{{ "stale" if _meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+        <div class="mt-1">
+          EKS optimized AMI IDs are fetched from AWS SSM by region/version and cached (24h by default).
+          {% if _ami_meta is not none %}
+            {% set _src_class = "bg-success" if _ami_meta.source == "aws_cache" else "bg-warning text-dark" %}
+            {% set _state_class = "bg-warning text-dark" if _ami_meta.stale else "bg-success" %}
+            <span class="badge {{ _src_class }} ms-2" title="{{ _ami_meta.cache_path }}">source={{ _ami_meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _ami_meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _ami_meta.count }}</span>
+            <span class="badge {{ _state_class }} ms-1">{{ "stale" if _ami_meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2 ms-auto flex-shrink-0">
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, eks_cluster_versions_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh cluster versions
+      </a>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, eks_instance_types_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh instance types
+      </a>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, eks_ami_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh AMI
+      </a>
+    </div>
+  </div>
+
+  {% for field in form if field.type != 'CSRFTokenField' and field.type != 'FormField' %}
+    {{ render_field(field, step) }}
+  {% endfor %}
+
+  {% for field in form if field.type == 'FormField' %}
+    {% set env_key = field.name|lower %}
+    {% set env_base = env_key.split('_', 1)[0] %}
+    <div class="env-section mb-4" data-env="{{ env_base }}">
+      <div class="env-chip" data-env="{{ env_base }}">{{ env_key|upper }}</div>
+      <div class="env-section__body">
+        {% set env_form = field.form %}
+
+        {% set default_types = env_form.default_node_group_instance_types.data or [] %}
+        {% set default_type_summary = default_types|join(", ") if default_types is sequence and default_types is not string else default_types %}
+        <details class="eks-node-group-card eks-node-group-card--default mb-4">
+          <summary class="eks-node-group-card__summary">
+            <div class="eks-node-group-card__title">
+              <strong>Default Node Group</strong>
+              <span class="eks-node-group-card__name">{{ env_form.default_node_group_name.data or "Unnamed" }}</span>
+            </div>
+            <div class="eks-node-group-card__meta">
+              <span>{{ "enabled" if env_form.default_node_group_enabled.data else "disabled" }}</span>
+              <span>{{ default_type_summary or "No instance type selected" }}</span>
+              <span>size {{ env_form.default_node_group_min_size.data if env_form.default_node_group_min_size.data is not none else "-" }}/{{ env_form.default_node_group_max_size.data if env_form.default_node_group_max_size.data is not none else "-" }}/{{ env_form.default_node_group_desired_size.data if env_form.default_node_group_desired_size.data is not none else "-" }}</span>
+              {% if env_form.default_node_group_capacity_type.data %}<span>{{ env_form.default_node_group_capacity_type.data }}</span>{% endif %}
+              {% if env_form.default_node_group_ami_id.data %}<span>AMI {{ env_form.default_node_group_ami_id.data }}</span>{% endif %}
+              {% if env_form.default_node_group_labels.data %}<span>labels configured</span>{% endif %}
+              {% if env_form.default_node_group_taints.data %}<span>taints configured</span>{% endif %}
+            </div>
+          </summary>
+          <div class="eks-node-group-card__body">
+          <div class="text-muted small mb-3">Base worker pool used unless additional groups override workload placement.</div>
+          {{ render_field(env_form.default_node_group_enabled, step) }}
+          {{ render_field(env_form.default_node_group_name, step) }}
+          {{ render_field(env_form.default_node_group_instance_types, step) }}
+          <div class="eks-instance-picker" data-target="{{ env_form.default_node_group_instance_types.id }}"></div>
+
+          <div class="row g-3">
+            <div class="col-md-4">{{ render_field(env_form.default_node_group_min_size, step) }}</div>
+            <div class="col-md-4">{{ render_field(env_form.default_node_group_max_size, step) }}</div>
+            <div class="col-md-4">{{ render_field(env_form.default_node_group_desired_size, step) }}</div>
+          </div>
+
+          <details class="mt-3">
+            <summary class="fw-semibold">
+              Advanced
+              <button type="button"
+                      class="eks-hint-chip ms-2 js-eks-popover"
+                      data-bs-toggle="popover"
+                      data-bs-placement="right"
+                      data-bs-custom-class="eks-hint-popover-card"
+                      data-bs-html="true"
+                      data-bs-title="Advanced Examples"
+                      data-bs-content="<div class='mb-2'><strong>1) Capacity + Disk</strong><br><code>capacity_type</code>: <code>ON_DEMAND</code><br><code>disk_size</code>: <code>80</code></div><div class='mb-2'><strong>2) AMI</strong><br>Resolved from AWS SSM for the selected region and EKS version.</div><div class='mb-2'><strong>3) Labels</strong><br><code>workload</code>: <code>payments</code><br><code>team</code>: <code>platform</code></div><div><strong>4) Taint</strong><br><code>dedicated</code>: <code>ml</code>: <code>NO_SCHEDULE</code></div>"
+                      aria-label="Show advanced examples">
+                <i class="fa-solid fa-circle-info me-1"></i> Examples
+              </button>
+            </summary>
+            <div class="mt-3">
+              {{ render_field(env_form.default_node_group_capacity_type, step) }}
+              {{ render_field(env_form.default_node_group_disk_size, step) }}
+              {{ render_field(env_form.default_node_group_iam_role_use_name_prefix, step) }}
+              {{ render_field(env_form.default_node_group_ami_id, step) }}
+              {{ render_field(env_form.default_node_group_labels, step) }}
+              {{ render_field(env_form.default_node_group_taints, step) }}
+              <div class="eks-field-helper">Format: <code>key: value: EFFECT</code> (e.g. <code>dedicated: vault: NO_SCHEDULE</code>).</div>
+              <div class="eks-inline-example mt-2">
+                <strong>Taint example</strong>
+                <code>dedicated: vault: NO_SCHEDULE</code>
+              </div>
+            </div>
+          </details>
+          </div>
+        </details>
+
+        {% set is_multi_vpc_workload_cluster = env_slug == 'multi-vpc' and not env_key.endswith('_ilp') %}
+        {% if not is_multi_vpc_workload_cluster %}
+        <details class="mt-4"
+                 data-eks-dynamic-section="node_group"
+                 data-env="{{ env_key }}"
+                 {% if request.args.get('eks_focus', '').startswith('node_group:' ~ env_key ~ ':') or request.args.get('eks_focus_node_group', '').startswith(env_key ~ ':') %}open{% endif %}
+                 {% if request.args.get('eks_focus') == 'node_group:' ~ env_key ~ ':empty' %}data-eks-focus="1"{% endif %}>
+          <summary class="fw-semibold">
+            Additional Node Groups
+            <span class="eks-section-inventory ms-2">
+              {{ env_form.additional_node_groups|length }} configured
+              {% for group in env_form.additional_node_groups %}
+                {% if group.form.name.data %}<span>{{ group.form.name.data }}</span>{% endif %}
+              {% endfor %}
+            </span>
+            <button type="button"
+                    class="eks-hint-chip ms-2 js-eks-popover"
+                    data-bs-toggle="popover"
+                    data-bs-placement="right"
+                    data-bs-custom-class="eks-hint-popover-card"
+                    data-bs-html="true"
+                    data-bs-title="Node Group Examples"
+                    data-bs-content="<div class='mb-2'><strong>1) RMQ Node Group</strong><br><code>name</code>: <code>rmq</code><br><code>instance_types</code>: <code>m6i.large</code><br><code>min/max/desired</code>: <code>3 / 6 / 4</code><br><code>capacity_type</code>: <code>ON_DEMAND</code></div><div><strong>2) Vault Node Group</strong><br><code>name</code>: <code>vault</code><br><code>instance_types</code>: <code>m6i.large</code><br><code>min/max/desired</code>: <code>2 / 4 / 2</code><br><code>capacity_type</code>: <code>ON_DEMAND</code></div>"
+                    aria-label="Show node group examples">
+              <i class="fa-solid fa-circle-info me-1"></i> Examples
+            </button>
+          </summary>
+          <div class="mt-3">
+            <div class="d-flex justify-content-between align-items-center mb-3 gap-3">
+              <div>
+                <div class="text-muted small">Add extra managed node groups for specialized workloads.</div>
+                <div class="eks-inline-example mt-2">
+                  <strong>Common pattern</strong>
+                  <span>Vault nodes: <code>name=vault</code>, <code>m6i.large</code>, <code>2 / 4 / 2</code>, taint <code>dedicated: vault: NO_SCHEDULE</code></span>
+                </div>
+              </div>
+              <button type="submit"
+                      class="btn btn-sm btn-outline-primary js-eks-dynamic-action"
+                      name="action"
+                      value="add_node_group:{{ env_key }}">
+                Add Node Group
+              </button>
+            </div>
+
+            {% if env_form.additional_node_groups %}
+              {% for group in env_form.additional_node_groups %}
+                {% set focus_token = env_key ~ ':' ~ loop.index0 %}
+                {% set generic_focus_token = 'node_group:' ~ env_key ~ ':' ~ loop.index0 %}
+                {% set group_name = group.form.name.data if group.form.name.data else "Unnamed" %}
+                {% set group_types = group.form.instance_types.data if group.form.instance_types.data else [] %}
+                {% set group_type_summary = group_types|join(", ") if group_types is sequence and group_types is not string else group_types %}
+                <details class="eks-node-group-card mb-3"
+                         id="eks-ng-{{ env_key }}-{{ loop.index0 }}"
+                         data-ng-group
+                         data-env="{{ env_key }}"
+                         data-index="{{ loop.index0 }}"
+                         {% if request.args.get('eks_focus_node_group') == focus_token or request.args.get('eks_focus') == generic_focus_token %}open data-focus-new="1" data-eks-focus="1"{% endif %}>
+                  <summary class="eks-node-group-card__summary">
+                    <div class="eks-node-group-card__title">
+                      <strong>Node Group {{ loop.index }}</strong>
+                      <span class="eks-node-group-card__name">{{ group_name }}</span>
+                    </div>
+                    <div class="eks-node-group-card__meta">
+                      <span>{{ group_type_summary or "No instance type selected" }}</span>
+                      <span>size {{ group.form.min_size.data if group.form.min_size.data is not none else "-" }}/{{ group.form.max_size.data if group.form.max_size.data is not none else "-" }}/{{ group.form.desired_size.data if group.form.desired_size.data is not none else "-" }}</span>
+                      {% if group.form.capacity_type.data %}<span>{{ group.form.capacity_type.data }}</span>{% endif %}
+                      {% if group.form.labels.data %}<span>labels configured</span>{% endif %}
+                      {% if group.form.taints.data %}<span>taints configured</span>{% endif %}
+                    </div>
+                    <div class="d-flex gap-2 eks-node-group-card__actions">
+                      <button type="button"
+                              class="btn btn-sm btn-outline-secondary js-copy-default"
+                              data-env="{{ env_key }}"
+                              data-index="{{ loop.index0 }}"
+                              title="Copy instance types, sizing, capacity, disk, IAM role prefix setting, AMI override, labels, and taints from the default node group. The node group name is only filled when empty. Additional groups inherit the default AMI when the override is blank.">
+                        Copy default values
+                      </button>
+                      <button type="submit"
+                              class="btn btn-sm btn-outline-danger js-eks-dynamic-action"
+                              name="action"
+                              value="remove_node_group:{{ env_key }}:{{ loop.index0 }}">
+                        Remove
+                      </button>
+                    </div>
+                  </summary>
+
+                  <div class="eks-node-group-card__body">
+                  {{ render_field(group.form.name, step) }}
+                  {{ render_field(group.form.instance_types, step) }}
+                  <div class="eks-instance-picker" data-target="{{ group.form.instance_types.id }}"></div>
+
+                  <div class="row g-3">
+                    <div class="col-md-4">{{ render_field(group.form.min_size, step) }}</div>
+                    <div class="col-md-4">{{ render_field(group.form.max_size, step) }}</div>
+                    <div class="col-md-4">{{ render_field(group.form.desired_size, step) }}</div>
+                  </div>
+
+                  <details class="mt-3">
+                    <summary class="fw-semibold">
+                      Advanced
+                      <button type="button"
+                              class="eks-hint-chip ms-2 js-eks-popover"
+                              data-bs-toggle="popover"
+                              data-bs-placement="right"
+                              data-bs-custom-class="eks-hint-popover-card"
+                              data-bs-html="true"
+                              data-bs-title="Advanced Examples"
+                              data-bs-content="<div class='mb-2'><strong>1) RMQ Labels</strong><br><code>workload</code>: <code>rmq</code><br><code>nodegroup_name</code>: <code>rmq</code></div><div class='mb-2'><strong>2) Vault Labels</strong><br><code>workload</code>: <code>vault</code><br><code>nodegroup_name</code>: <code>vault</code></div><div><strong>3) Vault Taint</strong><br><code>dedicated</code>: <code>vault</code>: <code>NO_SCHEDULE</code></div>"
+                              aria-label="Show advanced examples">
+                        <i class="fa-solid fa-circle-info me-1"></i> Examples
+                      </button>
+                    </summary>
+                    <div class="mt-3">
+                      {{ render_field(group.form.capacity_type, step) }}
+                      {{ render_field(group.form.disk_size, step) }}
+                      {{ render_field(group.form.iam_role_use_name_prefix, step) }}
+                      {{ render_field(group.form.ami_id, step) }}
+                      {{ render_field(group.form.labels, step) }}
+                      {{ render_field(group.form.taints, step) }}
+                      <div class="eks-field-helper">Format: <code>key: value: EFFECT</code> (e.g. <code>dedicated: vault: NO_SCHEDULE</code>).</div>
+                      <div class="eks-inline-example mt-2">
+                        <strong>Taint example</strong>
+                        <code>dedicated: vault: NO_SCHEDULE</code>
+                      </div>
+                    </div>
+                  </details>
+                  </div>
+                </details>
+              {% endfor %}
+            {% else %}
+              <div class="text-muted small">No additional node groups configured.</div>
+            {% endif %}
+          </div>
+        </details>
+        {% else %}
+          <div class="eks-default-node-note mt-4">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <span>
+            Additional managed node groups for RabbitMQ and Vault are configured on ILP only.
+            This {{ env_key.rsplit('_', 1)[1]|upper }} cluster uses its default node group.
+            </span>
+          </div>
+        {% endif %}
+
+        {% set missing_required_rules = env_form.missing_single_vpc_required_node_sg_rules() if env_slug == 'single-vpc' else [] %}
+        {% set required_rules_bypassed = missing_required_rules and env_form.has_acknowledged_node_sg_rule_bypass() %}
+        {% set required_rules_blocking = request.method == 'POST' and missing_required_rules and not required_rules_bypassed %}
+        <details class="mt-4 {% if required_rules_blocking %}eks-required-rules-blocking{% endif %}"
+                 data-eks-dynamic-section="sg_rule"
+                 data-env="{{ env_key }}"
+                 {% if required_rules_blocking or request.args.get('eks_focus', '').startswith('sg_rule:' ~ env_key ~ ':') %}open{% endif %}
+                 {% if request.args.get('eks_focus') == 'sg_rule:' ~ env_key ~ ':empty' or required_rules_blocking %}data-eks-focus="1"{% endif %}>
+          <summary class="fw-semibold">
+            Additional Node SG Rules (non-SSH)
+            <span class="eks-section-inventory ms-2">
+              {{ env_form.additional_node_security_group_rules|length }} configured
+              {% for rule in env_form.additional_node_security_group_rules %}
+                {% if rule.form.name.data %}<span>{{ rule.form.name.data }}: {{ rule.form.protocol.data }} {{ rule.form.from_port.data }}{% if rule.form.to_port.data != rule.form.from_port.data %}-{{ rule.form.to_port.data }}{% endif %}</span>{% endif %}
+              {% endfor %}
+            </span>
+            <button type="button"
+                    class="eks-hint-chip ms-2 js-eks-popover"
+                    data-bs-toggle="popover"
+                    data-bs-placement="right"
+                    data-bs-custom-class="eks-hint-popover-card"
+                    data-bs-html="true"
+                    data-bs-title="Rule Examples"
+                    data-bs-content="<div class='mb-2'><strong>1) Vault (8080)</strong><br><code>name</code>: <code>vault_access</code><br><code>type</code>: <code>ingress</code><br><code>protocol</code>: <code>tcp</code><br><code>from_port</code>/<code>to_port</code>: <code>8080</code><br><code>source_type</code>: <code>Cluster Security Group</code></div><div class='mb-2'><strong>2) Istio Webhook (15017)</strong><br><code>name</code>: <code>ingress_15017</code><br><code>type</code>: <code>ingress</code><br><code>protocol</code>: <code>tcp</code><br><code>from_port</code>/<code>to_port</code>: <code>15017</code><br><code>source_type</code>: <code>Cluster Security Group</code></div><div><strong>3) Istio xDS (15012)</strong><br><code>name</code>: <code>ingress_15012</code><br><code>type</code>: <code>ingress</code><br><code>protocol</code>: <code>tcp</code><br><code>from_port</code>/<code>to_port</code>: <code>15012</code><br><code>source_type</code>: <code>Cluster Security Group</code></div>"
+                    aria-label="Show rule examples">
+              <i class="fa-solid fa-circle-info me-1"></i> Examples
+            </button>
+          </summary>
+          <div class="mt-3">
+            {% if missing_required_rules and not required_rules_bypassed %}
+              <div class="alert {% if required_rules_blocking %}alert-danger{% else %}alert-warning{% endif %} py-2 mb-3">
+                <div class="fw-semibold">
+                  {% if required_rules_blocking %}
+                    Cannot continue: required Single-VPC rules are missing
+                  {% else %}
+                    Required for Single-VPC
+                  {% endif %}
+                </div>
+                <div class="small">
+                  You cannot continue until these node security group rules are added:
+                  {% for rule in missing_required_rules %}
+                    <code>{{ rule.name }}</code>{% if not loop.last %}, {% endif %}
+                  {% endfor %}.
+                  Use the examples menu above for the exact values.
+                </div>
+              </div>
+            {% elif required_rules_bypassed %}
+              <div class="alert alert-info py-2 mb-3">
+                <div class="fw-semibold">Security rule setup bypass acknowledged</div>
+                <div class="small">
+                  The required Single-VPC node security group rules are still missing.
+                  Continue only if you intentionally want to skip Vault and Istio cluster-to-node access rules.
+                </div>
+              </div>
+            {% endif %}
+            {% if env_form.additional_node_security_group_rules.errors %}
+              <div class="text-danger small fw-semibold mb-3">
+                {{ env_form.additional_node_security_group_rules.errors[0] }}
+              </div>
+            {% endif %}
+            <div class="eks-sg-bypass-box mb-3">
+              {{ env_form.bypass_node_security_group_rule_setup_acknowledged(
+                  class="js-sg-bypass-ack",
+                  data_bypass_ack="1"
+              ) }}
+              <div class="form-check">
+                {{ env_form.bypass_node_security_group_rule_setup(
+                    class="form-check-input js-sg-bypass-checkbox",
+                    data_bypass_checkbox="1",
+                    data_env=env_key,
+                    data_modal_target="eks-sg-bypass-modal-" ~ env_key
+                ) }}
+                <label class="form-check-label" for="{{ env_form.bypass_node_security_group_rule_setup.id }}">
+                  {{ env_form.bypass_node_security_group_rule_setup.label.text }}
+                </label>
+              </div>
+              <div class="small text-muted mt-1">
+                Use only when you understand the cluster impact and plan to manage these rules elsewhere.
+              </div>
+              {% if env_form.bypass_node_security_group_rule_setup.errors %}
+                <div class="text-danger small fw-semibold mt-1">
+                  {{ env_form.bypass_node_security_group_rule_setup.errors[0] }}
+                </div>
+              {% endif %}
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div class="text-muted small">Add custom ingress/egress rules for worker nodes.</div>
+              <button type="submit"
+                      class="btn btn-sm btn-outline-primary js-eks-dynamic-action"
+                      name="action"
+                      value="add_sg_rule:{{ env_key }}">
+                Add Rule
+              </button>
+            </div>
+
+            {% if env_form.additional_node_security_group_rules %}
+              {% for rule in env_form.additional_node_security_group_rules %}
+                {% set sg_focus_token = 'sg_rule:' ~ env_key ~ ':' ~ loop.index0 %}
+                <details class="eks-node-group-card mb-3 js-sg-rule-card"
+                     data-env="{{ env_key }}"
+                     data-index="{{ loop.index0 }}"
+                     {% if request.args.get('eks_focus') == sg_focus_token %}open data-eks-focus="1"{% endif %}>
+                  <summary class="eks-node-group-card__summary">
+                    <div class="eks-node-group-card__title">
+                      <strong>Rule {{ loop.index }}</strong>
+                      <span class="eks-node-group-card__name">{{ rule.form.name.data or "Unnamed" }}</span>
+                    </div>
+                    <div class="eks-node-group-card__meta">
+                      <span>{{ rule.form.type.data or "-" }}</span>
+                      <span>{{ rule.form.protocol.data or "-" }} {{ rule.form.from_port.data if rule.form.from_port.data is not none else "-" }}{% if rule.form.to_port.data != rule.form.from_port.data %}-{{ rule.form.to_port.data if rule.form.to_port.data is not none else "-" }}{% endif %}</span>
+                      <span>{{ rule.form.source_type.data or "No source selected" }}</span>
+                    </div>
+                    <button type="submit"
+                            class="btn btn-sm btn-outline-danger js-eks-dynamic-action"
+                            name="action"
+                            value="remove_sg_rule:{{ env_key }}:{{ loop.index0 }}">
+                      Remove
+                    </button>
+                  </summary>
+
+                  <div class="eks-node-group-card__body">
+                  <div class="row g-3">
+                    <div class="col-md-6">{{ render_field(rule.form.name, step) }}</div>
+                    <div class="col-md-6">{{ render_field(rule.form.description, step) }}</div>
+                  </div>
+
+                  <div class="row g-3">
+                    <div class="col-md-3">{{ render_field(rule.form.type, step) }}</div>
+                    <div class="col-md-3">{{ render_field(rule.form.protocol, step) }}</div>
+                    <div class="col-md-3">{{ render_field(rule.form.from_port, step) }}</div>
+                    <div class="col-md-3">{{ render_field(rule.form.to_port, step) }}</div>
+                  </div>
+
+                  {{ render_field(rule.form.source_type, step) }}
+                  <div class="js-source-values">{{ render_field(rule.form.source_values, step) }}</div>
+                  <div class="js-source-sg-id">{{ render_field(rule.form.source_security_group_id, step) }}</div>
+                  </div>
+                </details>
+              {% endfor %}
+            {% else %}
+              <div class="text-muted small">No additional node security group rules configured.</div>
+            {% endif %}
+          </div>
+        </details>
+
+        <div class="modal fade eks-sg-bypass-modal"
+             id="eks-sg-bypass-modal-{{ env_key }}"
+             tabindex="-1"
+             aria-labelledby="eks-sg-bypass-modal-title-{{ env_key }}"
+             aria-hidden="true"
+             data-env="{{ env_key }}">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title" id="eks-sg-bypass-modal-title-{{ env_key }}">
+                  Bypass required security group rules?
+                </h5>
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+              </div>
+              <div class="modal-body">
+                <p class="mb-2">
+                  You are acknowledging that if you skip adding these node security group rules,
+                  cluster components that depend on cluster-to-node access may not work correctly.
+                </p>
+                <ul class="mb-0">
+                  <li>Istio xDS and sidecar injector webhook traffic may fail.</li>
+                  <li>Vault access from the cluster to worker nodes may fail.</li>
+                  <li>The generated cluster may require manual security group remediation later.</li>
+                </ul>
+              </div>
+              <div class="modal-footer">
+                <button type="button"
+                        class="btn btn-outline-secondary js-sg-bypass-cancel"
+                        data-bs-dismiss="modal">
+                  Go back and add rules
+                </button>
+                <button type="button"
+                        class="btn btn-danger js-sg-bypass-confirm"
+                        data-env="{{ env_key }}">
+                  I understand, bypass setup
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+{% endblock %}
+
+{% block step_scripts %}
+  {{ super() }}
+  <style>
+    .eks-hint-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid var(--border-default);
+      background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-elevated) 100%);
+      color: var(--text-secondary);
+      font-weight: 500;
+      font-size: 0.78rem;
+      line-height: 1.2;
+      vertical-align: middle;
+      transition: all 120ms ease-in-out;
+      appearance: none;
+    }
+    .eks-hint-chip:hover {
+      border-color: var(--accent-blue-border);
+      color: var(--text-primary);
+      box-shadow: 0 2px 8px rgba(12, 40, 81, 0.12);
+    }
+    .eks-hint-chip i {
+      color: var(--accent-blue);
+      font-size: 0.8rem;
+    }
+    .eks-hint-popover-card {
+      --bs-popover-bg: var(--bg-surface);
+      --bs-popover-border-color: var(--border-default);
+      --bs-popover-header-bg: transparent;
+      --bs-popover-header-color: var(--text-primary);
+      --bs-popover-body-color: var(--text-secondary);
+    }
+    .eks-hint-popover-card .popover {
+      max-width: 460px;
+      text-align: left;
+      background: radial-gradient(circle at 85% 10%, var(--accent-blue-bg) 0%, var(--bg-surface) 58%, var(--bg-elevated) 100%);
+      border: 1px solid var(--border-default);
+      border-radius: 12px;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.35), 0 4px 10px rgba(15, 23, 42, 0.2);
+    }
+    .eks-hint-popover-card .popover-header {
+      padding: 0.65rem 0.8rem 0.3rem;
+      border-bottom: none;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--text-primary);
+    }
+    .eks-hint-popover-card .popover-body {
+      padding: 0.3rem 0.8rem 0.75rem;
+      font-size: 0.8rem;
+      line-height: 1.45;
+      letter-spacing: 0.01em;
+    }
+    .eks-hint-popover-card .popover-body strong {
+      color: var(--text-primary);
+    }
+    .eks-hint-popover-card .popover-body code {
+      color: var(--accent-blue);
+      background: var(--accent-blue-bg);
+      border: 1px solid var(--accent-blue-border);
+      border-radius: 6px;
+      padding: 0.05rem 0.3rem;
+      font-size: 0.74rem;
+    }
+    .eks-hint-popover-card.bs-popover-end > .popover-arrow::before {
+      border-right-color: var(--border-default);
+    }
+    .eks-hint-popover-card.bs-popover-end > .popover-arrow::after {
+      border-right-color: var(--bg-elevated);
+    }
+    .eks-node-group-card {
+      border: 1px solid var(--border-default);
+      border-radius: 8px;
+      padding: 0.9rem;
+      background: var(--bg-surface);
+      box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+      transition: border-color 140ms ease-in-out, box-shadow 140ms ease-in-out;
+    }
+    .eks-node-group-card--default {
+      background: var(--bg-elevated);
+    }
+    .eks-default-node-note {
+      align-items: center;
+      background: var(--accent-blue-bg);
+      border: 1px solid var(--accent-blue-border);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      display: flex;
+      font-size: 0.84rem;
+      gap: 0.55rem;
+      line-height: 1.4;
+      padding: 0.65rem 0.75rem;
+    }
+    .eks-default-node-note i {
+      color: var(--accent-blue);
+      flex: 0 0 auto;
+    }
+    .eks-node-group-card.is-active,
+    .eks-node-group-card[data-focus-new="1"] {
+      border-color: var(--accent-blue-border);
+      box-shadow: 0 0 0 3px var(--accent-blue-bg);
+    }
+    .js-sg-rule-card.is-active,
+    .js-sg-rule-card[data-eks-focus="1"],
+    [data-eks-dynamic-section][data-eks-focus="1"] {
+      border-color: var(--accent-blue-border) !important;
+      box-shadow: 0 0 0 3px var(--accent-blue-bg);
+    }
+    .eks-required-rules-blocking {
+      border: 1px solid var(--bs-danger);
+      border-radius: 8px;
+      padding: 0.8rem;
+      box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.14);
+    }
+    .eks-sg-bypass-box {
+      border: 1px dashed var(--border-default);
+      border-radius: 8px;
+      padding: 0.65rem 0.75rem;
+      background: var(--bg-elevated);
+    }
+    .eks-sg-bypass-modal {
+      z-index: 1065;
+    }
+    .modal-backdrop {
+      z-index: 1060;
+    }
+    .eks-node-group-card__header,
+    .eks-node-group-card__summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .eks-node-group-card__summary {
+      cursor: pointer;
+      list-style: none;
+    }
+    .eks-node-group-card__summary::-webkit-details-marker {
+      display: none;
+    }
+    .eks-node-group-card__summary::before {
+      content: "+";
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.25rem;
+      height: 1.25rem;
+      flex: 0 0 1.25rem;
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-weight: 700;
+      line-height: 1;
+    }
+    .eks-node-group-card[open] > .eks-node-group-card__summary::before {
+      content: "-";
+    }
+    .eks-node-group-card__title {
+      min-width: 9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    .eks-node-group-card__name {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+    .eks-node-group-card__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      flex: 1;
+      min-width: 12rem;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+    .eks-node-group-card__meta span {
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      padding: 0.12rem 0.45rem;
+      background: var(--bg-elevated);
+    }
+    .eks-section-inventory {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      align-items: center;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 500;
+    }
+    .eks-section-inventory span {
+      border: 1px solid var(--border-default);
+      border-radius: 999px;
+      padding: 0.1rem 0.42rem;
+      background: var(--bg-elevated);
+      color: var(--text-secondary);
+    }
+    .eks-node-group-card__actions {
+      flex-shrink: 0;
+    }
+    .eks-node-group-card__body {
+      margin-top: 0.9rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--border-default);
+    }
+    .eks-field-helper,
+    .eks-inline-example {
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }
+    .eks-inline-example {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.5rem;
+      align-items: center;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid var(--accent-blue-border);
+      border-radius: 8px;
+      background: var(--accent-blue-bg);
+    }
+    .eks-inline-example strong {
+      color: var(--text-primary);
+    }
+    .eks-field-helper code,
+    .eks-inline-example code {
+      color: var(--accent-blue);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      padding: 0.05rem 0.3rem;
+      font-size: 0.74rem;
+    }
+    .eks-instance-tags .btn-link {
+      text-decoration: none;
+    }
+    .eks-instance-dropdown {
+      border: 1px solid var(--border-default);
+      border-radius: 6px;
+      max-height: 260px;
+      overflow: auto;
+      background: var(--bg-surface);
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+    }
+    .eks-instance-group {
+      padding: 6px 10px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: var(--table-header-bg);
+      border-bottom: 1px solid var(--border-default);
+    }
+    .eks-instance-option {
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .eks-instance-option:hover {
+      background: var(--list-hover-bg);
+    }
+    .eks-instance-option.disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .eks-instance-dropdown.hidden {
+      display: none;
+    }
+    .eks-instance-group-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+    .eks-instance-group-toggle span {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .eks-instance-picker.is-warning .form-control {
+      border-color: var(--accent-amber-border);
+      background: var(--accent-amber-bg);
+    }
+    .eks-instance-picker.is-danger .form-control {
+      border-color: var(--accent-red-border);
+      background: var(--accent-red-bg);
+    }
+    .eks-instance-picker.is-warning .eks-instance-dropdown {
+      border-color: var(--accent-amber-border);
+      box-shadow: 0 6px 18px rgba(240, 173, 78, 0.2);
+    }
+    .eks-instance-picker.is-danger .eks-instance-dropdown {
+      border-color: var(--accent-red-border);
+      box-shadow: 0 6px 18px rgba(220, 53, 69, 0.22);
+    }
+    .eks-instance-health-note {
+      display: none;
+      margin-top: 0.5rem;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid var(--accent-amber-border);
+      border-radius: 8px;
+      background: var(--accent-amber-bg);
+      font-size: 0.82rem;
+      color: var(--accent-amber);
+      font-weight: 600;
+    }
+    .eks-instance-picker.is-danger .eks-instance-health-note {
+      border-color: var(--accent-red-border);
+      background: var(--accent-red-bg);
+      color: var(--accent-red);
+    }
+    .eks-instance-health-note .badge {
+      vertical-align: baseline;
+    }
+    .eks-instance-tag-legacy-warning {
+      background: var(--accent-amber-bg) !important;
+      border-color: var(--accent-amber-border) !important;
+      color: var(--accent-amber) !important;
+      cursor: help;
+    }
+    .eks-instance-tag-legacy-warning .btn-link {
+      color: inherit;
+    }
+    .eks-instance-tag-legacy-danger {
+      background: var(--accent-red-bg) !important;
+      border-color: var(--accent-red-border) !important;
+      color: var(--accent-red) !important;
+      cursor: help;
+    }
+    .eks-instance-tag-legacy-danger .btn-link {
+      color: inherit;
+    }
+    [data-theme="dark"] .eks-hint-chip:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+    }
+    @media (max-width: 768px) {
+      .eks-node-group-card__summary {
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+      .eks-node-group-card__actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+    }
+  </style>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      function escapeHTML(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }
+
+      function setSelectHealth(selectEl, noteEl, level, message) {
+        if (!selectEl || !noteEl) return;
+        selectEl.classList.remove("ps-health-warning", "ps-health-danger");
+        noteEl.classList.remove("ps-health-note-warning", "ps-health-note-danger");
+        noteEl.textContent = "";
+        noteEl.style.display = "none";
+
+        if (level === "warning") {
+          selectEl.classList.add("ps-health-warning");
+          noteEl.classList.add("ps-health-note-warning");
+          noteEl.textContent = message || "A newer supported version is available.";
+          noteEl.style.display = "";
+          return;
+        }
+        if (level === "danger") {
+          selectEl.classList.add("ps-health-danger");
+          noteEl.classList.add("ps-health-note-danger");
+          noteEl.textContent = message || "Selected version is outdated or deprecated.";
+          noteEl.style.display = "";
+        }
+      }
+
+      function attachEksVersionHealth() {
+        const selectEl = document.getElementById("eks_cluster_version");
+        if (!selectEl) return;
+
+        const noteId = `${selectEl.id}-health-note`;
+        let noteEl = document.getElementById(noteId);
+        if (!noteEl) {
+          noteEl = document.createElement("div");
+          noteEl.id = noteId;
+          noteEl.className = "ps-health-note";
+          selectEl.insertAdjacentElement("afterend", noteEl);
+        }
+
+        const standardGroup = Array.from(selectEl.querySelectorAll("optgroup")).find((group) =>
+          String(group.label || "").toLowerCase().includes("standard")
+        );
+        const latestStandard = (
+          standardGroup && standardGroup.querySelector("option")
+            ? standardGroup.querySelector("option").value
+            : ""
+        );
+
+        const evaluate = () => {
+          const selected = selectEl.selectedOptions[0];
+          if (!selected) {
+            setSelectHealth(selectEl, noteEl, "", "");
+            return;
+          }
+          const parent = selected.parentElement;
+          const groupLabel = String(
+            parent && parent.tagName === "OPTGROUP" ? parent.label : ""
+          ).toLowerCase();
+          const value = String(selected.value || "").trim();
+
+          if (groupLabel.includes("extended")) {
+            setSelectHealth(
+              selectEl,
+              noteEl,
+              "danger",
+              "Extended Support selected. Upgrade to a Standard Support version."
+            );
+            return;
+          }
+
+          if (groupLabel.includes("standard") && latestStandard && value && value !== latestStandard) {
+            setSelectHealth(
+              selectEl,
+              noteEl,
+              "warning",
+              `Newer Standard Support version available: ${latestStandard}.`
+            );
+            return;
+          }
+
+          setSelectHealth(selectEl, noteEl, "", "");
+        };
+
+        selectEl.addEventListener("change", evaluate);
+        evaluate();
+      }
+
+      // Families below these generations are treated as legacy for common EKS workloads.
+      const LEGACY_GENERATION_CUTOFF = {
+        t: 2,
+        m: 4,
+        c: 4,
+        r: 4,
+      };
+
+      function parseInstanceType(value) {
+        const raw = String(value || "").trim().toLowerCase();
+        if (!raw) return { family: "", size: "" };
+        const parts = raw.split(".");
+        if (parts.length < 2) return { family: raw, size: "" };
+        return { family: parts[0], size: parts.slice(1).join(".") };
+      }
+
+      function parseFamilyToken(family) {
+        const raw = String(family || "").trim().toLowerCase();
+        const m = raw.match(/^([a-z]+)(\d+)([a-z0-9]*)$/);
+        if (!m) return null;
+        return {
+          family: raw,
+          root: m[1],
+          generation: Number(m[2]),
+          suffix: m[3] || "",
+        };
+      }
+
+      function archClassForSuffix(suffix) {
+        const s = String(suffix || "").toLowerCase();
+        return s.includes("g") ? "arm" : "x86";
+      }
+
+      function buildFamilyInventory(values) {
+        const byRoot = new Map();
+        values.forEach((value) => {
+          const parsed = parseInstanceType(value);
+          const token = parseFamilyToken(parsed.family);
+          if (!token) return;
+
+          if (!byRoot.has(token.root)) {
+            byRoot.set(token.root, {
+              generations: new Set(),
+              families: new Map(),
+            });
+          }
+          const entry = byRoot.get(token.root);
+          entry.generations.add(token.generation);
+          if (!entry.families.has(token.family)) {
+            entry.families.set(token.family, token);
+          }
+        });
+        return byRoot;
+      }
+
+      function compareCandidateFamilies(a, b, selectedToken) {
+        const da = a.generation - selectedToken.generation;
+        const db = b.generation - selectedToken.generation;
+        if (da !== db) return da - db;
+
+        const selectedArch = archClassForSuffix(selectedToken.suffix);
+        const archA = archClassForSuffix(a.suffix);
+        const archB = archClassForSuffix(b.suffix);
+        if (archA !== archB) {
+          if (archA === selectedArch) return -1;
+          if (archB === selectedArch) return 1;
+          return archA === "x86" ? -1 : 1;
+        }
+        return a.family.localeCompare(b.family);
+      }
+
+      function pickReplacementInstanceType(parsed, selectedToken, rootEntry, availableValues) {
+        const selectedArch = archClassForSuffix(selectedToken.suffix);
+        const families = Array.from(rootEntry.families.values())
+          .filter((token) => token.generation > selectedToken.generation)
+          .filter((token) => archClassForSuffix(token.suffix) === selectedArch)
+          .sort((a, b) => compareCandidateFamilies(a, b, selectedToken));
+
+        for (const candidateFamily of families) {
+          const exact = `${candidateFamily.family}.${parsed.size}`;
+          if (availableValues.has(exact)) return exact;
+        }
+        return "";
+      }
+
+      function analyzeInstanceTypeHealth(value, familyInventory, availableValues) {
+        const normalized = String(value || "").trim().toLowerCase();
+        if (!normalized) return null;
+        const parsed = parseInstanceType(normalized);
+        const selectedToken = parseFamilyToken(parsed.family);
+        if (!selectedToken || !parsed.size) return null;
+
+        const rootEntry = familyInventory.get(selectedToken.root);
+        if (!rootEntry) return null;
+
+        const selectedArch = archClassForSuffix(selectedToken.suffix);
+        const generations = Array.from(rootEntry.families.values())
+          .filter((token) => archClassForSuffix(token.suffix) === selectedArch)
+          .map((token) => token.generation)
+          .sort((a, b) => a - b);
+        const maxGeneration = generations.length
+          ? generations[generations.length - 1]
+          : selectedToken.generation;
+        if (maxGeneration <= selectedToken.generation) return null;
+
+        const cutoff = LEGACY_GENERATION_CUTOFF[selectedToken.root];
+        const isLegacy = Number.isInteger(cutoff) && selectedToken.generation <= cutoff;
+        const level = isLegacy ? "danger" : "warning";
+        const replacement = pickReplacementInstanceType(parsed, selectedToken, rootEntry, availableValues);
+
+        return {
+          selected: normalized,
+          level,
+          maxGeneration,
+          replacement,
+        };
+      }
+
+      function buildInstancePicker(selectEl, container) {
+        if (!selectEl || !container) return;
+        container.innerHTML = `
+          <div class="input-group input-group-sm mb-2">
+            <input type="text" class="form-control" placeholder="Search instance types...">
+          </div>
+          <div class="eks-instance-dropdown mb-2 hidden"></div>
+          <div class="eks-instance-tags"></div>
+          <div class="eks-instance-health-note"></div>
+        `;
+
+        const input = container.querySelector("input");
+        const dropdown = container.querySelector(".eks-instance-dropdown");
+        const tagsWrap = container.querySelector(".eks-instance-tags");
+        const healthNote = container.querySelector(".eks-instance-health-note");
+        const options = Array.from(selectEl.options);
+        const availableValues = new Set(
+          options
+            .map((opt) => String(opt.value || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
+        const familyInventory = buildFamilyInventory(Array.from(availableValues));
+        const groups = Array.from(selectEl.querySelectorAll("optgroup")).map((group) => ({
+          label: group.label,
+          options: Array.from(group.querySelectorAll("option")).map((opt) => opt.value),
+        }));
+
+        function renderHealthSuggestion() {
+          const findings = [];
+          const seen = new Set();
+          Array.from(selectEl.selectedOptions).forEach((opt) => {
+            const current = String(opt.value || "").trim().toLowerCase();
+            if (!current) return;
+            const finding = analyzeInstanceTypeHealth(current, familyInventory, availableValues);
+            if (!finding) return;
+            const key = `${finding.level}:${current}:${finding.replacement || ""}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            findings.push(finding);
+          });
+
+          const hasFindings = findings.length > 0;
+          const hasDanger = findings.some((f) => f.level === "danger");
+          container.classList.toggle("is-warning", hasFindings && !hasDanger);
+          container.classList.toggle("is-danger", hasDanger);
+          if (!healthNote) return;
+
+          if (!hasFindings) {
+            healthNote.style.display = "none";
+            healthNote.textContent = "";
+            return;
+          }
+
+          const preview = findings.slice(0, 3).map((f) => {
+            if (f.replacement) return `${escapeHTML(f.selected)} &rarr; ${escapeHTML(f.replacement)}`;
+            return `${escapeHTML(f.selected)} &rarr; newer generation`;
+          }).join(", ");
+          const suffix = findings.length > 3 ? ", ..." : "";
+          const lead = hasDanger
+            ? "Legacy instance generation selected."
+            : "Older instance generation selected.";
+          const badgeClass = hasDanger ? "bg-danger" : "bg-warning text-dark";
+          healthNote.innerHTML = `<span class="badge ${badgeClass} me-1">Upgrade suggested</span>${escapeHTML(lead)} Suggested upgrades: ${preview}${suffix}.`;
+          healthNote.style.display = "block";
+        }
+
+        function renderTags() {
+          tagsWrap.innerHTML = "";
+          Array.from(selectEl.selectedOptions).forEach((opt) => {
+            const current = String(opt.value || "").trim().toLowerCase();
+            const finding = analyzeInstanceTypeHealth(current, familyInventory, availableValues);
+            const tag = document.createElement("span");
+            tag.className = "badge bg-light text-dark border me-2 mb-2";
+            tag.textContent = opt.value;
+            if (finding) {
+              tag.classList.add(
+                finding.level === "danger"
+                  ? "eks-instance-tag-legacy-danger"
+                  : "eks-instance-tag-legacy-warning"
+              );
+              const baseMsg = finding.level === "danger"
+                ? `${opt.value} is an old instance generation for EKS.`
+                : `${opt.value} is an older instance generation.`;
+              const upgradeMsg = finding.replacement
+                ? ` Suggested replacement: ${finding.replacement}.`
+                : ` Newer generation exists in this region.`;
+              tag.title = `${baseMsg}${upgradeMsg}`;
+              tag.setAttribute("aria-label", tag.title);
+            }
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "btn btn-sm btn-link ms-1 p-0";
+            remove.textContent = "×";
+            remove.addEventListener("click", () => {
+              opt.selected = false;
+              renderTags();
+              renderDropdown(input.value);
+              renderHealthSuggestion();
+            });
+            tag.appendChild(remove);
+            tagsWrap.appendChild(tag);
+          });
+        }
+
+        function renderDropdown(filterText) {
+          const q = (filterText || "").trim().toLowerCase();
+          dropdown.innerHTML = "";
+
+          const selected = new Set(Array.from(selectEl.selectedOptions).map(opt => opt.value));
+          const groupState = (selectEl._eksGroupState = selectEl._eksGroupState || {});
+          const renderOption = (value) => {
+            const visible = !q || value.toLowerCase().includes(q);
+            if (!visible) return;
+            const div = document.createElement("div");
+            div.className = "eks-instance-option" + (selected.has(value) ? " disabled" : "");
+            div.textContent = value;
+            if (!selected.has(value)) {
+              div.addEventListener("click", () => addValue(value));
+            }
+            return div;
+          };
+
+          if (groups.length) {
+            groups.forEach((group) => {
+              const groupOptions = group.options.filter((val) => !q || val.toLowerCase().includes(q));
+              if (!groupOptions.length) return;
+              const groupEl = document.createElement("div");
+              groupEl.className = "eks-instance-group";
+              const header = document.createElement("div");
+              header.className = "eks-instance-group-toggle";
+              header.innerHTML = `<strong>${group.label}</strong><span>${groupState[group.label] ? "+" : "−"}</span>`;
+              groupEl.appendChild(header);
+
+              const groupBody = document.createElement("div");
+              groupBody.dataset.group = group.label;
+              if (groupState[group.label]) {
+                groupBody.classList.add("hidden");
+              }
+              groupOptions.forEach((val) => {
+                const opt = renderOption(val);
+                if (opt) groupBody.appendChild(opt);
+              });
+              groupEl.appendChild(groupBody);
+              dropdown.appendChild(groupEl);
+
+              header.addEventListener("click", () => {
+                const collapsed = !groupBody.classList.contains("hidden");
+                groupBody.classList.toggle("hidden", collapsed);
+                groupState[group.label] = collapsed;
+                header.querySelector("span").textContent = collapsed ? "+" : "−";
+              });
+            });
+          } else {
+            options.forEach((opt) => {
+              const el = renderOption(opt.value);
+              if (el) dropdown.appendChild(el);
+            });
+          }
+        }
+
+        function addValue(value) {
+          const match = Array.from(selectEl.options).find(opt => opt.value === value);
+          if (!match) return;
+          match.selected = true;
+          input.value = "";
+          renderTags();
+          renderDropdown("");
+          renderHealthSuggestion();
+        }
+
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const raw = input.value.trim();
+            if (raw) addValue(raw);
+          }
+        });
+        input.addEventListener("input", () => {
+          renderDropdown(input.value);
+        });
+        input.addEventListener("focus", () => {
+          dropdown.classList.remove("hidden");
+        });
+        selectEl.addEventListener("change", () => {
+          renderTags();
+          renderDropdown(input.value);
+          renderHealthSuggestion();
+        });
+
+        renderTags();
+        renderDropdown("");
+        renderHealthSuggestion();
+      }
+
+      document.querySelectorAll(".eks-instance-picker").forEach((picker) => {
+        const targetId = picker.getAttribute("data-target");
+        const selectEl = targetId ? document.getElementById(targetId) : null;
+        if (!selectEl) return;
+        selectEl.style.display = "none";
+        buildInstancePicker(selectEl, picker);
+      });
+
+      document.addEventListener("click", (e) => {
+        document.querySelectorAll(".eks-instance-picker").forEach((picker) => {
+          if (picker.contains(e.target)) return;
+          const dropdown = picker.querySelector(".eks-instance-dropdown");
+          if (dropdown) dropdown.classList.add("hidden");
+        });
+      });
+
+      const hintButtons = Array.from(document.querySelectorAll(".js-eks-popover"));
+      const hintPopovers = hintButtons.map((btn) =>
+        new bootstrap.Popover(btn, {
+          trigger: "manual",
+          html: true,
+          container: "body",
+        })
+      );
+      hintButtons.forEach((btn) => {
+        btn.dataset.popOpen = "0";
+        btn.addEventListener("shown.bs.popover", () => {
+          btn.dataset.popOpen = "1";
+        });
+        btn.addEventListener("hidden.bs.popover", () => {
+          btn.dataset.popOpen = "0";
+        });
+      });
+      hintButtons.forEach((btn, i) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const wasOpen = btn.dataset.popOpen === "1";
+          hintPopovers.forEach((popover, idx) => {
+            if (idx !== i) {
+              popover.hide();
+              hintButtons[idx].dataset.popOpen = "0";
+            }
+          });
+          if (wasOpen) {
+            hintPopovers[i].hide();
+            btn.dataset.popOpen = "0";
+          } else {
+            hintPopovers[i].show();
+            btn.dataset.popOpen = "1";
+          }
+        });
+      });
+      document.addEventListener("click", (e) => {
+        const clickedTrigger = hintButtons.some((btn) => btn.contains(e.target));
+        const clickedPopover = Boolean(e.target.closest(".popover"));
+        if (!clickedTrigger && !clickedPopover) {
+          hintPopovers.forEach((popover, idx) => {
+            popover.hide();
+            hintButtons[idx].dataset.popOpen = "0";
+          });
+        }
+      });
+
+      const findBySuffix = (root, suffix) => root.querySelector(`[name$="${suffix}"]`);
+
+      document.querySelectorAll(".eks-node-group-card__actions button").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+        });
+      });
+
+      const activateEksCard = (card) => {
+        document.querySelectorAll(".eks-node-group-card.is-active, .js-sg-rule-card.is-active").forEach((el) => {
+          if (el !== card) el.classList.remove("is-active");
+        });
+        card.classList.add("is-active");
+      };
+
+      document.querySelectorAll(".eks-node-group-card, .js-sg-rule-card").forEach((card) => {
+        card.addEventListener("focusin", () => {
+          activateEksCard(card);
+        });
+      });
+
+      document.querySelectorAll(".js-eks-dynamic-action").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          try {
+            sessionStorage.setItem("eksDynamicActionScrollY", String(window.scrollY || 0));
+          } catch (_) {
+            // Ignore storage failures; focus handling below still works.
+          }
+        });
+      });
+
+      document.querySelectorAll(".eks-sg-bypass-modal").forEach((modalEl) => {
+        // Bootstrap appends the backdrop to <body>. Keeping these modals nested
+        // inside the wizard/card layout can put the dialog in a lower stacking
+        // context than the backdrop, making it visible but not clickable.
+        if (modalEl.parentElement !== document.body) {
+          document.body.appendChild(modalEl);
+        }
+      });
+
+      const resetBypass = (modalEl) => {
+        if (!modalEl) return;
+        const env = modalEl.dataset.env;
+        const section = document.querySelector(`[data-eks-dynamic-section="sg_rule"][data-env="${env}"]`);
+        if (!section) return;
+        const checkbox = section.querySelector(".js-sg-bypass-checkbox");
+        const ack = section.querySelector(".js-sg-bypass-ack");
+        if (checkbox) checkbox.checked = false;
+        if (ack) ack.value = "false";
+      };
+
+      document.querySelectorAll(".js-sg-bypass-checkbox").forEach((checkbox) => {
+        const section = checkbox.closest('[data-eks-dynamic-section="sg_rule"]');
+        const ack = section ? section.querySelector(".js-sg-bypass-ack") : null;
+        checkbox.addEventListener("change", () => {
+          if (!ack) return;
+          if (!checkbox.checked) {
+            ack.value = "false";
+            return;
+          }
+          if (String(ack.value || "").toLowerCase() === "true") return;
+          const modalEl = document.getElementById(checkbox.dataset.modalTarget || "");
+          if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+            window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+          } else {
+            checkbox.checked = false;
+            ack.value = "false";
+            window.alert(
+              "Skipping these security group rules can prevent Istio webhooks/xDS and Vault access from working inside the EKS cluster."
+            );
+          }
+        });
+      });
+
+      document.querySelectorAll(".eks-sg-bypass-modal").forEach((modalEl) => {
+        modalEl.addEventListener("hidden.bs.modal", () => {
+          if (modalEl.dataset.confirmed === "1") {
+            modalEl.dataset.confirmed = "0";
+            return;
+          }
+          resetBypass(modalEl);
+        });
+        modalEl.querySelectorAll(".js-sg-bypass-cancel, .btn-close").forEach((btn) => {
+          btn.addEventListener("click", () => resetBypass(modalEl));
+        });
+      });
+
+      document.querySelectorAll(".js-sg-bypass-confirm").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const env = btn.dataset.env;
+          const section = document.querySelector(`[data-eks-dynamic-section="sg_rule"][data-env="${env}"]`);
+          const modalEl = btn.closest(".eks-sg-bypass-modal");
+          if (!section || !modalEl) return;
+          const checkbox = section.querySelector(".js-sg-bypass-checkbox");
+          const ack = section.querySelector(".js-sg-bypass-ack");
+          if (checkbox) checkbox.checked = true;
+          if (ack) ack.value = "true";
+          modalEl.dataset.confirmed = "1";
+          if (window.bootstrap && window.bootstrap.Modal) {
+            window.bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+          }
+        });
+      });
+
+      const focusTarget = document.querySelector('[data-eks-focus="1"]');
+      if (focusTarget) {
+        const parentSection = focusTarget.closest("[data-eks-dynamic-section]");
+        if (parentSection) parentSection.open = true;
+        if (focusTarget.tagName === "DETAILS") focusTarget.open = true;
+        window.requestAnimationFrame(() => {
+          focusTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (focusTarget.matches(".eks-node-group-card, .js-sg-rule-card")) {
+            activateEksCard(focusTarget);
+          }
+          const nameField = focusTarget.querySelector('input[name$="name"]');
+          if (nameField) nameField.focus({ preventScroll: true });
+        });
+      } else {
+        try {
+          const previousY = Number(sessionStorage.getItem("eksDynamicActionScrollY") || "");
+          sessionStorage.removeItem("eksDynamicActionScrollY");
+          if (Number.isFinite(previousY) && previousY >= 0) {
+            window.requestAnimationFrame(() => window.scrollTo({ top: previousY }));
+          }
+        } catch (_) {
+          // Nothing to clean up.
+        }
+      }
+
+      const fieldMap = [
+        ["default_node_group_instance_types", "instance_types"],
+        ["default_node_group_min_size", "min_size"],
+        ["default_node_group_max_size", "max_size"],
+        ["default_node_group_desired_size", "desired_size"],
+        ["default_node_group_capacity_type", "capacity_type"],
+        ["default_node_group_disk_size", "disk_size"],
+        ["default_node_group_iam_role_use_name_prefix", "iam_role_use_name_prefix"],
+        ["default_node_group_ami_id", "ami_id"],
+        ["default_node_group_labels", "labels"],
+        ["default_node_group_taints", "taints"],
+      ];
+
+      document.querySelectorAll(".js-copy-default").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const envSection = btn.closest(".env-section");
+          const groupCard = btn.closest("[data-ng-group]");
+          if (!envSection || !groupCard) return;
+
+          fieldMap.forEach(([fromSuffix, toSuffix]) => {
+            const source = findBySuffix(envSection, fromSuffix);
+            const target = findBySuffix(groupCard, toSuffix);
+            if (!source || !target) return;
+            if (source.tagName === "SELECT" && target.tagName === "SELECT" && target.multiple) {
+              const selected = new Set(Array.from(source.selectedOptions).map(opt => opt.value));
+              Array.from(target.options).forEach(opt => {
+                opt.selected = selected.has(opt.value);
+              });
+            } else if (source.type === "checkbox" && target.type === "checkbox") {
+              target.checked = source.checked;
+            } else {
+              target.value = source.value || "";
+            }
+          });
+
+          const targetInstanceTypes = findBySuffix(groupCard, "instance_types");
+          if (targetInstanceTypes) {
+            targetInstanceTypes.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+
+          const defaultNameEl = findBySuffix(envSection, "default_node_group_name");
+          const nameTarget = findBySuffix(groupCard, "name");
+          if (defaultNameEl && nameTarget && !nameTarget.value) {
+            const base = (defaultNameEl.value || "").trim();
+            if (base) {
+              const existing = Array.from(envSection.querySelectorAll('input[name$="name"]'))
+                .filter((el) => el.closest("[data-ng-group]"))
+                .map((el) => (el.value || "").trim())
+                .filter(Boolean);
+              let candidate = `${base}-copy`;
+              let idx = 2;
+              while (existing.includes(candidate)) {
+                candidate = `${base}-copy-${idx}`;
+                idx += 1;
+              }
+              nameTarget.value = candidate;
+            }
+          }
+        });
+      });
+
+      function syncRuleSourceFields(card) {
+        if (!card) return;
+        const sourceTypeEl = card.querySelector('select[name$="source_type"]');
+        const valuesWrap = card.querySelector(".js-source-values");
+        const sgWrap = card.querySelector(".js-source-sg-id");
+        if (!sourceTypeEl || !valuesWrap || !sgWrap) return;
+
+        const sourceType = sourceTypeEl.value;
+        const usesValues = ["cidr_blocks", "ipv6_cidr_blocks", "prefix_list_ids"].includes(sourceType);
+        const usesSgId = sourceType === "source_security_group_id";
+
+        valuesWrap.style.display = usesValues ? "" : "none";
+        sgWrap.style.display = usesSgId ? "" : "none";
+      }
+
+      document.querySelectorAll(".js-sg-rule-card").forEach(syncRuleSourceFields);
+      document.addEventListener("change", (e) => {
+        if (!e.target || !e.target.matches('select[name$="source_type"]')) return;
+        syncRuleSourceFields(e.target.closest(".js-sg-rule-card"));
+      });
+
+      attachEksVersionHealth();
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,8 @@
+<form id="f" method="post" action="{{ url_for('github.github_init') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="env_slug" value="{{ session.get('github_env_slug') }}">
+</form>
+
+<script>
+document.getElementById('f').submit();
+</script>

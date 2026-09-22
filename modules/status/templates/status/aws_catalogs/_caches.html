@@ -1,0 +1,91 @@
+<div class="card tool-panel h-100 w-100">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa-solid fa-database"></i>
+    <strong>Cache Entries</strong>
+    <span class="ms-auto badge bg-light text-dark border">{{ (data.entries or [])|length }}</span>
+  </div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Catalog</th>
+            <th>Region</th>
+            <th>Engine</th>
+            <th>Source</th>
+            <th>Exists</th>
+            <th>Generated (UTC)</th>
+            <th>Stale</th>
+            <th class="text-end">Count</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in (data.entries or []) %}
+          <tr>
+            <td>{{ e.catalog_label }}</td>
+            <td><code>{{ e.region }}</code></td>
+            <td>{% if e.engine %}<code>{{ e.engine }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>
+              {% if e.source == "aws_cache" %}
+                <span class="badge bg-success">aws_cache</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">{{ e.source }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge {% if e.exists %}bg-success{% else %}bg-secondary{% endif %}">
+                {% if e.exists %}Available{% else %}Missing{% endif %}
+              </span>
+            </td>
+            <td class="small text-muted">{{ e.generated_at_iso or "—" }}</td>
+            <td>
+              <span class="badge {% if e.stale %}bg-warning text-dark{% else %}bg-success{% endif %}">
+                {% if e.stale %}Stale{% else %}Fresh{% endif %}
+              </span>
+            </td>
+            <td class="text-end">{% if e.count is not none %}<code>{{ e.count }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>
+              <div class="d-flex flex-wrap gap-2">
+                <form method="post"
+                      action="{{ url_for('status.aws_catalogs_job_start') }}"
+                      class="d-inline"
+                      data-aws-catalog-refresh-form="1">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="catalog" value="{{ e.catalog }}">
+                  <input type="hidden" name="region" value="{{ e.region }}">
+                  {% if e.engine %}<input type="hidden" name="engine" value="{{ e.engine }}">{% endif %}
+                  <button class="btn btn-sm btn-outline-primary" type="submit" data-aws-catalog-refresh-btn="1">Refresh</button>
+                </form>
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{{ url_for('status.aws_catalogs_json', catalog=e.catalog, region=e.region, engine=(e.engine or '')) }}"
+                   target="_blank" rel="noopener">
+                  JSON
+                </a>
+              </div>
+            </td>
+          </tr>
+          <tr class="table-light">
+            <td colspan="9" class="small">
+              <span class="text-muted">Path:</span> <code>{{ e.cache_path }}</code>
+              {% if e.size_bytes is not none %}
+                <span class="text-muted ms-2">size:</span> <code>{{ e.size_bytes }}</code>
+              {% endif %}
+              {% if e.last_attempt_iso %}<span class="ms-2">Last attempt: {{ e.last_attempt_iso }}</span>{% endif %}
+              {% if e.next_retry_iso %}<span class="ms-2">Next retry: {{ e.next_retry_iso }}</span>{% endif %}
+              <span class="ms-2">IAM: <code>{{ e.iam_actions|join(', ') }}</code></span>
+              {% if e.error %}
+                <span class="text-danger ms-2">error:</span> <code>{{ e.error }}</code>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="text-muted small mb-0">
+      Tip: <span class="badge bg-success">aws_cache</span> means wizards are using the disk cache; <span class="badge bg-warning text-dark">fallback</span> means the wizard is using defaults. Curated EC2-filtered lists are not a service-specific compatibility guarantee.
+    </div>
+  </div>
+</div>

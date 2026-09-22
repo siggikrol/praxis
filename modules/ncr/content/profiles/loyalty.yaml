@@ -1,0 +1,15 @@
+schema_version: 1
+extends: platform-common
+platform: loyalty
+endpoints:
+  mgmt-keycloak-player:
+    namespace: mgmt
+    name: keycloak-player
+    gateways: keycloak-player
+    host: idp-player.{ENV}.{DOMAIN}
+    protocol: HTTPS/TCP 443
+vpcs:
+  environment:
+    cidr_field: vpc_cidr
+allocation:
+  source_placeholder: <allocated environment VPC/EKS CIDR>

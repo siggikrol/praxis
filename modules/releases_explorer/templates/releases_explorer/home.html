@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-shell">
+
+  {% set hero_title = "Releases Explorer" %}
+  {% set hero_subtitle = "Browse, inspect, and compare release archives" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+
+  <div class="tool-panel tool-panel--compact">
+    <div class="tool-toolbar mb-0">
+      <div>
+        <div class="tool-panel__title">Release Operations</div>
+        <div class="tool-panel__subtitle">Open the archive browser to inspect, download, or compare release bundles.</div>
+      </div>
+      <div class="tool-toolbar__group">
+        <a href="{{ url_for('releases_explorer.list_view') }}" class="btn btn-primary">
+          Browse Releases
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

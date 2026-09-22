@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell">
+  {% set hero_title = "Ready to Start Praxis Provisioning" %}
+  {% set hero_subtitle = "The prerequisites for environment foundation provisioning have been confirmed." %}
+  {% set hero_eyebrow = "Foundation Entry Gate" %}
+  {% include "_page_hero.html" %}
+  <a class="back-btn" href="{{ url_for('environment_readiness.workspace') }}"><i class="fa-solid fa-arrow-left"></i> Edit Readiness</a>
+  <div class="alert alert-success"><strong>Foundation handoff unlocked.</strong> This authorizes provisioning to begin; it is not final environment or product acceptance.</div>
+  <div class="card shadow-sm border-0">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div><div class="fw-semibold">Foundation Handoff Preview</div><div class="small text-muted">Review the rendered document, then copy or download its Markdown source.</div></div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-primary" data-copy-markdown><i class="fa-solid fa-copy me-1"></i> Copy Markdown</button>
+          <a class="btn btn-primary" href="{{ url_for('environment_readiness.download_markdown') }}"><i class="fa-solid fa-download me-1"></i> Download .md</a>
+        </div>
+      </div>
+      <div class="handoff-preview-tabs" role="tablist" aria-label="Handoff preview format">
+        <button class="btn btn-sm btn-primary" type="button" data-preview-tab="rendered" aria-selected="true"><i class="fa-solid fa-eye me-1"></i> Rendered Preview</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-preview-tab="markdown" aria-selected="false"><i class="fa-brands fa-markdown me-1"></i> Raw Markdown</button>
+      </div>
+
+      <article class="handoff-rendered" data-preview-panel="rendered">
+        <h1>{{ data.get('title') }}</h1>
+        <h2>Foundation Provisioning Readiness</h2>
+        <div class="handoff-status"><i class="fa-solid fa-circle-check"></i><strong>READY TO START PRAXIS PROVISIONING</strong></div>
+        <blockquote>
+          Every prerequisite required to begin environment foundation provisioning was reported as confirmed and includes an owner and evidence reference.<br>
+          Publication requests acknowledgement from the receiving DevOps owner. Provisioning may begin only after acknowledgement is recorded in Praxis.<br>
+          This record does not certify final environment, application, testing, or production readiness.
+        </blockquote>
+
+        <h2>Environment Handoff</h2>
+        <div class="table-responsive"><table class="table table-sm table-bordered align-middle"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>
+          {% for key, label in handoff_fields %}<tr><th scope="row">{{ label }}</th><td>{{ data.get(key) or '—' }}</td></tr>{% endfor %}
+        </tbody></table></div>
+
+        <h2>Verified Prerequisites</h2>
+        {% set requirement_values = data.get('requirements', {}) %}
+        <div class="table-responsive"><table class="table table-sm table-bordered align-middle"><thead><tr><th>Requirement</th><th>Status</th><th>Owner</th><th>Evidence / Ticket</th><th>Notes</th></tr></thead><tbody>
+          {% for item in active_requirements %}{% set values = requirement_values.get(item.key, {}) %}<tr><td>{{ item.label }}</td><td><span class="badge text-bg-success">Confirmed</span></td><td>{{ values.get('owner') }}</td><td>{{ values.get('evidence') }}</td><td>{{ values.get('notes') or '—' }}</td></tr>{% endfor %}
+        </tbody></table></div>
+
+        <h2>Risks, Assumptions, and Sign-off</h2>
+        <dl class="handoff-details"><dt>Known risks</dt><dd>{{ data.get('risks') }}</dd><dt>Assumptions</dt><dd>{{ data.get('assumptions') }}</dd><dt>Testing/sign-off owner</dt><dd>{{ data.get('testing_owner') }}</dd><dt>Additional notes</dt><dd>{{ data.get('additional_notes') or '—' }}</dd></dl>
+
+        <h2>Foundation Provisioning Decision</h2>
+        <p>The requester/architect confirms that the prerequisites above are complete and that the receiving DevOps team may begin environment foundation provisioning with Praxis. Final environment and product acceptance remain separate activities.</p>
+      </article>
+
+      <div data-preview-panel="markdown" hidden>
+        <textarea class="form-control font-monospace" rows="32" readonly data-markdown>{{ markdown }}</textarea>
+      </div>
+      <div class="small text-muted mt-2" data-copy-status aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const button = document.querySelector("[data-copy-markdown]");
+  const field = document.querySelector("[data-markdown]");
+  const status = document.querySelector("[data-copy-status]");
+  const tabs = [...document.querySelectorAll("[data-preview-tab]")];
+  const panels = [...document.querySelectorAll("[data-preview-panel]")];
+  tabs.forEach((tab) => tab.addEventListener("click", () => {
+    const selected = tab.dataset.previewTab;
+    tabs.forEach((button) => {
+      const active = button.dataset.previewTab === selected;
+      button.classList.toggle("btn-primary", active);
+      button.classList.toggle("btn-outline-secondary", !active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    panels.forEach((panel) => { panel.hidden = panel.dataset.previewPanel !== selected; });
+  }));
+  button?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(field.value); status.textContent = "Markdown copied."; }
+    catch (_error) { field.select(); document.execCommand("copy"); status.textContent = "Markdown copied."; }
+  });
+});
+</script>
+<style>
+.handoff-preview-tabs { display: flex; gap: .5rem; margin-bottom: 1rem; padding-bottom: .75rem; border-bottom: 1px solid var(--border-subtle); }
+.handoff-rendered { padding: clamp(1rem, 3vw, 2.5rem); border: 1px solid var(--border-default); border-radius: .8rem; background: var(--bg-surface); }
+.handoff-rendered h1 { margin: 0 0 1.5rem; font-size: 1.8rem; }
+.handoff-rendered h2 { margin: 1.6rem 0 .75rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border-subtle); font-size: 1.15rem; }
+.handoff-status { display: flex; align-items: center; gap: .5rem; color: var(--accent-green); }
+.handoff-rendered blockquote { margin: 1rem 0; padding: .8rem 1rem; border-left: 4px solid var(--accent-blue); background: var(--bg-elevated); color: var(--text-secondary); }
+.handoff-rendered th { white-space: nowrap; }
+.handoff-rendered td, .handoff-rendered dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.handoff-details { display: grid; grid-template-columns: minmax(150px, .35fr) 1fr; gap: .55rem 1rem; }
+.handoff-details dt, .handoff-details dd { margin: 0; padding: .4rem 0; border-bottom: 1px solid var(--border-subtle); }
+@media (max-width: 575.98px) { .handoff-details { grid-template-columns: 1fr; gap: 0; } .handoff-details dd { margin-bottom: .5rem; } }
+</style>
+{% endblock %}

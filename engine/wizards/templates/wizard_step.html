@@ -1,0 +1,805 @@
+{% extends "base.html" %}
+
+{# Shared field renderer available to all step templates #}
+{% macro render_field(field, current_step=None) %}
+  <div class="form-row">
+    {# detect widget types first #}
+    {% set widget_name = field.widget.__class__.__name__ %}
+    {% set is_checkbox_list = field.type == 'SelectMultipleField' and widget_name == 'ListWidget' %}
+    {% set is_checkbox = field.type == 'BooleanField' or widget_name == 'CheckboxInput' %}
+
+    {% if not (is_checkbox_list and field.name in ['deployments', 'environment_type']) %}
+      <label for="{{ field.id }}" class="form-label">
+        {{ field.label.text }}
+        {% if field.description %}
+          <i class="fas fa-info-circle ms-1 text-muted wizard-help-icon"
+             data-bs-toggle="tooltip"
+             title="{{ field.description }}"></i>
+        {% endif %}
+      </label>
+    {% endif %}
+
+    <div class="input-col">
+
+      {% if is_checkbox_list %}
+        {% if field.name in ['deployments', 'environment_type'] %}
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="d-flex align-items-center gap-2">
+              <span class="form-label mb-0">{{ field.label.text }}</span>
+              {% if field.description %}
+                <i class="fas fa-info-circle text-muted wizard-help-icon"
+                   data-bs-toggle="tooltip"
+                   title="{{ field.description }}"></i>
+              {% endif %}
+            </div>
+            {% if field.name == 'deployments' %}
+              <div class="d-flex gap-2">
+                <button type="button"
+                        class="btn btn-sm btn-outline-primary ps-select-btn"
+                        data-select-target="{{ field.id }}-wrap"
+                        data-select-mode="all">
+                  Select all
+                </button>
+                <button type="button"
+                        class="btn btn-sm btn-outline-secondary ps-select-btn"
+                        data-select-target="{{ field.id }}-wrap"
+                        data-select-mode="clear">
+                  Clear
+                </button>
+              </div>
+            {% endif %}
+          </div>
+        {% endif %}
+        <div id="{{ field.id }}-wrap"
+             class="ps-checkbox-list {% if field.name in ['deployments','environment_type'] %}ps-select-group ps-env-toggles{% endif %} {% if field.name == 'deployments' %}ps-env-deployments{% endif %}"
+             {% if (field.render_kw or {}).get('data-aws-region') %}
+               data-aws-region="{{ field.render_kw['data-aws-region'] }}"
+             {% endif %}
+             {% if (field.render_kw or {}).get('data-custom-region') %}
+               data-custom-region="{{ field.render_kw['data-custom-region'] }}"
+             {% endif %}
+             {% if (field.render_kw or {}).get('data-suffixes') %}
+               data-suffixes="{{ field.render_kw['data-suffixes'] }}"
+             {% endif %}
+             {% if (field.render_kw or {}).get('data-field-name') %}
+               data-field-name="{{ field.render_kw['data-field-name'] }}"
+             {% endif %}
+             {% if field.name == 'environment_type' and form.environment_suffixes is defined %}
+               data-suffix-field-id="{{ form.environment_suffixes.id }}"
+               data-suffix-field-value="{{ form.environment_suffixes.data or '{}' }}"
+             {% endif %}>
+          {% if field.name == 'environment_type' %}
+            <ul id="{{ field.id }}" style="list-style: none; padding-left: 0;">
+              {% for subfield in field %}
+                <li class="env-toggle-item d-flex align-items-center mb-2" data-env-name="{{ subfield.data }}">
+                  <div class="form-check form-switch mb-0 d-flex align-items-center" style="min-width: 140px;">
+                    {{ subfield(class="form-check-input") }}
+                    {{ subfield.label(class="form-check-label ms-2") }}
+                  </div>
+                  <div class="env-suffix-controls d-flex align-items-center gap-3" style="display: none !important;">
+                    <div class="form-check mb-0 d-flex align-items-center">
+                      <input type="checkbox" class="form-check-input env-suffix-toggle" id="suffix-toggle-{{ subfield.id }}">
+                      <label class="form-check-label small ms-2" for="suffix-toggle-{{ subfield.id }}" style="white-space: nowrap;">Add suffix</label>
+                    </div>
+                    <div class="env-suffix-input-wrap d-flex align-items-center gap-1" style="display: none !important;">
+                      <span class="small text-muted">-</span>
+                      <input type="text" class="form-control form-control-sm env-suffix-input" style="width: 70px;" placeholder="suffix">
+                    </div>
+                    <div class="env-suffix-preview small text-muted ms-1" style="min-width: 150px;"></div>
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            {{ field() }}
+          {% endif %}
+        </div>
+      {% else %}
+        {% if is_checkbox %}
+          <div class="form-check">
+            {{ field(class="form-check-input") }}
+            <label class="form-check-label" for="{{ field.id }}">
+              {{ field.label.text }}
+            </label>
+          </div>
+        {% else %}
+          {% set ctrl_class = 'form-control' %}
+          {% if field.type in ['SelectField','SelectMultipleField'] %}
+            {% set ctrl_class = 'form-select' %}
+          {% endif %}
+          {% set datalist_opts = field.datalist_options if field.datalist_options is defined else (field.render_kw or {}).get('data-datalist-options') %}
+          {% set datalist_id = (field.render_kw or {}).get('list') if datalist_opts else None %}
+          {% set option_groups = field.option_groups if field.option_groups is defined else None %}
+          {% if field.type in ['SelectField','SelectMultipleField'] and option_groups %}
+            {% if field.type == 'SelectMultipleField' %}
+              {% set selected_values = field.data or [] %}
+            {% else %}
+              {% set selected_values = [field.data] if field.data is not none else [] %}
+            {% endif %}
+            <select id="{{ field.id }}" name="{{ field.name }}" class="{{ ctrl_class }}"
+                    {% if field.type == 'SelectMultipleField' %}multiple{% endif %}
+                    {% for attr, val in (field.render_kw or {}).items() %}
+                      {% if attr not in ['class', 'id', 'name'] %}
+                        {{ attr }}="{{ val }}"
+                      {% endif %}
+                    {% endfor %}>
+              {% for group_label, group_opts in option_groups %}
+                <optgroup label="{{ group_label }}">
+                  {% for val, label in group_opts %}
+                    <option value="{{ val }}" {% if val in selected_values %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </optgroup>
+              {% endfor %}
+            </select>
+          {% else %}
+            {{ field(id=field.id, class=ctrl_class) }}
+          {% endif %}
+          {% if datalist_id and datalist_opts %}
+            <datalist id="{{ datalist_id }}">
+              {% for opt in datalist_opts %}
+                {% if opt is mapping %}
+                  <option value="{{ opt.value }}" label="{{ opt.label }}"></option>
+                {% else %}
+                  <option value="{{ opt }}"></option>
+                {% endif %}
+              {% endfor %}
+            </datalist>
+          {% endif %}
+          {% if current_step == 'spacelift_settings'
+                and field.type == 'StringField'
+                and ('aws_integration_id' in field.id or 'spacelift_space_id' in field.id) %}
+            <div class="mt-2">
+              <div class="small text-muted">Pick from Spacelift</div>
+              <select class="form-select form-select-sm spacelift-picker"
+                      data-target="{{ field.id }}">
+                <option value="">Select an option…</option>
+                {% if datalist_opts %}
+                  {% for opt in datalist_opts %}
+                    {% if opt is mapping %}
+                      <option value="{{ opt.value }}">{{ opt.label }}</option>
+                    {% else %}
+                      <option value="{{ opt }}">{{ opt }}</option>
+                    {% endif %}
+                  {% endfor %}
+                {% else %}
+                  <option value="">No options loaded</option>
+                {% endif %}
+              </select>
+            </div>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+
+      {% if field.errors %}
+        <div class="text-danger small mt-1">{{ field.errors[0] }}</div>
+      {% endif %}
+
+      {% set example_url = (field.render_kw or {}).get('data-example-url') or (field.example_url | default(None, true)) %}
+      {% if example_url %}
+        <div class="form-text mt-1">
+          <a href="{{ example_url }}" target="_blank" rel="noopener">See example</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+{% block content %}
+  {# Use injected progress model from the wizard blueprint #}
+  {% set total = progress_steps|length %}
+  {% set current = progress_index if progress_index is not none and progress_index >= 0 else get_step_index(step) %}
+  {% set _cur = (current + 1) if current >= 0 else 1 %}
+  {% set _pct = (100.0 * _cur / (total or 1)) %}
+  {% set wizard_titles = {
+    'multi-vpc': 'Catalyst Multi-VPC',
+    'single-vpc': 'Catalyst Single-VPC',
+    'rgs': 'Catalyst RGS',
+    'loyalty': 'Loyalty',
+    'unified': 'Unified Deployment'
+  } %}
+  {% set wizard_name = wizard_titles.get(env_slug, env_slug|replace('-', ' ')|title) %}
+  {% set step_title = step_title.split(': ', 1)[1] if ': ' in step_title else step_title %}
+  {% set current_step = _cur %}
+  {% set total_steps = total %}
+  {% set pct_complete = _pct|round(0)|int %}
+  {% set breadcrumb = wizard_name ~ ' / ' ~ step_title %}
+
+  <div class="page-shell">
+
+    <!-- HERO -->
+    <div class="home-hero">
+      <div class="home-hero__inner">
+        <div class="home-hero__eyebrow">
+          <span class="eyebrow-dot"></span>
+          {{ wizard_name }}
+        </div>
+        <h1 class="home-hero__title">{{ step_title }}</h1>
+        <p class="home-hero__sub">{{ breadcrumb }}</p>
+      </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <a class="back-btn" href="/wizards">&larr; Back to Wizards</a>
+      {% if wizard_workspace and wizard_workspace.access != 'viewer' %}
+        <a class="back-btn" href="{{ release_change_url }}">
+          <i class="fa-solid fa-box-archive"></i> Change Release
+        </a>
+      {% endif %}
+      {% if workspace_finish_url %}
+        <a class="back-btn" href="{{ workspace_finish_url }}">
+          <i class="fa-solid fa-file-lines"></i> View Generated Spec
+        </a>
+      {% endif %}
+      {% if workspace_validation_url %}
+        <a class="back-btn" href="{{ workspace_validation_url }}">
+          <i class="fa-solid fa-circle-check"></i> View Latest Validation
+        </a>
+      {% endif %}
+      {% if wizard_workspace and wizard_workspace.access == 'viewer' %}
+        <span class="badge text-bg-secondary">View only</span>
+      {% endif %}
+    </div>
+
+    <!-- PROGRESS BAR -->
+    {% set has_errors = form.errors and (form.errors.values() | list | selectattr('__len__') | list | length) > 0 %}
+    <div class="wizard-progress">
+      <div class="wizard-progress__track">
+        <div class="wizard-progress__fill" style="--progress-pct: {{ pct_complete }}%;"></div>
+        {% for i in range(1, total_steps + 1) %}
+          {% set dot_left = (100.0 * i / total_steps)|round(2) %}
+          {% set step_label = progress_step_labels[i - 1] if progress_step_labels is defined and progress_step_labels|length >= i else (progress_steps[i - 1] | replace('_', ' ') | title) %}
+          {% if i < current_step %}
+            {% set dot_cls = "wizard-progress__dot--done" %}
+          {% elif i == current_step %}
+            {% set dot_cls = "wizard-progress__dot--error" if has_errors else "wizard-progress__dot--active" %}
+          {% else %}
+            {% set dot_cls = "wizard-progress__dot--future" %}
+          {% endif %}
+          {% set step_url = progress_step_urls[i - 1] if progress_step_urls is defined and progress_step_urls|length >= i else none %}
+          <a class="wizard-progress__dot {{ dot_cls }}"
+             href="{{ step_url or '#' }}"
+             style="left: {{ dot_left }}%"
+             title="{{ step_label }} (Step {{ i }} of {{ total_steps }})"
+             aria-label="Go to {{ step_label }} (Step {{ i }} of {{ total_steps }})"
+             aria-current="{{ 'step' if i == current_step else 'false' }}"
+             data-bs-toggle="tooltip"
+             data-bs-placement="top"></a>
+        {% endfor %}
+      </div>
+      <div class="wizard-progress__labels">
+        <span class="wizard-progress__step">Step {{ current_step }} of {{ total_steps }}</span>
+        <span class="wizard-progress__pct">{{ pct_complete }}% complete</span>
+      </div>
+    </div>
+
+    <!-- FORM PANEL -->
+    <div class="wizard-panel">
+      <form method="POST" novalidate>
+          {{ form.hidden_tag() }} {# keep top-level CSRF only #}
+
+          {% if step == 'spacelift_settings' and form._spacelift_meta is defined %}
+            {% set meta = form._spacelift_meta %}
+            <div class="d-flex align-items-start flex-wrap gap-2 mb-3">
+              <div class="alert {% if meta.empty %}alert-warning{% else %}alert-info{% endif %} py-2 mb-0 flex-grow-1 wizard-inline-alert">
+                <div class="small">
+                  Spacelift option lists are fetched from the Spacelift API and cached locally (worker memory + disk).
+                  {% set _src_class = "bg-success" if meta.source == "spacelift_options_cache" else ("bg-danger" if meta.source == "spacelift_live_error" else "bg-warning text-dark") %}
+                  {% set _state_class = "bg-warning text-dark" if meta.stale else "bg-success" %}
+                  <span class="badge {{ _src_class }} ms-2">source={{ meta.source }}</span>
+                  <span class="badge bg-secondary ms-1">aws={{ meta.aws_count }}</span>
+                  <span class="badge bg-secondary ms-1">spaces={{ meta.space_count }}</span>
+                  <span class="badge {{ _state_class }} ms-1">{{ "stale" if meta.stale else "fresh" }}</span>
+                  <span class="badge bg-secondary ms-1">ttl={{ meta.ttl_seconds }}s</span>
+                </div>
+                {% if meta.expires_at_iso %}
+                  <div class="small mt-1 text-muted">Expires: {{ meta.expires_at_iso }}</div>
+                {% endif %}
+                {% if meta.filter_prefix %}
+                  <div class="small mt-1">Suggested filter: "{{ meta.filter_prefix }}" (matches: aws={{ meta.aws_match }}, spaces={{ meta.space_match }})</div>
+                {% endif %}
+                {% if meta.fallback %}
+                  <div class="small mt-1">Default filter returned no results; showing full unfiltered list.</div>
+                {% endif %}
+                {% if meta.empty %}
+                  <div class="small mt-1">No options loaded. Check SPACELIFT_* config and logs.</div>
+                {% endif %}
+              </div>
+              <div class="ms-auto flex-shrink-0">
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{{ url_for('.wizard_step', step=step, spacelift_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+                  Refresh cache
+                </a>
+              </div>
+            </div>
+          {% endif %}
+
+          {% block step_body %}
+            {% if step == 'project_settings' and env_slug in ['single-vpc', 'multi-vpc'] %}
+              {% if included_component_labels %}
+                <p class="alert alert-info">Included with Catalyst: {{ included_component_labels|join(', ') }}.</p>
+              {% elif wizard_workspace.workspace_origin != 'readiness' %}
+                <div class="alert alert-info">
+                  This saved setup uses the earlier Catalyst scope.
+                  <button class="btn btn-sm btn-outline-primary" type="submit" name="upgrade_component_profile" value="yes">Save settings and include Camunda OpenSearch</button>
+                </div>
+              {% else %}
+                <p class="text-muted">This setup keeps its published readiness scope. Update the readiness draft to include Camunda OpenSearch.</p>
+              {% endif %}
+            {% endif %}
+            {# Special layout for project_settings only when both fields exist #}
+            {% if step == 'project_settings' and (form.environment_type is defined) and (form.deployments is defined) %}
+              <div class="row g-4">
+                <div class="col-md-6">
+                  {{ render_field(form.environment_type, step) }}
+                </div>
+                <div class="col-md-6">
+                  {{ render_field(form.deployments, step) }}
+                </div>
+              </div>
+              {% if step == 'spacelift_settings' %}
+                <div class="mb-3">
+                  <label for="spacelift-filter" class="form-label">Spacelift Filter</label>
+                  <div class="input-group">
+                    <input id="spacelift-filter"
+                           type="text"
+                           class="form-control"
+                           value="{{ spacelift_filter or '' }}"
+                           placeholder="Filter by prefix (e.g., lnl)">
+                    <button type="button" class="btn btn-outline-secondary" id="spacelift-filter-clear">Clear</button>
+                  </div>
+                  <div class="form-text">Filters AWS integrations and spaces by prefix.</div>
+                </div>
+              {% endif %}
+              {% for field in form if field.type != 'CSRFTokenField' and field.name not in ['environment_type','deployments'] %}
+                {{ render_field(field, step) }}
+              {% endfor %}
+            {% else %}
+              {% if step == 'spacelift_settings' %}
+                <div class="mb-3">
+                  <label for="spacelift-filter" class="form-label">Spacelift Filter</label>
+                  <div class="input-group">
+                    <input id="spacelift-filter"
+                           type="text"
+                           class="form-control"
+                           value="{{ spacelift_filter or '' }}"
+                           placeholder="Filter by prefix (e.g., lnl)">
+                    <button type="button" class="btn btn-outline-secondary" id="spacelift-filter-clear">Clear</button>
+                  </div>
+                  <div class="form-text">Filters AWS integrations and spaces by prefix.</div>
+                </div>
+              {% endif %}
+              {% set replacements_ns = namespace(rancher_header_shown=false) %}
+              {% for field in form if field.type != 'CSRFTokenField' %}
+                {% if field.type == 'FormField' %}
+                  {% if step == 'replacements' and not replacements_ns.rancher_header_shown %}
+                    <div class="border-top mt-4 pt-3 mb-3">
+                      <h3 class="h6 mb-2">Rancher-specific replacements</h3>
+                      <div class="alert alert-info py-2 mb-0 wizard-inline-alert" role="note">
+                        For each environment, select the Rancher instance where its EKS
+                        cluster will be imported during deployment.
+                      </div>
+                    </div>
+                    {% set replacements_ns.rancher_header_shown = true %}
+                  {% endif %}
+                  {% set env_key = field.name|lower %}
+                  {% set env_base = env_key.split('_', 1)[0] %}
+                  <div class="env-section mb-4" data-env="{{ env_base }}">
+                    <div class="env-chip" data-env="{{ env_base }}">{{ env_key|upper }}</div>
+                    <div class="env-section__body">
+                      {% for subfield in field.form if subfield.type != 'CSRFTokenField' %}
+                        {{ render_field(subfield, step) }}
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% else %}
+                  {{ render_field(field, step) }}
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          {% endblock %}
+
+          <!-- NAV BUTTONS -->
+          <div class="wizard-footer">
+            <div class="wizard-footer__left">
+              {% if current_step > 1 and prev_url %}
+                <a class="btn-secondary" href="{{ with_preflight_ok(prev_url) if request.args.get('preflight') else prev_url }}">
+                  &larr; Previous
+                </a>
+              {% elif wizard_workspace and wizard_workspace.access != 'viewer' %}
+                <a class="btn-secondary" href="{{ release_change_url }}">
+                  &larr; Change Release
+                </a>
+              {% endif %}
+            </div>
+            <div class="wizard-footer__right">
+              <button type="submit" class="btn-primary">Next &rarr;</button>
+            </div>
+          </div>
+        </form>
+      </div><!-- /.wizard-panel -->
+
+  </div><!-- /.page-shell -->
+
+  {# --- PER-STEP SCRIPTS (unchanged) ------------------------------------ #}
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll(".ps-select-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const targetId = btn.getAttribute("data-select-target");
+        const mode = btn.getAttribute("data-select-mode");
+        const wrap = document.getElementById(targetId);
+        if (!wrap) return;
+        const checks = wrap.querySelectorAll('input[type="checkbox"]');
+        checks.forEach(ch => {
+          ch.checked = mode === "all";
+        });
+      });
+    });
+  });
+  </script>
+
+  {% if step == "replacements" %}
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    // Mapping: context -> integration id (normalize keys once)
+    const raw = JSON.parse('{{ rancher_ctx_map|tojson|safe }}') || {};
+    const ctxMap = {};
+    Object.keys(raw).forEach(k => ctxMap[String(k).toLowerCase().trim()] = raw[k]);
+    const workerPoolEu = {{ rancher_worker_pool_id_eu|tojson|safe }};
+    const workerPoolDefault = {{ rancher_worker_pool_id_default|tojson|safe }};
+
+    // Loop through every env section (UAT, PROD, …)
+    document.querySelectorAll('.env-section').forEach(section => {
+      const ctxSelect = section.querySelector('select[name$="ssa_rancher_context"]');
+      const integInput = section.querySelector('input[name$="ssa_rancher_cloud_integration"]');
+      const workerPoolInput = section.querySelector('input[name$="ssa_rancher_worker_pool_id"]');
+      if (!ctxSelect || !integInput || !workerPoolInput) return;
+
+      const sync = () => {
+        const key = (ctxSelect.value || "").toLowerCase().trim();
+        const mapped = ctxMap[key];
+        if (mapped) {
+          integInput.value = mapped;
+          integInput.placeholder = mapped;
+          // keep any validators/data-binding aware
+          integInput.dispatchEvent(new Event("input",  { bubbles: true }));
+          integInput.dispatchEvent(new Event("change", { bubbles: true }));
+        } else {
+          integInput.value = "";
+        }
+        const workerPool = mapped
+          ? (key.includes("eu") ? workerPoolEu : workerPoolDefault)
+          : "";
+        workerPoolInput.value = workerPool;
+        if (workerPool) workerPoolInput.placeholder = workerPool;
+        workerPoolInput.dispatchEvent(new Event("input", { bubbles: true }));
+        workerPoolInput.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+
+      // initial fill + keep in sync
+      sync();
+      ctxSelect.addEventListener("change", sync);
+      ctxSelect.addEventListener("input",  sync);
+    });
+  });
+  </script>
+  {% endif %}
+
+
+  {% if step == "vpc" %}
+  <script>
+  /* Make Jinja → JS editor-friendly */
+  const _VPC_PROFILES_JSON       = '{{ vpc_profiles|tojson|safe }}';
+  const _AZ_IDS_BY_REGION_JSON   = '{{ az_ids_by_region|tojson|safe }}';
+
+  document.addEventListener("DOMContentLoaded", function () {
+    const profiles      = JSON.parse(_VPC_PROFILES_JSON);
+    const azIdsByRegion = JSON.parse(_AZ_IDS_BY_REGION_JSON);
+
+    function initVpcScope(scope) {
+      const selProfile = scope.querySelector(
+        'select[name="vpc_az_profile"], select[name$="-vpc_az_profile"]'
+      );
+      const selCustomRegion = scope.querySelector(
+        'select[name="custom_aws_region"], select[name$="-custom_aws_region"]'
+      );
+      const customRegionRow = selCustomRegion ? selCustomRegion.closest(".form-row") : null;
+      const zonesWrap = scope.querySelector('div[id="zones-wrap"], div[id$="-zones-wrap"]');
+      const zoneIdsWrap = scope.querySelector(
+        'div[id="zone_ids-wrap"], div[id$="-zone_ids-wrap"]'
+      );
+      const tgw = scope.querySelector(
+        'input[name="transit_gateway_id"], input[name$="-transit_gateway_id"]'
+      );
+      const vpce = scope.querySelector(
+        'input[name="vpc_endpoint_service"], input[name$="-vpc_endpoint_service"]'
+      );
+
+      if (!selProfile || !zonesWrap || !zoneIdsWrap) {
+        return;
+      }
+
+      const zonesFieldName =
+        zonesWrap.querySelector('input[type="checkbox"]')?.name
+        || zonesWrap.dataset.fieldName
+        || "zones";
+      const zoneIdsFieldName =
+        zoneIdsWrap.querySelector('input[type="checkbox"]')?.name
+        || zoneIdsWrap.dataset.fieldName
+        || "zone_ids";
+      const dataRegion = zonesWrap.dataset.awsRegion || "us-east-1";
+      const customRegion = zonesWrap.dataset.customRegion || "us-east-1";
+      const dataSuffixes = (zonesWrap.dataset.suffixes || "a,b,c,d,e,f").split(",");
+      let lastProfileKey = null;
+
+      function setCustomRegionVisibility(show) {
+        if (!customRegionRow) return;
+        customRegionRow.style.display = show ? "" : "none";
+      }
+
+      function rebuildCheckboxes(container, name, choices, selected) {
+        if (!container) return;
+        const selectedValues = new Set(selected || []);
+        container.innerHTML = choices.map((value) => {
+          const id = `${name}-${value}`.replace(/[^a-zA-Z0-9_-]/g, "_");
+          const checked = selectedValues.has(value) ? " checked" : "";
+          return `
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="${name}" id="${id}" value="${value}"${checked}>
+              <label class="form-check-label" for="${id}">${value}</label>
+            </div>`;
+        }).join("");
+      }
+
+      function checkedValues(container) {
+        if (!container) return [];
+        return Array.from(
+          container.querySelectorAll('input[type="checkbox"]:checked')
+        ).map((element) => element.value);
+      }
+
+      function applyProfile(opts = {}) {
+        const clearCustom = Boolean(opts.clearCustom);
+        const key = (selProfile.value || "").toLowerCase();
+        const profile = profiles[key];
+
+        if (profile) {
+          setCustomRegionVisibility(false);
+          if (tgw) tgw.value = profile.transit_gateway_id || "";
+          if (vpce) vpce.value = profile.vpc_endpoint_service || "";
+
+          const region = profile.aws_region || dataRegion;
+          const zoneChoices = (profile.az_names && profile.az_names.length)
+            ? profile.az_names
+            : dataSuffixes.map((suffix) => `${region}${suffix}`);
+          rebuildCheckboxes(
+            zonesWrap,
+            zonesFieldName,
+            zoneChoices,
+            profile.az_names || []
+          );
+
+          const zoneIdChoices = (profile.az_zone_ids && profile.az_zone_ids.length)
+            ? profile.az_zone_ids
+            : (azIdsByRegion[region] || []);
+          rebuildCheckboxes(
+            zoneIdsWrap,
+            zoneIdsFieldName,
+            zoneIdChoices,
+            profile.az_zone_ids || []
+          );
+        } else {
+          setCustomRegionVisibility(true);
+          const switchedFromPreset = lastProfileKey !== null && lastProfileKey !== "custom";
+          const shouldClear = clearCustom || switchedFromPreset;
+          if (shouldClear) {
+            if (tgw) tgw.value = "";
+            if (vpce) vpce.value = "";
+          }
+
+          const region = selCustomRegion?.value || customRegion || dataRegion;
+          const zoneChoices = dataSuffixes.map((suffix) => `${region}${suffix}`);
+          rebuildCheckboxes(
+            zonesWrap,
+            zonesFieldName,
+            zoneChoices,
+            shouldClear ? [] : checkedValues(zonesWrap)
+          );
+
+          rebuildCheckboxes(
+            zoneIdsWrap,
+            zoneIdsFieldName,
+            azIdsByRegion[region] || [],
+            shouldClear ? [] : checkedValues(zoneIdsWrap)
+          );
+        }
+
+        lastProfileKey = key;
+      }
+
+      selProfile.addEventListener("change", () => applyProfile());
+      if (selCustomRegion) {
+        selCustomRegion.addEventListener("change", () => {
+          if ((selProfile.value || "").toLowerCase() === "custom") {
+            applyProfile({ clearCustom: true });
+          }
+        });
+      }
+      applyProfile();
+    }
+
+    const envScopes = document.querySelectorAll(".env-section");
+    if (envScopes.length) {
+      envScopes.forEach((scope) => initVpcScope(scope));
+      return;
+    }
+    initVpcScope(document);
+  });
+  </script>
+  {% endif %}
+{% endblock %}
+
+{% block step_scripts %}
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.spacelift-picker').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          const targetId = sel.dataset.target;
+          const input = document.getElementById(targetId);
+          if (input && sel.value) {
+            input.value = sel.value;
+          }
+        });
+      });
+    });
+  </script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const filterInput = document.getElementById('spacelift-filter');
+      const clearBtn = document.getElementById('spacelift-filter-clear');
+      const filterValue = () => (filterInput ? filterInput.value.trim().toLowerCase() : '');
+
+      const applyFilter = () => {
+        const token = filterValue();
+        document.querySelectorAll('.env-section').forEach((section) => {
+          const aws = section.querySelector('select[name$="aws_integration_id"]');
+          const space = section.querySelector('select[name$="spacelift_space_id"]');
+          [aws, space].forEach((sel) => {
+            if (!sel) return;
+            Array.from(sel.options).forEach((opt, idx) => {
+              if (idx === 0) {
+                opt.hidden = false;
+                opt.disabled = false;
+                return;
+              }
+              const label = (opt.text || '').toLowerCase();
+              const value = (opt.value || '').toLowerCase();
+              // A readiness handoff may intentionally select a Spacelift item whose
+              // name does not match the convenience filter. Never hide or clear the
+              // authoritative imported/current selection.
+              const hit = opt.selected || !token || label.includes(token) || value.includes(token);
+              opt.hidden = !hit;
+              opt.disabled = !hit;
+            });
+          });
+        });
+      };
+
+      document.querySelectorAll('.env-section').forEach((section) => {
+        const aws = section.querySelector('select[name$="aws_integration_id"]');
+        const space = section.querySelector('select[name$="spacelift_space_id"]');
+        const desc = section.querySelector('input[name$="description"]');
+        if (!aws || !space || !desc) return;
+
+        desc.addEventListener('input', () => {
+          desc.dataset.auto = 'false';
+        });
+
+        const labelFor = (sel) => {
+          const opt = sel.options[sel.selectedIndex];
+          return (opt && opt.text && opt.text.trim()) || sel.value || '';
+        };
+
+        const applyDescription = () => {
+          const awsLabel = labelFor(aws);
+          const spaceLabel = labelFor(space);
+          if (!awsLabel && !spaceLabel) return;
+          if ((desc.value || '').trim() && desc.dataset.auto !== 'true') return;
+          const spaceName = spaceLabel.split(' (')[0] || spaceLabel;
+          desc.value = `Spacelift setup for ${spaceName}`;
+          desc.dataset.auto = 'true';
+        };
+
+        aws.addEventListener('change', applyDescription);
+        space.addEventListener('change', applyDescription);
+        applyDescription();
+      });
+
+      if (filterInput) {
+        filterInput.addEventListener('input', applyFilter);
+        applyFilter();
+      }
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          if (filterInput) {
+            filterInput.value = '';
+            applyFilter();
+          }
+        });
+      }
+    });
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const envWrap = document.querySelector('.ps-env-toggles');
+      if (!envWrap) return;
+
+      const suffixFieldId = envWrap.dataset.suffixFieldId;
+      if (!suffixFieldId) return;
+      const suffixField = document.getElementById(suffixFieldId);
+      if (!suffixField) return;
+
+      let suffixes = {};
+      try {
+        suffixes = JSON.parse(envWrap.dataset.suffixFieldValue || '{}');
+      } catch (e) {}
+
+      const updateSuffixField = () => {
+        suffixField.value = JSON.stringify(suffixes);
+      };
+
+      const items = envWrap.querySelectorAll('.env-toggle-item');
+      items.forEach(item => {
+        const envName = item.dataset.envName;
+        const mainCheckbox = item.querySelector('.form-check-input');
+        const controls = item.querySelector('.env-suffix-controls');
+        const suffixToggle = item.querySelector('.env-suffix-toggle');
+        const suffixInputWrap = item.querySelector('.env-suffix-input-wrap');
+        const suffixInput = item.querySelector('.env-suffix-input');
+        const preview = item.querySelector('.env-suffix-preview');
+
+        const updateUI = () => {
+          if (mainCheckbox.checked) {
+            controls.style.display = 'flex';
+            controls.style.setProperty('display', 'flex', 'important');
+          } else {
+            controls.style.display = 'none';
+            controls.style.setProperty('display', 'none', 'important');
+          }
+
+          if (suffixToggle.checked) {
+            suffixInputWrap.style.display = 'flex';
+            suffixInputWrap.style.setProperty('display', 'flex', 'important');
+            const val = suffixInput.value.trim();
+            if (val) {
+              preview.textContent = `Resulting name: ${envName}-${val}`;
+              suffixes[envName] = val;
+            } else {
+              preview.textContent = `Resulting name: ${envName}-?`;
+              delete suffixes[envName];
+            }
+          } else {
+            suffixInputWrap.style.display = 'none';
+            suffixInputWrap.style.setProperty('display', 'none', 'important');
+            preview.textContent = '';
+            delete suffixes[envName];
+          }
+          updateSuffixField();
+        };
+
+        // Initialize from existing data
+        if (suffixes[envName]) {
+          suffixToggle.checked = true;
+          suffixInput.value = suffixes[envName];
+        }
+
+        mainCheckbox.addEventListener('change', updateUI);
+        suffixToggle.addEventListener('change', updateUI);
+        suffixInput.addEventListener('input', updateUI);
+        updateUI();
+      });
+    });
+  </script>
+{% endblock %}

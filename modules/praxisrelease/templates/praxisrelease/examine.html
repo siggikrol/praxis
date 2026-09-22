@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-shell">
+
+  {% set hero_title = "Examine Release" %}
+  {% set hero_subtitle = "Inspect manifest contents before starting the wizard" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('praxisrelease.release_home', wizard_slug=wizard_slug) }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Releases
+  </a>
+
+  <div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+      <p><strong>Customer:</strong> {{ customer }}</p>
+      <p><strong>Release Key:</strong> <code>{{ release_key }}</code></p>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="alert alert-danger">
+      <strong>Error:</strong> {{ error }}
+    </div>
+  {% else %}
+    <p class="text-muted mb-3">deployment.yaml contents:</p>
+
+<pre class="surface border rounded p-3"
+     style="white-space: pre; overflow-x: auto; font-family: monospace; font-size: 0.9rem;">
+{{ manifest_yaml | e }}
+</pre>
+  {% endif %}
+
+  <div class="text-end mt-4">
+    <form method="POST" action="{{ url_for('praxisrelease.release_home', wizard_slug=wizard_slug) }}">
+      <input type="hidden" name="customer" value="{{ customer }}">
+      <input type="hidden" name="release_key" value="{{ release_key }}">
+      <input type="hidden" name="release_page" value="{{ release_page or '1' }}">
+      <input type="hidden" name="wizard_slug" value="{{ wizard_slug }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-primary">
+        <i class="fa-solid fa-play"></i> Use This Release
+      </button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

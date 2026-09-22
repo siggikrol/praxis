@@ -1,0 +1,17 @@
+<div class="ncr-progress">
+  {% for step_label, step_num in [('Ingress', 1), ('Egress', 2), ('Output', 3)] %}
+    <div class="ncr-progress__step {% if step_num == current_ncr_step %}is-active{% elif step_num < current_ncr_step %}is-done{% endif %}">
+      <div class="ncr-progress__dot">
+        {% if step_num < current_ncr_step %}
+          <i class="fa-solid fa-check" style="font-size:11px;"></i>
+        {% else %}
+          {{ step_num }}
+        {% endif %}
+      </div>
+      <span class="ncr-progress__label">{{ step_label }}</span>
+    </div>
+    {% if not loop.last %}
+      <div class="ncr-progress__connector {% if step_num < current_ncr_step %}is-done{% endif %}"></div>
+    {% endif %}
+  {% endfor %}
+</div>

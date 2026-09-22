@@ -1,0 +1,219 @@
+{% extends "wizard_step.html" %}
+
+{% block step_body %}
+  {% for field in form if field.type != 'CSRFTokenField' %}
+    {% if field.type == 'FormField' %}
+      {% set env_key = field.name|lower %}
+      {% set env_base = env_key.split('_', 1)[0] %}
+      {% set sub = field.form %}
+      <div class="env-section mb-4" data-env="{{ env_base }}">
+        <div class="env-chip" data-env="{{ env_base }}">{{ env_key|upper }}</div>
+        <div class="env-section__body">
+          {# Core Rancher fields #}
+          {% set core_fields = [
+            "rancher_cluster_name",
+            "rancher_aws_region",
+            "rancher_gitrepo_auth_type",
+            "rancher_github_auth",
+            "helm_git_branch",
+            "helm_app_git_branch",
+            "helm_bootstrap_git_branch",
+          ] %}
+          {% for name in core_fields %}
+            {% set f = sub[name] %}
+            {{ render_field(f) }}
+          {% endfor %}
+
+          {# Labels + Annotations #}
+          <div class="mt-4 pt-3 border-top">
+            <div class="mb-2 small text-uppercase fw-bold text-secondary text-center">Kubernetes Labels &amp; Annotations</div>
+            <div class="text-muted small mb-3 text-center">Labels for BASE_LABELS/EXTRA_LABELS and optional annotations.</div>
+          </div>
+          {# Settings toggles #}
+          <div class="mt-4 pt-3 border-top">
+            <div class="mb-2 small text-uppercase fw-bold text-secondary">Settings</div>
+            <div class="text-muted small mb-2">Optional lookups and metadata toggles. Variables for Rancher module will be set true or false based on the selections</div>
+          </div>
+          {% set settings_fields = [
+            "enable_meta",
+            "dev_tools",
+            "grafana_cloud_setup",
+            "fetch_waf",
+            "fetch_cert",
+            "fetch_vault_db",
+            "enable_kubeconfig_secret",
+            "include_rabbit_labels",
+            "include_vault_labels",
+            "include_rds_labels",
+            "include_rds_endpoint",
+            "include_vault_rds_labels",
+            "include_redis_labels",
+            "include_waf_labels",
+          ] %}
+          <div class="ps-checkbox-list ps-env-toggles">
+            <ul>
+              {% for name in settings_fields %}
+                {% set f = sub[name] %}
+                <li>
+                  {{ f() }}
+                  <label for="{{ f.id }}">
+                    {{ f.label.text }}
+                    {% if f.description %}
+                      <i class="fas fa-info-circle ms-1 text-muted wizard-help-icon"
+                         data-bs-toggle="tooltip"
+                         title="{{ f.description }}"></i>
+                    {% endif %}
+                  </label>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+
+          <div class="mt-4 pt-3 border-top">
+            <div class="mb-2 small text-uppercase fw-bold text-secondary">Labels</div>
+            <div class="text-muted small mb-2">Short strings mapped to BASE_LABELS/EXTRA_LABELS.</div>
+          </div>
+          {% set label_fields = [
+            "istio",
+            "vault",
+            "multi_mesh",
+            "domain_name",
+            "common_env_name",
+            "env_type",
+            "product",
+            "customer",
+            "support_organization",
+            "aws_account_alias",
+            "rancherPrefix",
+            "monitoring_type",
+          ] %}
+          {% set label_toggle_fields = ["istio", "vault", "multi_mesh"] %}
+          <div class="ps-checkbox-list ps-env-toggles">
+            <ul>
+              {% for name in label_toggle_fields %}
+                {% set f = sub[name] %}
+                <li>
+                  {{ f() }}
+                  <label for="{{ f.id }}">
+                    {{ f.label.text }}
+                    {% if f.description %}
+                      <i class="fas fa-info-circle ms-1 text-muted wizard-help-icon"
+                         data-bs-toggle="tooltip"
+                         title="{{ f.description }}"></i>
+                    {% endif %}
+                  </label>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% for name in label_fields if name not in label_toggle_fields %}
+            {% set f = sub[name] %}
+            {{ render_field(f) }}
+          {% endfor %}
+          {{ render_field(sub.extra_labels) }}
+
+          {# Annotations #}
+          <div class="mt-4 pt-3 border-top">
+            <div class="mb-2 small text-uppercase fw-bold text-secondary">Annotations</div>
+            <div class="text-muted small mb-2">Optional key:value pairs to force onto the cluster.</div>
+          </div>
+          {{ render_field(sub.annotations) }}
+        </div>
+      </div>
+    {% else %}
+      {{ render_field(field) }}
+    {% endif %}
+  {% endfor %}
+{% endblock %}
+
+{% block step_scripts %}
+{{ super() }}
+
+{# JSON in a separate non-JS script to avoid linter errors #}
+<script id="rancher-cluster-region-json" type="application/json">
+  {{ rancher_cluster_region | tojson }}
+</script>
+
+<script id="rancher-cluster-prefix-json" type="application/json">
+  {{ rancher_cluster_prefix | tojson }}
+</script>
+
+
+<script>
+(function () {
+  let CLUSTER_TO_REGION = {};
+  let CLUSTER_TO_PREFIX = {};
+
+  try {
+    const raw = document.getElementById('rancher-cluster-region-json');
+    CLUSTER_TO_REGION = JSON.parse(raw ? raw.textContent : '{}') || {};
+  } catch (_) {}
+
+  try {
+    const raw = document.getElementById('rancher-cluster-prefix-json');
+    CLUSTER_TO_PREFIX = JSON.parse(raw ? raw.textContent : '{}') || {};
+  } catch (_) {}
+
+  function regionSelectIn(section) {
+    return section.querySelector('select[name$="rancher_aws_region"]');
+  }
+
+  function prefixSelectIn(section) {
+    return section.querySelector('select[name*="rancherPrefix"]');
+  }
+
+  function wireClusterSync(section) {
+    section.querySelectorAll('select[name$="rancher_cluster_name"]').forEach(sel => {
+
+      function sync() {
+        const cluster = (sel.value || '').trim();
+        if (!cluster) return;
+
+        const region = CLUSTER_TO_REGION[cluster];
+        if (region) {
+          const regSel = regionSelectIn(section);
+          if (regSel && [...regSel.options].some(o => o.value === region)) {
+            regSel.value = region;
+            regSel.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+
+        const prefix = CLUSTER_TO_PREFIX[cluster];
+        if (prefix) {
+          const preSel = prefixSelectIn(section);
+          if (preSel && [...preSel.options].some(o => o.value === prefix)) {
+            preSel.value = prefix;
+            preSel.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+      }
+
+      sel.addEventListener('change', sync);
+      sync(); // prime on load
+    });
+  }
+
+  function seedBranchDefaults(section) {
+    const env = (section.getAttribute('data-env') || '').trim().toLowerCase();
+    if (!env) return;
+
+    ['helm_git_branch','helm_app_git_branch','helm_bootstrap_git_branch'].forEach(name => {
+      const input = section.querySelector(`[name$="${name}"]`);
+      if (!input) return;
+
+      const v = (input.value || '').trim();
+      if (!v || v.toLowerCase() === 'main') {
+        input.value = env;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.env-section[data-env]').forEach(section => {
+      wireClusterSync(section);
+      seedBranchDefaults(section);
+    });
+  });
+})();
+</script>
+{% endblock %}

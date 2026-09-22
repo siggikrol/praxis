@@ -1,0 +1,205 @@
+schema_version: 1
+defaults:
+  ad_url: ldap://10.32.136.146:389
+  vault_url: https://shared-vault.example.com
+  allow_ips:
+  - 10.32.136.146
+  - 10.32.136.210
+  harbor_host: harbor.shared.eu-central-1.betware.com
+egress:
+  harbor:
+    destination: '{{ harbor }}'
+    protocol: HTTPS/TCP 443
+    purpose: Pull approved Harbor images
+  aws:
+    destination: AWS public service endpoints
+    protocol: HTTPS/TCP 443
+    purpose: EKS/AWS APIs and artifact access; exclude RFC1918 from internet route
+  ecr:
+    destination: ECR endpoints in {{ region }}
+    protocol: HTTPS/TCP 443
+    purpose: Container registry authentication and image pulls
+  rancher:
+    destination: '{{ rancher }}'
+    protocol: HTTPS/WebSocket TCP 443
+    purpose: Register and manage the cluster from the selected Rancher plane
+  vault:
+    destination: '{{ defaults.vault_url }}'
+    protocol: HTTPS/TCP 443
+    purpose: Workload authentication and shared secrets
+routing:
+  tgw:
+    requirement: Networking team must configure/share the Transit Gateway in the target AWS account and complete the VPC attachment.
+  internet:
+    requirement: Outbound internet access and routing for the VPC/EKS worker nodes must be configured and working before Praxis
+      setup begins.
+    review_requirement: Outbound internet access and routing for the VPC, including its EKS worker nodes, must be configured
+      and working before Praxis foundation setup begins.
+  verification:
+    requirement: Confirm firewall-zone alignment, regional VPC endpoint service, outbound routing, VPN/office access, DNS,
+      Rancher, Vault, and Harbor reachability.
+conditional:
+  grafana:
+    condition:
+      field: grafana_required
+      equals: 'yes'
+    requirement: Grafana monitoring access is required over HTTPS/TCP 443.
+  jumphost:
+    condition:
+      field: jumphost_required
+      equals: 'yes'
+    requirement: Approved VPN-to-jump-host access is required.
+requires_confirmation:
+- Preserve current generic destinations; exact port/source/destination mappings require Networking confirmation.
+builder:
+  partner_choices:
+  - - paysafe
+    - Paysafe
+  - - exponea
+    - Exponea
+  - - giact
+    - Giact
+  - - hashicorp
+    - HashiCorp
+  - - idology
+    - IDology
+  - - maxmind
+    - MaxMind
+  - - mkodo
+    - Mkodo
+  east_west_choices:
+  - - ilp-cgs-postgres
+    - 'ILP → CGS: Postgres (5432)'
+  - - ilp-cgs-redis
+    - 'ILP → CGS: Redis (6379)'
+  - - ilp-cgs-rabbit
+    - 'ILP → CGS: RabbitMQ (5671/5552)'
+  - - ilp-cgs-https
+    - 'ILP → CGS: HTTPS'
+  - - ilp-fian-postgres
+    - 'ILP → FIAN: Postgres (5432)'
+  - - ilp-fian-https
+    - 'ILP → FIAN: HTTPS'
+  - - cgs-ilp-redis
+    - 'CGS → ILP: Redis (6379)'
+  - - cgs-ilp-rabbit
+    - 'CGS → ILP: RabbitMQ (5671/5552)'
+  - - cgs-ilp-postgres
+    - 'CGS → ILP: Postgres (5432)'
+  egress_rules:
+    eks_to_aws:
+      field: eks_to_aws
+      kind: flag
+      target: EKS → AWS public services
+      negate_rfc1918: true
+      markdown_label: EKS → AWS public services
+    eks_to_registries:
+      field: eks_to_registries
+      kind: flag
+      target: EKS → container registries (Harbor/GHCR/ECR)
+      negate_rfc1918: true
+      markdown_label: EKS → container registries (Harbor/GHCR/ECR)
+    eks_to_cicd:
+      field: eks_to_cicd
+      kind: flag
+      target: EKS → CI/CD (Catalyst)
+      negate_rfc1918: true
+      markdown_label: EKS → CI/CD (Catalyst)
+    sumologic:
+      field: sumologic
+      kind: flag
+      target: 'Observability: Sumo Logic (HTTPS)'
+      negate_rfc1918: true
+      markdown_label: Observability – Sumo Logic
+    grafana:
+      field: grafana
+      kind: flag
+      target: 'Observability: Grafana (HTTPS)'
+      negate_rfc1918: true
+      markdown_label: Observability – Grafana
+    partners:
+      field: partners
+      kind: list
+    flows:
+      field: east_west
+      kind: list
+    win_to_ad:
+      field: win_to_ad
+      kind: flag
+      target: Windows → AD/DCs
+      negate_rfc1918: false
+      markdown_label: Windows → AD/DCs
+    win_to_sccm:
+      field: win_to_sccm
+      kind: flag
+      target: Windows → SCCM/Update
+      negate_rfc1918: false
+      markdown_label: Windows → SCCM/Update
+    kcm_ldaps_ad:
+      field: kcm_ldaps_ad
+      kind: flag
+      target: KCM/Windows → AD LDAPS (636)
+      negate_rfc1918: false
+      markdown_label: KCM/Windows → AD LDAPS (636)
+    win_to_duo:
+      field: win_to_duo
+      kind: flag
+      target: Windows → Duo Security (HTTPS)
+      negate_rfc1918: true
+      markdown_label: Windows → Duo Security
+    vpn_to_jumphosts:
+      field: vpn_to_jumphosts
+      kind: flag
+      target: VPN → JumpHosts
+      negate_rfc1918: false
+      markdown_label: VPN → JumpHosts
+    nessus_scans:
+      field: nessus_scans
+      kind: flag
+      target: Nessus scanning
+      negate_rfc1918: false
+      markdown_label: Nessus scanning
+    jmeter_access:
+      field: jmeter_access
+      kind: flag
+      target: JMeter access
+      negate_rfc1918: false
+      markdown_label: JMeter access
+    adfs_to_apps:
+      field: adfs_to_apps
+      kind: flag
+      target: ADFS → apps (HTTPS)
+      negate_rfc1918: false
+      markdown_label: ADFS → apps (HTTPS)
+    notes:
+      field: notes
+      kind: notes
+  labels:
+    eks_to_aws: EKS → AWS public services
+    eks_to_registries: EKS → registries
+    eks_to_cicd: EKS → CI/CD
+    sumologic: 'Observability: Sumo Logic'
+    grafana: 'Observability: Grafana'
+    partners: 3rd-party partners
+    east_west: Inter-VPC flows
+    win_to_ad: Windows → AD/DCs
+    win_to_sccm: Windows → SCCM
+    kcm_ldaps_ad: KCM/Windows → AD LDAPS
+    win_to_duo: Windows → Duo Security
+    vpn_to_jumphosts: VPN → JumpHosts
+    nessus_scans: Nessus scanning
+    jmeter_access: JMeter testing
+    adfs_to_apps: ADFS → apps
+    notes: Egress notes
+  ingress_defaults:
+    outgoing_paysafe_allowed: unknown
+    port_8080_cross_vpc: 'true'
+    eu_ngl_dev_ad_access: 'true'
+  ingress_labels:
+    outgoing_paysafe_allowed: Outgoing Paysafe Allowed?
+    port_8080_cross_vpc: Port 8080 cross-VPC?
+    eu_ngl_dev_ad_access: EU NGL-Dev AD access?
+  ingress_targets:
+    paysafe_txt: Outgoing traffic to Paysafe
+    port8080_txt: Port 8080 cross-VPC
+    adacc_txt: EU NGL-Dev Active Directory access

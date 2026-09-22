@@ -1,0 +1,159 @@
+profiles:
+  unified:
+    bootstrap:
+      - bootstrap-cgs
+      - bootstrap-ilp
+      - bootstrap-pmv
+    deployment:
+      - application-cgs
+      - application-ilp
+      - application-pmv
+    iac:
+      - alb
+      - certificates
+      - eks_cluster
+      - eks_configuration
+      - network
+      - support_services
+      - vault
+      - waf
+    helm:
+      - helm-app-db-resource-deployment
+      - helm-cert-manager
+      - helm-checksum-report
+      - helm-external-dns-records
+      - helm-external-secrets
+      - helm-fluent-bit
+      - helm-init-global-envs
+      - helm-istio
+      - helm-monitoring
+      - helm-support-charts
+      - helm-rmq
+      - helm-vault-agent-injector
+      - helm-vault-essentials
+      - helm-vault-secrets-bootstrap
+      - helm-vault-server
+    helm_iac_cds:
+      - helm-app-db-resource-deployment/ilp
+      - helm-app-db-resource-deployment/cgs
+      - helm-app-db-resource-deployment/pmv
+      - helm-init-global-envs/ilp
+      - helm-init-global-envs/cgs
+      - helm-init-global-envs/pmv
+      - helm-checksum-report/ilp
+      - helm-checksum-report/cgs
+      - helm-checksum-report/pmv
+      - helm-external-dns-records/ilp
+      - helm-external-dns-records/cgs
+      - helm-external-dns-records/pmv
+      - helm-fim-checksum-report
+      - helm-cert-manager
+      - helm-elasticsearch
+      - helm-fluent-bit
+      - helm-istio
+      - helm-monitoring
+      - helm-rmq
+      - helm-support-charts
+      - helm-external-secrets
+      - helm-vault-agent-injector
+      - helm-vault-essentials
+      - helm-vault-secrets-bootstrap
+      - helm-vault-server
+    helm_app_cds:
+      - application-cw
+      - application-ilp
+      - application-rgs
+      - application-rng
+      - application-idp
+      - application-cgs
+      - application-cr
+      - application-pmv
+      - application-ilp-pdf
+      - application-cgs-pdf
+      - application-pmv-pdf
+    helm_bootstrap_cds:
+      - bootstrap-cw
+      - bootstrap-ilp
+      - bootstrap-rgs
+      - bootstrap-rng
+      - bootstrap-idp
+      - bootstrap-cr
+      - bootstrap-cgs
+      - bootstrap-pmv
+
+  catalyst:
+    blacklist:
+      substrings:
+        - rgs
+        - rng
+      exact:
+        - helm-aws-sm-bootstrap
+        - helm-external-dns-records/rgs
+        - helm-finops
+        - helm-kgateway
+        - helm-monitoring-shared
+        - helm-nginx-ingress
+
+  rgs:
+    bootstrap:
+      - bootstrap-rgs
+      - bootstrap-rng
+    deployment:
+      - application-rgs
+      - application-rng
+    iac:
+      - certificates
+      - eks_cluster
+      - eks_configuration
+      - elasticache
+      - external_dns
+      - network
+      - praxis_iam_irsa_role_aws_sm_bootstrap
+      - rancher
+      - rds_database
+      - rgs_secrets_manager
+      - route53
+      - support_services
+      - waf
+    helm:
+      - helm-app-db-resource-deployment
+      - helm-aws-sm-bootstrap
+      - helm-external-dns-records
+      - helm-external-secrets
+      - helm-finops
+      - helm-monitoring
+      - helm-nginx-ingress
+      - helm-rmq
+      - helm-support-charts
+    helm_iac_cds:
+      - helm-app-db-resource-deployment/rgs
+      - helm-aws-sm-bootstrap/rgs
+      - helm-aws-sm-bootstrap/rng
+      - helm-external-dns-records/rgs
+      - helm-external-secrets
+      - helm-finops
+      - helm-nginx-ingress
+      - helm-rmq
+      - helm-support-charts
+    helm_app_cds:
+      - application-rgs
+      - application-rng
+    helm_bootstrap_cds: []
+
+  loyalty:
+    bootstrap:
+      - bootstrap-cw
+    deployment:
+      - application-cw
+    iac:
+      - checksum-report
+      - support_services
+    helm:
+      - helm-checksum-report
+      - helm-monitoring
+    helm_iac_cds:
+      - helm-cert-manager
+      - helm-monitoring
+      - helm-external-secrets
+    helm_app_cds: []
+    helm_bootstrap_cds: []

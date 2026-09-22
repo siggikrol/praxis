@@ -1,0 +1,3545 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell">
+  {% set hero_title = draft.title %}
+  {% set hero_subtitle = "Complete required inputs, run full validation, and publish the approved spec to Confluence." %}
+  {% set hero_eyebrow = "Spec Workbench" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('spec_validator.index') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Spec Workbench
+  </a>
+
+  <div class="tool-panel tool-panel--compact">
+    <div class="tool-toolbar mb-0">
+      <div>
+        <div class="tool-panel__title">Draft Workspace</div>
+        <div class="tool-panel__subtitle">Edit this spec and follow the workflow toward publication.</div>
+      </div>
+      <div class="tool-toolbar__group">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('tools') }}">
+          <i class="fa-solid fa-screwdriver-wrench me-1"></i> Tools
+        </a>
+        <span class="small text-muted ms-sm-2">Updated {{ format_ts(draft.updated_at) }}</span>
+      </div>
+    </div>
+  </div>
+
+      {% if error %}
+        <div class="alert alert-danger py-2">{{ error }}</div>
+      {% endif %}
+      {% if notice %}
+        <div class="alert alert-success py-2">{{ notice }}</div>
+      {% endif %}
+
+      <form id="draftForm" method="post" enctype="multipart/form-data">
+        {% if csrf_token is defined %}
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% endif %}
+
+        <div class="row g-4 align-items-start">
+          <div class="col-xxl-9 col-xl-8">
+            <div class="card shadow-sm border-0 spec-workspace-panel">
+              <div class="spec-workspace-panel-bar"></div>
+              <div class="card-body p-3 p-md-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                  <div>
+                    <div class="fw-semibold">Draft Editor</div>
+                    <div class="small text-muted">Edit the YAML, check its syntax, run full Praxis Core validation, then publish the validated draft.</div>
+                  </div>
+                </div>
+
+                <div class="row g-3 align-items-end">
+                  <div class="col-lg-8">
+                    <label class="form-label mb-1" for="workspaceTitle">Draft Title</label>
+                    <input id="workspaceTitle"
+                           class="form-control"
+                           type="text"
+                           name="title"
+                           value="{{ draft.title }}"
+                           placeholder="Spec title">
+                  </div>
+                  <div class="col-md-6 col-lg-2">
+                    <label class="form-label mb-1" for="workspaceProject">Harbor Project</label>
+                    <input id="workspaceProject"
+                           class="form-control"
+                           type="text"
+                           name="harbor_registry_project"
+                           value="{{ validation_defaults.harbor_registry_project }}">
+                  </div>
+                  <div class="col-md-6 col-lg-2">
+                    <label class="form-label mb-1" for="workspacePcVersion">Praxis Core</label>
+                    <input id="workspacePcVersion"
+                           class="form-control"
+                           type="text"
+                           name="pc_version"
+                           value="{{ validation_defaults.pc_version }}"
+                           {% if is_prod %}readonly{% endif %}>
+                  </div>
+                </div>
+
+                {% set architecture = draft.architecture_metadata or {} %}
+                <details class="spec-editor-highlights mt-3"{% if draft.mode == 'prerequisite' %} open{% endif %}>
+                  <summary>
+                    <span><i class="fa-solid fa-compass-drafting me-1"></i> Workbench Purpose &amp; Architecture Context</span>
+                    <span class="spec-field-tag{% if draft.mode == 'prerequisite' %} spec-field-tag--required{% else %} spec-field-tag--optional{% endif %}">{{ 'Prerequisite' if draft.mode == 'prerequisite' else 'Playground' }}</span>
+                  </summary>
+                  <div class="spec-editor-highlights__body">
+                    <div class="row g-3">
+                      <div class="col-md-4">
+                        <label class="form-label mb-1" for="workspaceMode">Mode</label>
+                        <select id="workspaceMode" class="form-select" name="mode">
+                          <option value="playground"{% if draft.mode != 'prerequisite' %} selected{% endif %}>Playground / learning</option>
+                          <option value="prerequisite"{% if draft.mode == 'prerequisite' %} selected{% endif %}>Environment prerequisite</option>
+                        </select>
+                      </div>
+                      {% for field, label, placeholder in [
+                        ('architect', 'Architect', 'Responsible architect'),
+                        ('customer', 'Customer', 'Customer or business unit'),
+                        ('environments', 'Environments', 'dev, staging, prod'),
+                        ('purpose', 'Purpose', 'What this POC proves'),
+                        ('status', 'Decision Status', 'POC, proposed, approved'),
+                        ('ticket', 'Related Ticket', 'Jira or tracking reference')
+                      ] %}
+                      <div class="col-md-4">
+                        <label class="form-label mb-1" for="architecture_{{ field }}">{{ label }}</label>
+                        <input id="architecture_{{ field }}" class="form-control" name="{{ field }}" value="{{ architecture.get(field, '') }}" placeholder="{{ placeholder }}">
+                      </div>
+                      {% endfor %}
+                    </div>
+                    <div class="small text-muted mt-2">Prerequisite mode includes this context in the publication report and requires every field before publishing.</div>
+                  </div>
+                </details>
+
+                <ol class="spec-workflow-progress mt-4" aria-label="Draft workflow">
+                  <li class="spec-workflow-progress__step is-complete" data-workflow-stage="draft">
+                    <span class="spec-workflow-progress__marker"><i class="fa-solid fa-check"></i></span>
+                    <span><strong>Draft</strong><small>Saved locally</small></span>
+                  </li>
+                  <li class="spec-workflow-progress__step{% if draft_analysis.parsed_ok %} is-complete{% endif %}" data-workflow-stage="syntax">
+                    <span class="spec-workflow-progress__marker">2</span>
+                    <span><strong>Syntax</strong><small>{% if draft_analysis.parsed_ok %}YAML is valid{% else %}Needs attention{% endif %}</small></span>
+                  </li>
+                  <li class="spec-workflow-progress__step{% if matching_validation %} is-complete{% endif %}" data-workflow-stage="validation">
+                    <span class="spec-workflow-progress__marker">3</span>
+                    <span><strong>Full Validation</strong><small>{% if matching_validation %}Passed{% else %}Not complete{% endif %}</small></span>
+                  </li>
+                  <li class="spec-workflow-progress__step{% if publish_ready %} is-ready{% endif %}" data-workflow-stage="publish">
+                    <span class="spec-workflow-progress__marker">4</span>
+                    <span><strong>Publish</strong><small>{% if publish_ready %}Ready{% else %}Locked{% endif %}</small></span>
+                  </li>
+                </ol>
+
+                <div class="spec-editor-actionbar mt-4">
+                  <div class="spec-editor-actionbar__meta">
+                    <div class="spec-editor-save-state {% if draft_analysis.parsed_ok %}spec-editor-save-state--saved{% else %}spec-editor-save-state--error{% endif %}"
+                         data-dirty-status
+                         data-parse-ok="{{ 'true' if draft_analysis.parsed_ok else 'false' }}">
+                      {% if draft_analysis.parsed_ok %}Saved{% else %}Saved with YAML parse error{% endif %}
+                    </div>
+                    <div class="small text-muted" data-submit-status>
+                      Shortcuts: Cmd/Ctrl+S saves, Cmd/Ctrl+Enter saves and checks syntax.
+                    </div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-outline-secondary" formaction="{{ url_for('spec_validator.fork_draft_route', draft_id=draft.id) }}" formnovalidate>Fork Saved Draft</button>
+                    <button type="submit"
+                            id="saveDraftButton"
+                            class="btn btn-outline-primary"
+                            formaction="{{ url_for('spec_validator.save_draft', draft_id=draft.id) }}">
+                      Save
+                    </button>
+                    <button type="submit"
+                            id="validateYamlButton"
+                            class="btn spec-editor-action--syntax"
+                            formaction="{{ url_for('spec_validator.check_yaml_draft', draft_id=draft.id) }}">
+                      Save &amp; Check Syntax
+                    </button>
+                    <button type="submit"
+                            id="validateCurrentRevisionButton"
+                            class="btn {% if publish_ready %}btn-outline-primary{% else %}btn-primary{% endif %}"
+                            data-validation-matched="{{ 'true' if matching_validation else 'false' }}"
+                            formaction="{{ url_for('spec_validator.validate_draft', draft_id=draft.id) }}"
+                            {% if not core_validate.enabled %}disabled{% endif %}>
+                      {% if matching_validation %}Run Full Validation Again{% else %}Save &amp; Run Full Validation{% endif %}
+                    </button>
+                    <button type="submit"
+                            id="publishDraftButton"
+                            class="btn {% if publish_ready %}btn-success{% else %}btn-outline-success{% endif %}"
+                            data-publish-ready="{{ 'true' if publish_ready else 'false' }}"
+                            title="{% if publish_ready %}Publish this validated draft to Confluence.{% else %}Complete required inputs and full validation before publishing.{% endif %}"
+                            formaction="{{ url_for('spec_validator.publish_draft', draft_id=draft.id) }}"
+                            {% if not publish_ready %}disabled{% endif %}>
+                      Publish to Confluence
+                    </button>
+                  </div>
+                </div>
+
+                <div class="spec-editor-help mt-3">
+                  <div class="small text-muted">
+                    Every check saves the current editor content first. Check Syntax verifies YAML structure locally. Full Validation runs Praxis Core against a saved snapshot. Publish unlocks only when this exact draft has passed full validation.
+                  </div>
+                  {% if is_prod %}
+                    <div class="small text-muted mt-1">
+                      Praxis Core is locked in production.
+                    </div>
+                  {% endif %}
+                </div>
+
+                <details class="spec-editor-highlights mt-3">
+                  <summary>
+                    <span><i class="fa-solid fa-highlighter me-1"></i> Editor Highlights</span>
+                    <span class="small text-muted">Optional visual filters</span>
+                  </summary>
+                  <div class="spec-editor-highlights__body">
+                    <div class="small text-muted mb-2">Needs Input remains highlighted. Add other signals when reviewing infrastructure details.</div>
+                    <div class="spec-editor-toolbar__buttons">
+                      <button type="button"
+                              class="btn btn-outline-secondary btn-sm spec-editor-toolbar__button"
+                              data-semantic-toggle="instance"
+                              data-highlight-tone="instance">
+                        Compute Shapes
+                      </button>
+                      <button type="button"
+                              class="btn btn-outline-secondary btn-sm spec-editor-toolbar__button"
+                              data-semantic-toggle="version"
+                              data-highlight-tone="version">
+                        Versions
+                      </button>
+                      <button type="button"
+                              class="btn btn-outline-secondary btn-sm spec-editor-toolbar__button"
+                              data-semantic-toggle="aws"
+                              data-highlight-tone="aws">
+                        AWS Infra
+                      </button>
+                      <button type="button"
+                              class="btn btn-outline-secondary btn-sm spec-editor-toolbar__button"
+                              data-semantic-toggle="all"
+                              data-highlight-tone="all">
+                        All Highlights
+                      </button>
+                      <button type="button"
+                              class="btn btn-outline-secondary btn-sm spec-editor-toolbar__button"
+                              data-semantic-clear>
+                        Clear Optional
+                      </button>
+                    </div>
+                    <div class="spec-editor-radar__badges mt-2" data-semantic-summary></div>
+                  </div>
+                </details>
+
+                <div class="mt-4">
+                  <label class="form-label mb-1" for="workspaceSpecYaml">Spec YAML</label>
+                  <div class="spec-editor-utilitybar mb-2" data-editor-utilities hidden aria-label="YAML editor tools">
+                    <div class="spec-editor-search" role="search">
+                      <label class="visually-hidden" for="yamlEditorSearch">Search YAML</label>
+                      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                      <input id="yamlEditorSearch" class="form-control form-control-sm" type="search"
+                             placeholder="Search YAML" autocomplete="off" data-editor-search>
+                      <span class="spec-editor-search__status" data-editor-search-status aria-live="polite">No search</span>
+                      <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-search-previous aria-label="Previous match">
+                        <i class="fa-solid fa-chevron-up"></i>
+                      </button>
+                      <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-search-next aria-label="Next match">
+                        <i class="fa-solid fa-chevron-down"></i>
+                      </button>
+                    </div>
+                    <div class="spec-editor-go-to" data-editor-go-to-form>
+                      <label class="small text-muted" for="yamlEditorGoToLine">Line</label>
+                      <input id="yamlEditorGoToLine" class="form-control form-control-sm" type="number" min="1"
+                             inputmode="numeric" data-editor-go-to-line aria-label="Go to YAML line">
+                      <button type="button" class="btn btn-outline-secondary btn-sm" data-editor-go-to-button>Go</button>
+                    </div>
+                    <span class="small text-muted spec-editor-utilitybar__hint">Tab indents · Shift+Tab outdents · Enter keeps YAML indentation</span>
+                  </div>
+                  <div class="spec-editor-shell"
+                       data-line-editor-shell
+                       data-error-line="{{ draft_analysis.error_line or '' }}"
+                       data-error-column="{{ draft_analysis.error_column or '' }}">
+                    <div class="spec-editor-gutter" aria-hidden="true">
+                      <div class="spec-editor-gutter-inner" data-line-numbers></div>
+                    </div>
+                    <div class="spec-editor-match-layer" aria-hidden="true" data-semantic-highlights></div>
+                    <div class="spec-editor-focus-chip" aria-hidden="true" data-outline-chip hidden>
+                      <span class="spec-editor-focus-chip__eyebrow">Locked on</span>
+                      <span class="spec-editor-focus-chip__title" data-outline-chip-key></span>
+                      <span class="spec-editor-focus-chip__meta" data-outline-chip-line></span>
+                    </div>
+                    <div class="spec-editor-highlight spec-editor-highlight--outline" data-outline-highlight></div>
+                    <div class="spec-editor-highlight-beacon" aria-hidden="true" data-outline-beacon></div>
+                    <div class="spec-editor-highlight" data-error-highlight></div>
+                    <textarea id="workspaceSpecYaml"
+                              class="form-control spec-workspace-editor"
+                              name="spec_yaml"
+                              rows="30"
+                              wrap="off"
+                              spellcheck="false"
+                              aria-keyshortcuts="Control+F Meta+F Control+S Meta+S Control+Enter Meta+Enter"
+                              data-line-editor>{{ draft.working_yaml }}</textarea>
+                  </div>
+                </div>
+
+                <div class="card shadow-sm border-0 spec-compare-panel mt-4" data-collapsible-card data-card-id="snapshot-compare" data-default-collapsed="true">
+                  <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                      <div>
+                        <div class="fw-semibold">Snapshot Compare</div>
+                        <div class="small text-muted">Review how the current draft differs from the last validated or published snapshot.</div>
+                      </div>
+                      <button type="button" class="btn btn-link btn-sm spec-card-toggle" data-card-toggle aria-expanded="false">Show</button>
+                    </div>
+
+                    <div data-card-content>
+                    {% if snapshot_comparisons %}
+                      <div class="spec-compare-stack">
+                        {% for comparison in snapshot_comparisons %}
+                          <details class="spec-compare-card">
+                            <summary class="spec-compare-card__summary">
+                              <span class="spec-compare-card__summary-body">
+                                <span class="fw-semibold d-block">{{ comparison.label }}</span>
+                                <span class="small text-muted d-block">Compared against {{ format_ts(comparison.compared_at) }}</span>
+                              </span>
+                              <span class="spec-compare-card__stats">
+                                {% if comparison.identical %}
+                                  <span class="badge text-bg-success">No changes</span>
+                                {% else %}
+                                  <span class="badge surface border">+{{ comparison.added }}</span>
+                                  <span class="badge surface border">-{{ comparison.removed }}</span>
+                                  <span class="badge surface border">{{ comparison.changed_blocks }} blocks</span>
+                                {% endif %}
+                              </span>
+                            </summary>
+                            {% if comparison.identical %}
+                              <div class="small text-muted mt-2">Current draft matches this snapshot exactly.</div>
+                            {% else %}
+                              <pre class="spec-compare-diff">{{ comparison.preview }}</pre>
+                              {% if comparison.truncated %}
+                                <div class="small text-muted mt-2">Diff preview truncated for readability.</div>
+                              {% endif %}
+                            {% endif %}
+                          </details>
+                        {% endfor %}
+                      </div>
+                    {% else %}
+                      <div class="spec-history-empty spec-history-empty--compact">
+                        No saved validation or publication snapshot is available yet. Run validation or publish a revision to compare the current draft later.
+                      </div>
+                    {% endif %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-xxl-3 col-xl-4">
+            <div class="d-grid gap-3 spec-workspace-sidebar">
+              <div class="card shadow-sm border-0 spec-top-card" data-collapsible-card data-card-id="technical-details" data-default-collapsed="true">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                      <div class="fw-semibold mb-0">Technical Details</div>
+                      <div class="small text-muted">Ownership, timestamps, and content hash.</div>
+                    </div>
+                    <button type="button" class="btn btn-link btn-sm spec-card-toggle" data-card-toggle aria-expanded="false">
+                      Show
+                    </button>
+                  </div>
+                  <div data-card-content>
+                  <div class="spec-sidebar-grid">
+                    <div class="spec-sidebar-item">
+                      <div class="text-muted small">Owner</div>
+                      <div class="fw-semibold">{{ session.get('user') or 'local-user' }}</div>
+                    </div>
+                    <div class="spec-sidebar-item">
+                      <div class="text-muted small">Current Hash</div>
+                      <div class="d-flex justify-content-between align-items-start gap-2">
+                        <code>{{ draft.working_hash[:12] }}...</code>
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm spec-copy-button"
+                                data-copy-text="{{ draft.working_hash }}">
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                    <div class="spec-sidebar-item">
+                      <div class="text-muted small">Created</div>
+                      <div class="fw-semibold">{{ format_ts(draft.created_at) }}</div>
+                    </div>
+                    <div class="spec-sidebar-item">
+                      <div class="text-muted small">Mode</div>
+                      <div class="fw-semibold">{{ 'Environment prerequisite' if draft.mode == 'prerequisite' else 'Playground' }}</div>
+                    </div>
+                    {% if draft.source_template_key %}
+                    <div class="spec-sidebar-item">
+                      <div class="text-muted small">Starter template</div>
+                      <div class="fw-semibold">{{ draft.source_template_key }}</div>
+                    </div>
+                    {% endif %}
+                    {% if draft.source_draft_id %}
+                    <div class="spec-sidebar-item">
+                      <div class="text-muted small">Forked from</div>
+                      <a href="{{ url_for('spec_validator.draft_page', draft_id=draft.source_draft_id) }}"><code>{{ draft.source_draft_id[:12] }}…</code></a>
+                    </div>
+                    {% endif %}
+                  </div>
+
+                  {% if draft.confluence_parent_page_url %}
+                    <div class="mt-3 small">
+                      <div class="d-flex flex-wrap align-items-center gap-2">
+                        <a href="{{ draft.confluence_parent_page_url }}" target="_blank" rel="noopener">
+                          Open Confluence Parent Page
+                        </a>
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm spec-copy-button"
+                                data-copy-text="{{ draft.confluence_parent_page_url }}">
+                          Copy Link
+                        </button>
+                      </div>
+                    </div>
+                  {% endif %}
+                  </div>
+                </div>
+              </div>
+
+              {% if section_guidance %}
+              <div class="card shadow-sm border-0 spec-top-card" data-collapsible-card data-card-id="section-guide" data-default-collapsed="true">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                      <div class="fw-semibold">Understand This Spec</div>
+                      <div class="small text-muted">What the major YAML sections control.</div>
+                    </div>
+                    <button type="button" class="btn btn-link btn-sm spec-card-toggle" data-card-toggle aria-expanded="false">Show</button>
+                  </div>
+                  <div data-card-content>
+                    <div class="d-grid gap-2">
+                    {% for guide in section_guidance %}
+                      <details class="spec-history-card">
+                        <summary><code>{{ guide.key }}</code> — {{ guide.title }}</summary>
+                        <div class="small text-muted mt-2">{{ guide.description }}</div>
+                      </details>
+                    {% endfor %}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+
+              <div class="card shadow-sm border-0 spec-top-card" data-collapsible-card data-card-id="yaml-feedback">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                    <div>
+                      <div class="fw-semibold mb-0">Readiness</div>
+                      <div class="small text-muted">Everything required before publication.</div>
+                    </div>
+                    <button type="button" class="btn btn-link btn-sm spec-card-toggle" data-card-toggle aria-expanded="true">
+                      Hide
+                    </button>
+                  </div>
+                  <div data-card-content>
+                  <div class="spec-readiness-list mb-3" aria-label="Publication readiness checklist">
+                    {% for check in local_spec_checks if check.key in ['structure', 'contract'] %}
+                    <div class="spec-readiness-item{% if check.ok %} is-complete{% else %} is-blocked{% endif %}">
+                      <span class="spec-readiness-item__icon"><i class="fa-solid {% if check.ok %}fa-check{% else %}fa-exclamation{% endif %}"></i></span>
+                      <span class="spec-readiness-item__copy"><strong>{{ check.label }}</strong><small>{{ check.detail }}</small></span>
+                    </div>
+                    {% endfor %}
+                    <div class="spec-readiness-item{% if architecture_metadata_complete %} is-complete{% else %} is-blocked{% endif %}">
+                      <span class="spec-readiness-item__icon"><i class="fa-solid fa-compass-drafting"></i></span>
+                      <span class="spec-readiness-item__copy">
+                        <strong>Architecture context</strong>
+                        <small>{{ 'Required for prerequisite publication' if draft.mode == 'prerequisite' else 'Optional in playground mode' }}</small>
+                      </span>
+                    </div>
+                    <div class="spec-readiness-item is-checking" data-readiness-required>
+                      <span class="spec-readiness-item__icon"><i class="fa-solid fa-spinner"></i></span>
+                      <span class="spec-readiness-item__copy">
+                        <strong>Required inputs</strong>
+                        <small data-readiness-required-status>Checking the current YAML…</small>
+                      </span>
+                      <button type="button" class="btn btn-outline-secondary btn-sm" data-focus-needs-input hidden>Review</button>
+                    </div>
+                    <div class="spec-readiness-item{% if draft_analysis.parsed_ok %} is-complete{% else %} is-blocked{% endif %}" data-readiness-syntax>
+                      <span class="spec-readiness-item__icon"><i class="fa-solid {% if draft_analysis.parsed_ok %}fa-check{% else %}fa-exclamation{% endif %}"></i></span>
+                      <span class="spec-readiness-item__copy">
+                        <strong>YAML syntax</strong>
+                        <small>{% if draft_analysis.parsed_ok %}Valid{% else %}Fix the parse error below{% endif %}</small>
+                      </span>
+                      {% if not draft_analysis.parsed_ok %}
+                      <button type="submit" class="btn btn-outline-primary btn-sm" formaction="{{ url_for('spec_validator.check_yaml_draft', draft_id=draft.id) }}">Check</button>
+                      {% endif %}
+                    </div>
+                    <div class="spec-readiness-item{% if matching_validation %} is-complete{% else %} is-blocked{% endif %}" data-readiness-validation>
+                      <span class="spec-readiness-item__icon"><i class="fa-solid {% if matching_validation %}fa-check{% else %}fa-lock{% endif %}"></i></span>
+                      <span class="spec-readiness-item__copy">
+                        <strong>Full validation</strong>
+                        <small>{% if matching_validation %}Passed for the current YAML{% else %}Run Praxis Core validation{% endif %}</small>
+                      </span>
+                      {% if not matching_validation and core_validate.enabled %}
+                      <button type="submit" class="btn btn-outline-primary btn-sm" formaction="{{ url_for('spec_validator.validate_draft', draft_id=draft.id) }}">Run</button>
+                      {% endif %}
+                    </div>
+                    <div class="spec-readiness-item{% if confluence.enabled %} is-complete{% else %} is-blocked{% endif %}" data-readiness-confluence>
+                      <span class="spec-readiness-item__icon"><i class="fa-solid {% if confluence.enabled %}fa-check{% else %}fa-lock{% endif %}"></i></span>
+                      <span class="spec-readiness-item__copy">
+                        <strong>Confluence publishing</strong>
+                        <small>{% if confluence.enabled %}Configured for {{ confluence.space_key }}{% else %}{{ confluence.reason }}{% endif %}</small>
+                      </span>
+                    </div>
+                  </div>
+
+                  <section class="spec-editor-review spec-editor-review--primary mb-3" aria-labelledby="needsInputHeading">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <div id="needsInputHeading" class="fw-semibold">Needs Input</div>
+                        <div class="small text-muted">Resolve placeholders and starter values before publishing.</div>
+                      </div>
+                      <span class="spec-editor-review__count" data-needs-input-count>Scanning current draft</span>
+                    </div>
+                    <div class="spec-editor-review__list" data-needs-input-list>
+                      <div class="spec-editor-review__empty">Scanning template placeholders and demo defaults.</div>
+                    </div>
+                    <div class="spec-guided-editor mt-2" data-guided-editor hidden>
+                      <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                          <div class="small text-uppercase fw-semibold text-muted">Guided value</div>
+                          <div class="fw-semibold" data-guided-editor-title></div>
+                        </div>
+                        <button type="button" class="btn-close" data-guided-editor-close aria-label="Close guided editor"></button>
+                      </div>
+                      <label class="form-label mt-2 mb-1" for="guidedEditorValue">New value</label>
+                      <input id="guidedEditorValue" class="form-control form-control-sm" type="text" data-guided-editor-value>
+                      <div class="small text-muted mt-1" data-guided-editor-hint></div>
+                      <div class="invalid-feedback d-block" data-guided-editor-error hidden></div>
+                      <div class="spec-guided-editor__preview mt-2">
+                        <div class="small fw-semibold mb-1">YAML change preview</div>
+                        <pre data-guided-editor-preview></pre>
+                      </div>
+                      <div class="d-flex flex-wrap justify-content-end gap-2 mt-2">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-guided-editor-cancel>Cancel</button>
+                        <button type="button" class="btn btn-primary btn-sm" data-guided-editor-apply disabled>Apply to YAML</button>
+                      </div>
+                    </div>
+                    <div class="small text-muted mt-2">Select an item to jump directly to its YAML line.</div>
+                  </section>
+
+                  {% if publish_ready %}
+                  <div class="alert alert-success py-2" data-ready-alert>
+                    <div class="fw-semibold">Ready to publish</div>
+                    <div class="small mt-1">The current YAML matches successful validation job <code>{{ matching_validation.job_id }}</code>.</div>
+                  </div>
+                  {% endif %}
+
+                  {% if draft_analysis.parsed_ok %}
+                    <div class="small text-muted mb-2">YAML parsed successfully.</div>
+                  {% else %}
+                    <div class="alert alert-warning py-2">{{ draft_analysis.error }}</div>
+                  {% endif %}
+
+                  <div class="small text-muted">Lines: {{ draft_analysis.line_count }} | Bytes: {{ draft_analysis.byte_count }}</div>
+                  {% if draft_analysis.error_line %}
+                    <div class="small mt-2">
+                      <span class="text-muted">Error location:</span>
+                      <span class="fw-semibold">line {{ draft_analysis.error_line }}, column {{ draft_analysis.error_column }}</span>
+                    </div>
+                    <div class="mt-2">
+                      <button type="button" class="btn btn-outline-danger btn-sm" data-jump-to-error>
+                        Jump to line {{ draft_analysis.error_line }}
+                      </button>
+                    </div>
+                    <div class="small text-muted mt-2">
+                      Line highlighting reflects the last saved syntax check. Use Save &amp; Check Syntax again after edits to refresh it.
+                    </div>
+                  {% endif %}
+                  <div class="small mt-2">
+                    <span class="text-muted">Top-level type:</span> <span class="fw-semibold">{{ draft_analysis.top_type }}</span>
+                  </div>
+                  <div class="spec-editor-outline mt-3">
+                    <div class="small text-muted mb-1">Top-level keys</div>
+                    <div class="spec-editor-outline__list" data-outline-list>
+                      <span class="spec-editor-outline__empty">No top-level keys found.</span>
+                    </div>
+                    <div class="spec-editor-outline__focus" data-outline-focus-panel hidden>
+                      <div class="spec-editor-outline__focus-copy">
+                        <span class="spec-editor-outline__focus-label">Target lock</span>
+                        <span class="spec-editor-outline__focus-key" data-outline-focus-key></span>
+                        <span class="spec-editor-outline__focus-meta" data-outline-focus-line></span>
+                      </div>
+                      <button type="button"
+                              class="btn btn-outline-secondary btn-sm spec-editor-outline__clear"
+                              data-outline-clear>
+                        Clear
+                      </button>
+                    </div>
+                    <div class="small text-muted">Click a key to lock on. The editor will jump, pulse, and keep the target pinned until you clear it.</div>
+                  </div>
+                  {% if draft_analysis.spec_type %}
+                    <div class="small mt-2">
+                      <span class="text-muted">Spec type:</span> <span class="fw-semibold">{{ draft_analysis.spec_type }}</span>
+                    </div>
+                  {% endif %}
+                  {% if draft_analysis.error_context %}
+                    <div class="mt-3">
+                      <div class="small text-muted mb-1">Error Context</div>
+                      <div class="spec-error-context">
+                        {% for line in draft_analysis.error_context %}
+                          <div class="spec-error-context__row{% if line.is_error %} spec-error-context__row--error{% endif %}">
+                            <span class="spec-error-context__number">{{ line.number }}</span>
+                            <code class="spec-error-context__text">{{ line.text or " " }}</code>
+                          </div>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% endif %}
+                  </div>
+                </div>
+              </div>
+
+              <div class="card shadow-sm border-0 spec-top-card" data-collapsible-card data-card-id="validation-history" data-default-collapsed="true">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="fw-semibold">Validation History</div>
+                      <div class="small text-muted">{{ validations|length }} shown</div>
+                    </div>
+                    <button type="button" class="btn btn-link btn-sm spec-card-toggle" data-card-toggle aria-expanded="false">
+                      Show
+                    </button>
+                  </div>
+                  <div data-card-content>
+                  {% if validations %}
+                    <div class="spec-history-stack">
+                      {% for validation in validations %}
+                        {% set error_summary = "" %}
+                        {% if validation.error %}
+                          {% set error_summary = validation.error.split('HTTP response headers:')[0].split('HTTP response body:')[0].strip() %}
+                          {% if not error_summary %}
+                            {% set error_summary = 'Validation failed' %}
+                          {% endif %}
+                        {% endif %}
+                        <div class="spec-history-card">
+                          <div class="d-flex justify-content-between align-items-start gap-3 spec-history-card-header">
+                            <div class="spec-history-card-title">
+                              <div class="fw-semibold">
+                                <a href="{{ url_for('spec_validator.job_page', job_id=validation.job_id) }}" class="text-decoration-none">
+                                  {{ validation.job_id }}
+                                </a>
+                              </div>
+                              <div class="small text-muted">{{ format_ts(validation.created_at) }}</div>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                              <span class="badge {% if validation.state == 'done' and validation.ok %}text-bg-success{% elif validation.state == 'error' or (validation.state == 'done' and not validation.ok) %}text-bg-danger{% else %}text-bg-secondary{% endif %}">
+                                {{ validation.state }}
+                              </span>
+                              <button type="button"
+                                      class="btn btn-outline-secondary btn-sm spec-copy-button"
+                                      data-copy-text="{{ validation.job_id }}">
+                                Copy
+                              </button>
+                            </div>
+                          </div>
+                          <div class="small mt-2 spec-history-card-meta">
+                            Hash <code>{{ validation.content_hash[:12] }}...</code> | Harbor <code>{{ validation.harbor_registry_project }}</code> | Core <code>{{ validation.pc_version }}</code>
+                          </div>
+                          {% if validation.error %}
+                            <div class="small mt-2 spec-history-card-error-summary">
+                              <span class="fw-semibold">Error:</span>
+                              {% if error_summary|length > 160 %}
+                                {{ error_summary[:157] }}...
+                              {% else %}
+                                {{ error_summary }}
+                              {% endif %}
+                            </div>
+                            {% if validation.error != error_summary or validation.error|length > 160 %}
+                              <details class="spec-history-card-error-details">
+                                <summary>Show full error</summary>
+                                <pre class="spec-history-card-error">{{ validation.error }}</pre>
+                              </details>
+                            {% endif %}
+                          {% endif %}
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="spec-history-empty">No validation runs yet. Run Full Validation to create the first validation snapshot.</div>
+                  {% endif %}
+                  </div>
+                </div>
+              </div>
+
+              <div class="card shadow-sm border-0 spec-top-card" data-collapsible-card data-card-id="publication-history" data-default-collapsed="true">
+                <div class="card-body">
+                  <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="fw-semibold">Publication History</div>
+                      <div class="small text-muted">{{ publications|length }} shown</div>
+                    </div>
+                    <button type="button" class="btn btn-link btn-sm spec-card-toggle" data-card-toggle aria-expanded="false">
+                      Show
+                    </button>
+                  </div>
+                  <div data-card-content>
+                  {% if publications %}
+                    <div class="spec-history-stack">
+                      {% for publication in publications %}
+                        <div class="spec-history-card">
+                          <div class="d-flex justify-content-between align-items-start gap-3 spec-history-card-header">
+                            <div class="spec-history-card-title">
+                              <div class="fw-semibold">Rev {{ "%03d"|format(publication.revision_number) }}</div>
+                              <div class="small text-muted">{{ format_ts(publication.created_at) }}</div>
+                            </div>
+                            <span class="badge text-bg-success">Published</span>
+                          </div>
+                          <div class="small mt-2 spec-history-card-meta">
+                            Parent:
+                            <a href="{{ publication.confluence_parent_page_url }}" target="_blank" rel="noopener">spec page</a>
+                            |
+                            Revision:
+                            <a href="{{ publication.confluence_revision_page_url }}" target="_blank" rel="noopener">snapshot page</a>
+                          </div>
+                          <div class="small mt-2 spec-history-card-meta">
+                            Hash <code>{{ publication.content_hash[:12] }}...</code>
+                          </div>
+                        </div>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="spec-history-empty">No published revisions yet. Publish a validated draft to create the first revision snapshot.</div>
+                  {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+</div>
+
+<style>
+.spec-workspace-card {
+  margin: 0 auto;
+}
+
+.spec-workspace-panel {
+  max-width: none;
+  width: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+}
+
+.spec-top-card {
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+
+.spec-card-toggle {
+  padding: 0;
+  font-size: 0.84rem;
+  text-decoration: none;
+  color: var(--accent-blue);
+}
+
+.spec-card-toggle:hover {
+  color: var(--text-primary);
+}
+
+[data-collapsible-card] [data-card-content].is-collapsed {
+  display: none;
+}
+
+.spec-card-toggle:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 3px;
+  border-radius: 0.25rem;
+}
+
+.spec-workspace-panel .form-label {
+  min-height: 2.5rem;
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 0.35rem;
+}
+
+.spec-workspace-panel-bar {
+  height: 4px;
+  background: var(--hero-gradient);
+  border-top-left-radius: 0.45rem;
+  border-top-right-radius: 0.45rem;
+}
+
+.spec-workspace-editor {
+  min-height: 42rem;
+  height: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92rem;
+  line-height: 1.45rem;
+  background-color: transparent !important;
+  position: relative;
+  z-index: 2;
+  border: 0;
+  border-radius: 0;
+  padding-left: 4.9rem;
+  white-space: pre;
+  overflow-y: hidden;
+  resize: none;
+}
+
+.spec-workspace-editor:focus {
+  box-shadow: none;
+}
+
+.spec-editor-utilitybar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.85rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.7rem;
+  background: var(--bg-elevated);
+}
+
+.spec-editor-search,
+.spec-editor-go-to {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.spec-editor-search > i {
+  color: var(--text-muted);
+}
+
+.spec-editor-search input {
+  width: min(17rem, 32vw);
+}
+
+.spec-editor-search__status {
+  min-width: 4.5rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-align: center;
+}
+
+.spec-editor-go-to input {
+  width: 5rem;
+}
+
+.spec-editor-utilitybar__hint {
+  margin-left: auto;
+}
+
+.spec-workflow-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.spec-workflow-progress__step {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.8rem;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+}
+
+.spec-workflow-progress__step strong,
+.spec-workflow-progress__step small {
+  display: block;
+}
+
+.spec-workflow-progress__step small {
+  margin-top: 0.1rem;
+  color: var(--text-muted);
+}
+
+.spec-workflow-progress__marker {
+  width: 1.7rem;
+  height: 1.7rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.spec-workflow-progress__step.is-complete {
+  color: var(--text-primary);
+  border-color: var(--bs-success-border-subtle, #a3cfbb);
+  background: var(--bs-success-bg-subtle, #d1e7dd);
+}
+
+.spec-workflow-progress__step.is-complete .spec-workflow-progress__marker,
+.spec-workflow-progress__step.is-ready .spec-workflow-progress__marker {
+  color: #fff;
+  border-color: var(--bs-success, #198754);
+  background: var(--bs-success, #198754);
+}
+
+.spec-workflow-progress__step.is-ready {
+  color: var(--text-primary);
+  border-color: var(--bs-success, #198754);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 2px var(--bs-success-bg-subtle, #d1e7dd);
+}
+
+.spec-readiness-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.spec-readiness-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.75rem;
+  background: var(--bg-elevated);
+}
+
+.spec-readiness-item__icon {
+  width: 1.65rem;
+  height: 1.65rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  font-size: 0.72rem;
+}
+
+.spec-readiness-item__copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.spec-readiness-item__copy strong,
+.spec-readiness-item__copy small {
+  display: block;
+}
+
+.spec-readiness-item__copy small {
+  margin-top: 0.08rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.spec-readiness-item.is-complete {
+  border-color: var(--bs-success-border-subtle, #a3cfbb);
+  background: var(--bs-success-bg-subtle, #d1e7dd);
+}
+
+.spec-readiness-item.is-complete .spec-readiness-item__icon {
+  color: #fff;
+  border-color: var(--bs-success, #198754);
+  background: var(--bs-success, #198754);
+}
+
+.spec-readiness-item.is-blocked .spec-readiness-item__icon {
+  color: var(--bs-warning-text-emphasis, #664d03);
+  border-color: var(--bs-warning-border-subtle, #ffecb5);
+  background: var(--bs-warning-bg-subtle, #fff3cd);
+}
+
+.spec-editor-highlights {
+  border: 1px solid var(--border-default);
+  border-radius: 0.75rem;
+  background: var(--bg-elevated);
+}
+
+.spec-editor-highlights > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+
+.spec-editor-highlights > summary::-webkit-details-marker {
+  display: none;
+}
+
+.spec-editor-highlights__body {
+  padding: 0 0.85rem 0.85rem;
+}
+
+.spec-editor-review--primary {
+  padding: 0.85rem;
+  border: 1px solid var(--accent-amber-border);
+  border-radius: 0.85rem;
+  background: var(--accent-amber-bg);
+}
+
+.spec-editor-actionbar {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.85rem;
+  background: var(--bg-surface);
+  box-shadow: 0 10px 22px var(--border-subtle);
+  backdrop-filter: blur(8px);
+}
+
+.spec-editor-actionbar__meta {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.spec-editor-action--syntax {
+  color: var(--text-primary);
+  border-color: var(--border-strong, var(--border-default));
+  background: var(--bg-elevated);
+}
+
+.spec-editor-action--syntax:hover,
+.spec-editor-action--syntax:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--accent-blue-border);
+  background: var(--accent-blue-bg);
+  box-shadow: 0 0 0 0.2rem var(--accent-blue-bg);
+}
+
+.spec-editor-save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.spec-editor-save-state::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.85;
+}
+
+.spec-editor-save-state--saved {
+  color: var(--accent-green);
+}
+
+.spec-editor-save-state--dirty {
+  color: var(--accent-amber);
+}
+
+.spec-editor-save-state--working {
+  color: var(--accent-blue);
+}
+
+.spec-editor-save-state--error {
+  color: var(--accent-red);
+}
+
+.spec-editor-help {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.spec-editor-control-panel {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.9rem;
+  background: var(--bg-surface);
+}
+
+.spec-editor-shell {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--border-default);
+  border-radius: 0.375rem;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.spec-editor-shell--outline-active {
+  box-shadow: inset 0 0 0 1px rgba(176, 127, 18, 0.22), 0 18px 34px rgba(176, 127, 18, 0.08);
+}
+
+.spec-editor-gutter {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4rem;
+  border-right: 1px solid var(--border-default);
+  background: var(--bg-elevated);
+  overflow: hidden;
+  z-index: 6;
+}
+
+.spec-editor-gutter-inner {
+  padding: 0.85rem 0.6rem 0.85rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45rem;
+  color: var(--text-muted);
+  text-align: right;
+  will-change: transform;
+}
+
+.spec-editor-line-number {
+  height: 1.45rem;
+}
+
+.spec-editor-line-number--error {
+  color: var(--accent-red);
+  font-weight: 700;
+}
+
+.spec-editor-line-number--outline {
+  color: var(--accent-amber);
+  font-weight: 700;
+}
+
+.spec-editor-highlight {
+  position: absolute;
+  left: 4rem;
+  right: 0;
+  height: 1.45rem;
+  background: var(--accent-red-bg);
+  border-left: 3px solid var(--accent-red);
+  display: none;
+  pointer-events: none;
+  z-index: 5;
+  will-change: transform, top;
+}
+
+.spec-editor-highlight--outline {
+  background:
+    linear-gradient(90deg, rgba(244, 196, 48, 0.28) 0%, rgba(255, 228, 138, 0.18) 45%, rgba(255, 255, 255, 0) 100%),
+    rgba(176, 127, 18, 0.12);
+  border-left-color: rgba(176, 127, 18, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 0 0 1px rgba(176, 127, 18, 0.12);
+}
+
+.spec-editor-highlight--outline.is-pulsing {
+  animation: spec-outline-pulse 0.95s ease-out;
+}
+
+.spec-editor-highlight-beacon {
+  position: absolute;
+  left: 4rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-left: -0.45rem;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 252, 236, 0.95);
+  background: radial-gradient(circle at 30% 30%, #fff7c2 0%, #f4c430 48%, #b07f12 100%);
+  box-shadow: 0 0 0 6px rgba(244, 196, 48, 0.16), 0 6px 18px rgba(118, 82, 0, 0.2);
+  display: none;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.spec-editor-highlight-beacon.is-pulsing {
+  animation: spec-outline-beacon-pulse 1.05s ease-out;
+}
+
+.spec-editor-focus-chip {
+  position: absolute;
+  right: 0.9rem;
+  min-width: 11rem;
+  max-width: min(20rem, calc(100% - 6rem));
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--accent-amber-border);
+  border-radius: 0.85rem;
+  background: var(--accent-amber-bg);
+  box-shadow: 0 14px 30px var(--accent-amber-border);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.spec-editor-focus-chip[hidden] {
+  display: none;
+}
+
+.spec-editor-focus-chip.is-pulsing {
+  animation: spec-outline-chip-pulse 1s ease-out;
+}
+
+.spec-editor-focus-chip__eyebrow {
+  font-size: 0.67rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+  font-weight: 700;
+}
+
+.spec-editor-focus-chip__title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.spec-editor-focus-chip__meta {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.spec-editor-toolbar {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 0.65rem;
+}
+
+.spec-editor-toolbar__header {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.spec-editor-toolbar__eyebrow {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  font-weight: 700;
+}
+
+.spec-editor-toolbar__label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.spec-editor-toolbar__buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.spec-editor-toolbar__button {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.spec-editor-toolbar__button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 18px var(--border-subtle);
+}
+
+.spec-editor-toolbar__button.is-active {
+  background: var(--accent-blue-bg);
+  border-color: var(--accent-blue-border);
+  color: var(--text-primary);
+}
+
+.spec-editor-toolbar__button.is-active[data-highlight-tone="required"] {
+  background: var(--accent-red-bg);
+  border-color: var(--accent-red-border);
+  color: var(--accent-red);
+  box-shadow: 0 10px 18px var(--accent-red-border);
+}
+
+.spec-editor-toolbar__button.is-active[data-highlight-tone="instance"] {
+  background: var(--accent-green-bg);
+  border-color: var(--accent-green-border);
+  color: var(--accent-green);
+  box-shadow: 0 10px 18px var(--accent-green-border);
+}
+
+.spec-editor-toolbar__button.is-active[data-highlight-tone="version"] {
+  background: var(--accent-blue-bg);
+  border-color: var(--accent-blue-border);
+  color: var(--accent-blue);
+  box-shadow: 0 10px 18px var(--accent-blue-border);
+}
+
+.spec-editor-toolbar__button.is-active[data-highlight-tone="aws"] {
+  background: var(--accent-amber-bg);
+  border-color: var(--accent-amber-border);
+  color: var(--accent-amber);
+  box-shadow: 0 10px 18px var(--accent-amber-border);
+}
+
+.spec-editor-toolbar__button.is-active[data-highlight-tone="all"] {
+  background: var(--accent-purple-bg);
+  border-color: var(--accent-purple-border);
+  color: var(--accent-purple);
+  box-shadow: 0 10px 18px var(--accent-purple-border);
+}
+
+.spec-editor-toolbar__button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spec-editor-radar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.95rem;
+  background: var(--bg-elevated);
+}
+
+.spec-editor-radar__copy {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.spec-editor-radar__label {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-blue);
+  font-weight: 700;
+}
+
+.spec-editor-radar__status {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.spec-editor-radar__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.spec-editor-radar__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.32rem 0.62rem;
+  border-radius: 999px;
+  font-size: 0.77rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.spec-editor-radar__badge::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+}
+
+.spec-editor-radar__badge--instance {
+  background: var(--accent-green-bg);
+  color: var(--accent-green);
+  border-color: var(--accent-green-border);
+}
+
+.spec-editor-radar__badge--required {
+  background: var(--accent-red-bg);
+  color: var(--accent-red);
+  border-color: var(--accent-red-border);
+}
+
+.spec-editor-radar__badge--required::before {
+  background: var(--accent-red);
+}
+
+.spec-editor-radar__badge--instance::before {
+  background: var(--accent-green);
+}
+
+.spec-editor-radar__badge--version {
+  background: var(--accent-blue-bg);
+  color: var(--accent-blue);
+  border-color: var(--accent-blue-border);
+}
+
+.spec-editor-radar__badge--version::before {
+  background: var(--accent-blue);
+}
+
+.spec-editor-radar__badge--aws {
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber);
+  border-color: var(--accent-amber-border);
+}
+
+.spec-editor-radar__badge--aws::before {
+  background: var(--accent-amber);
+}
+
+.spec-editor-radar__badge--muted {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+}
+
+.spec-editor-radar__badge--muted::before {
+  background: var(--text-muted);
+}
+
+.spec-editor-outline {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.spec-editor-outline__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.spec-editor-outline__item {
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.84rem;
+}
+
+.spec-editor-outline__item:hover,
+.spec-editor-outline__item.is-active {
+  border-color: var(--accent-blue-border);
+  background: var(--accent-blue-bg);
+  color: var(--text-primary);
+}
+
+.spec-editor-outline__item.is-locked {
+  border-color: var(--accent-amber-border);
+  background: var(--accent-amber-bg);
+  color: var(--accent-amber);
+  box-shadow: 0 8px 16px var(--accent-amber-border);
+}
+
+.spec-editor-outline__empty {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.spec-editor-outline__focus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--accent-amber-border);
+  border-radius: 0.9rem;
+  background: var(--accent-amber-bg);
+}
+
+.spec-editor-outline__focus[hidden] {
+  display: none;
+}
+
+.spec-editor-outline__focus-copy {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.spec-editor-outline__focus-label {
+  font-size: 0.67rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+  font-weight: 700;
+}
+
+.spec-editor-outline__focus-key {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.spec-editor-outline__focus-meta {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.spec-editor-outline__clear {
+  white-space: nowrap;
+}
+
+@keyframes spec-outline-pulse {
+  0% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 0 0 1px rgba(176, 127, 18, 0.12), 0 0 0 0 rgba(244, 196, 48, 0.44);
+  }
+  35% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 0 0 1px rgba(176, 127, 18, 0.18), 0 0 0 12px rgba(244, 196, 48, 0.18);
+  }
+  100% {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 0 0 1px rgba(176, 127, 18, 0.12), 0 0 0 18px rgba(244, 196, 48, 0);
+  }
+}
+
+@keyframes spec-outline-beacon-pulse {
+  0% {
+    box-shadow: 0 0 0 6px rgba(244, 196, 48, 0.22), 0 6px 18px rgba(118, 82, 0, 0.2);
+    transform: translateY(-50%) scale(1);
+  }
+  35% {
+    box-shadow: 0 0 0 14px rgba(244, 196, 48, 0.12), 0 8px 22px rgba(118, 82, 0, 0.22);
+    transform: translateY(-50%) scale(1.15);
+  }
+  100% {
+    box-shadow: 0 0 0 20px rgba(244, 196, 48, 0), 0 6px 18px rgba(118, 82, 0, 0.2);
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@keyframes spec-outline-chip-pulse {
+  0% {
+    transform: scale(0.98);
+    box-shadow: 0 10px 18px rgba(118, 82, 0, 0.08);
+  }
+  45% {
+    transform: scale(1.02);
+    box-shadow: 0 16px 34px rgba(118, 82, 0, 0.18);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 14px 30px rgba(118, 82, 0, 0.14);
+  }
+}
+
+.spec-editor-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.spec-editor-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+}
+
+.spec-editor-legend__item::before {
+  content: "";
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+}
+
+.spec-editor-legend__item--error::before {
+  background: var(--accent-red);
+}
+
+.spec-editor-legend__item--required::before {
+  background: var(--accent-red);
+}
+
+.spec-editor-legend__item--instance::before {
+  background: var(--accent-green);
+}
+
+.spec-editor-legend__item--version::before {
+  background: var(--accent-blue);
+}
+
+.spec-editor-legend__item--aws::before {
+  background: var(--accent-amber);
+}
+
+.spec-editor-match-layer {
+  position: absolute;
+  left: 4rem;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.spec-editor-match {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: none;
+  border-left: 3px solid transparent;
+  background: var(--spec-match-fill, transparent);
+  border-left-color: var(--spec-match-border, transparent);
+  box-shadow: inset 0 0 0 1px var(--spec-match-glow, transparent);
+  border-top-right-radius: 0.2rem;
+  border-bottom-right-radius: 0.2rem;
+  will-change: transform, top;
+}
+
+.spec-editor-match--instance {
+  --spec-match-fill: rgba(25, 180, 96, 0.2);
+  --spec-match-border: rgba(62, 231, 130, 0.9);
+  --spec-match-glow: rgba(62, 231, 130, 0.32);
+}
+
+.spec-editor-match--required {
+  --spec-match-fill: rgba(220, 53, 69, 0.24);
+  --spec-match-border: rgba(255, 99, 115, 0.95);
+  --spec-match-glow: rgba(255, 99, 115, 0.38);
+}
+
+.spec-editor-match--version {
+  --spec-match-fill: rgba(42, 122, 224, 0.22);
+  --spec-match-border: rgba(91, 164, 255, 0.95);
+  --spec-match-glow: rgba(91, 164, 255, 0.35);
+}
+
+.spec-editor-match--aws {
+  --spec-match-fill: rgba(217, 145, 6, 0.22);
+  --spec-match-border: rgba(255, 190, 48, 0.95);
+  --spec-match-glow: rgba(255, 190, 48, 0.36);
+}
+
+.spec-editor-match--multi {
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.spec-sidebar-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
+.spec-sidebar-item {
+  border: 1px solid var(--border-default);
+  border-radius: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  background: var(--bg-surface);
+}
+
+.spec-copy-button {
+  white-space: nowrap;
+}
+
+.spec-history-stack {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.spec-history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 0.9rem;
+  padding: 0.95rem 1rem;
+  background: var(--bg-surface);
+}
+
+.spec-history-card-header {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.spec-history-card-title {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.spec-history-card-title a,
+.spec-history-card-meta,
+.spec-history-card-error {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.spec-history-card code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.spec-history-card-error-summary {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--accent-red-border);
+  border-radius: 0.7rem;
+  background: var(--accent-red-bg);
+  color: var(--accent-red);
+}
+
+.spec-history-card-error-details {
+  margin-top: 0.1rem;
+}
+
+.spec-history-card-error-details summary {
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 600;
+  list-style-position: inside;
+}
+
+.spec-history-card-error-details[open] summary {
+  margin-bottom: 0.45rem;
+}
+
+.spec-history-card-error {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--accent-red-border);
+  border-radius: 0.7rem;
+  background: var(--accent-red-bg);
+  color: var(--accent-red);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.spec-history-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 10.5rem;
+  border: 1px dashed var(--border-default);
+  border-radius: 0.9rem;
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+}
+
+.spec-history-empty--compact {
+  min-height: 7rem;
+}
+
+.spec-compare-panel {
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+
+.spec-compare-stack {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.spec-compare-card {
+  border: 1px solid var(--border-default);
+  border-radius: 0.9rem;
+  padding: 0.85rem 0.95rem;
+  background: var(--bg-surface);
+}
+
+.spec-compare-card summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.spec-compare-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.spec-compare-card__summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.spec-compare-card__summary-body {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.spec-compare-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.spec-compare-diff {
+  margin: 0.75rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.8rem;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.spec-error-context {
+  border: 1px solid var(--border-default);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.spec-error-context__row {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr;
+  gap: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.spec-error-context__row:first-child {
+  border-top: 0;
+}
+
+.spec-error-context__row--error {
+  background: var(--accent-red-bg);
+}
+
+.spec-error-context__number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.spec-error-context__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.spec-editor-review {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.spec-editor-review__count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.24rem 0.56rem;
+  border: 1px solid var(--accent-red-border);
+  border-radius: 999px;
+  background: var(--accent-red-bg);
+  color: var(--accent-red);
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.spec-editor-review__list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.spec-editor-review__group {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.spec-editor-review__group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.spec-editor-review__group-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+}
+
+.spec-editor-review__group-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent-amber-border);
+  background: var(--bg-surface);
+  color: var(--accent-amber);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.spec-editor-review__item {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0.72rem 0.8rem;
+  border: 1px solid var(--accent-amber-border);
+  border-radius: 0.9rem;
+  background: var(--accent-amber-bg);
+  color: var(--text-primary);
+  text-align: left;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.spec-editor-review__item:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent-red-border);
+  box-shadow: 0 12px 22px var(--accent-red-border);
+}
+
+.spec-editor-review__item-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.spec-editor-review__item-copy {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.spec-editor-review__item-key {
+  font-size: 0.88rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.spec-editor-review__item-reason {
+  font-size: 0.78rem;
+  color: var(--accent-amber);
+}
+
+.spec-editor-review__item-line {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-red);
+}
+
+.spec-editor-review__item-value {
+  margin: 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--accent-amber-border);
+  border-radius: 0.7rem;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.spec-editor-review__item-current {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.spec-editor-review__item-current > span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-amber);
+}
+
+.spec-editor-review__item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.spec-guided-editor {
+  padding: 0.85rem;
+  border: 1px solid var(--accent-blue-border);
+  border-radius: 0.8rem;
+  background: var(--bg-surface);
+  box-shadow: 0 10px 24px var(--border-subtle);
+}
+
+.spec-guided-editor__preview pre {
+  max-height: 9rem;
+  margin: 0;
+  padding: 0.65rem;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: 0.6rem;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.spec-editor-review__item-hint {
+  font-size: 0.76rem;
+  color: var(--accent-amber);
+}
+
+.spec-editor-review__empty {
+  padding: 0.8rem 0.9rem;
+  border: 1px dashed var(--border-default);
+  border-radius: 0.9rem;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.83rem;
+}
+
+@media (max-width: 767.98px) {
+  .spec-workflow-progress {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .spec-workspace-sidebar {
+    margin-top: 0.25rem;
+  }
+
+  .spec-editor-utilitybar,
+  .spec-editor-search {
+    align-items: stretch;
+  }
+
+  .spec-editor-search {
+    width: 100%;
+  }
+
+  .spec-editor-search input {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .spec-editor-utilitybar__hint {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .spec-editor-actionbar {
+    position: static;
+    padding: 0.8rem 0.85rem;
+  }
+
+  .spec-editor-control-panel {
+    padding: 0.8rem 0.85rem;
+  }
+
+  .spec-editor-radar {
+    flex-direction: column;
+  }
+
+  .spec-editor-radar__badges {
+    justify-content: flex-start;
+  }
+
+  .spec-compare-card__summary {
+    flex-direction: column;
+  }
+
+  .spec-sidebar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .spec-workspace-panel .form-label {
+    min-height: 0;
+    display: block;
+  }
+
+  .spec-workspace-editor {
+    min-height: 26rem;
+    padding-left: 4.35rem;
+  }
+
+  .spec-editor-focus-chip {
+    right: 0.6rem;
+    min-width: 0;
+    max-width: calc(100% - 5.1rem);
+  }
+
+  .spec-editor-outline__focus {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .spec-editor-outline__clear {
+    width: 100%;
+  }
+
+  .spec-editor-review__item-main {
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+}
+</style>
+{% endblock %}
+
+{% block step_scripts %}
+<script>
+(() => {
+  const form = document.getElementById("draftForm");
+  const shell = document.querySelector("[data-line-editor-shell]");
+  if (!form || !shell) return;
+
+  const titleInput = document.getElementById("workspaceTitle");
+  const harborProjectInput = document.getElementById("workspaceProject");
+  const pcVersionInput = document.getElementById("workspacePcVersion");
+  const architectureInputs = Array.from(form.querySelectorAll(
+    '[name="mode"], [name="architect"], [name="customer"], [name="environments"], [name="purpose"], [name="status"], [name="ticket"]',
+  ));
+  const saveButton = document.getElementById("saveDraftButton");
+  const validateYamlButton = document.getElementById("validateYamlButton");
+  const validateCurrentRevisionButton = document.getElementById("validateCurrentRevisionButton");
+  const publishDraftButton = document.getElementById("publishDraftButton");
+  const workflowDraftStep = document.querySelector('[data-workflow-stage="draft"]');
+  const workflowSyntaxStep = document.querySelector('[data-workflow-stage="syntax"]');
+  const workflowValidationStep = document.querySelector('[data-workflow-stage="validation"]');
+  const workflowPublishStep = document.querySelector('[data-workflow-stage="publish"]');
+  const textarea = shell.querySelector("[data-line-editor]");
+  const baselineYaml = textarea.value || "";
+  const editorUtilities = document.querySelector("[data-editor-utilities]");
+  const editorSearch = document.querySelector("[data-editor-search]");
+  const editorSearchStatus = document.querySelector("[data-editor-search-status]");
+  const editorSearchPrevious = document.querySelector("[data-editor-search-previous]");
+  const editorSearchNext = document.querySelector("[data-editor-search-next]");
+  const editorGoToLine = document.querySelector("[data-editor-go-to-line]");
+  const editorGoToButton = document.querySelector("[data-editor-go-to-button]");
+  const gutterInner = shell.querySelector("[data-line-numbers]");
+  const semanticHighlights = shell.querySelector("[data-semantic-highlights]");
+  const outlineChip = shell.querySelector("[data-outline-chip]");
+  const outlineChipKey = shell.querySelector("[data-outline-chip-key]");
+  const outlineChipLine = shell.querySelector("[data-outline-chip-line]");
+  const outlineHighlight = shell.querySelector("[data-outline-highlight]");
+  const outlineBeacon = shell.querySelector("[data-outline-beacon]");
+  const errorHighlight = shell.querySelector("[data-error-highlight]");
+  const dirtyStatus = document.querySelector("[data-dirty-status]");
+  const savedParseOk = dirtyStatus?.dataset.parseOk === "true";
+  const submitStatus = document.querySelector("[data-submit-status]");
+  const semanticToggleButtons = Array.from(document.querySelectorAll("[data-semantic-toggle]"));
+  const semanticClearButton = document.querySelector("[data-semantic-clear]");
+  const semanticStatus = document.querySelector("[data-semantic-status]");
+  const semanticSummary = document.querySelector("[data-semantic-summary]");
+  const outlineList = document.querySelector("[data-outline-list]");
+  const outlineFocusPanel = document.querySelector("[data-outline-focus-panel]");
+  const outlineFocusKey = document.querySelector("[data-outline-focus-key]");
+  const outlineFocusLine = document.querySelector("[data-outline-focus-line]");
+  const outlineClearButton = document.querySelector("[data-outline-clear]");
+  const needsInputList = document.querySelector("[data-needs-input-list]");
+  const needsInputCount = document.querySelector("[data-needs-input-count]");
+  const readinessRequired = document.querySelector("[data-readiness-required]");
+  const readinessRequiredStatus = document.querySelector("[data-readiness-required-status]");
+  const readinessSyntax = document.querySelector("[data-readiness-syntax]");
+  const readinessValidation = document.querySelector("[data-readiness-validation]");
+  const readinessReviewButton = document.querySelector("[data-focus-needs-input]");
+  const readyAlert = document.querySelector("[data-ready-alert]");
+  const guidedEditor = document.querySelector("[data-guided-editor]");
+  const guidedEditorTitle = document.querySelector("[data-guided-editor-title]");
+  const guidedEditorValue = document.querySelector("[data-guided-editor-value]");
+  const guidedEditorHint = document.querySelector("[data-guided-editor-hint]");
+  const guidedEditorError = document.querySelector("[data-guided-editor-error]");
+  const guidedEditorPreview = document.querySelector("[data-guided-editor-preview]");
+  const guidedEditorApply = document.querySelector("[data-guided-editor-apply]");
+  const guidedEditorCloseButtons = Array.from(document.querySelectorAll("[data-guided-editor-close], [data-guided-editor-cancel]"));
+  const jumpButton = document.querySelector("[data-jump-to-error]");
+  const collapsibleCards = Array.from(document.querySelectorAll("[data-collapsible-card]"));
+  const cardToggleButtons = Array.from(document.querySelectorAll("[data-card-toggle]"));
+  const copyButtons = Array.from(document.querySelectorAll("[data-copy-text]"));
+  const errorLine = Number(shell.dataset.errorLine || 0);
+  const errorColumn = Number(shell.dataset.errorColumn || 1);
+  const collapseStoragePrefix = "spec-workspace-card-state:{{ draft.id }}:";
+  const awsResourceIdPattern = /\b(?:ami|asg|eipalloc|eipassoc|eni|fs|i|igw|kms|lt|nat|rtb|s3|sg|snap|subnet|tg|vpc|vpce|vol)-[0-9a-f]{6,32}\b/i;
+  const awsRegionPattern = /\b(?:us|eu|ap|sa|ca|me|af)-(?:central|north|south|east|west|southeast|northeast)-\d\b/i;
+  const awsAvailabilityZonePattern = /\b(?:us|eu|ap|sa|ca|me|af)-(?:central|north|south|east|west|southeast|northeast)-\d[a-z]\b/i;
+  const awsEndpointServicePattern = /\bcom\.amazonaws\.vpce\.[a-z0-9-]+\.[a-z0-9.-]+\b/i;
+  const awsInstanceShapePattern = /\b(?:(?:db|cache|kafka)\.)?(?:[a-z]{1,4}\d[0-9a-z-]*)\.(?:nano|micro|small|medium|large|xlarge|[0-9]+xlarge|metal)\b/i;
+  const templatePlaceholderPattern = /(?:^|[^A-Za-z0-9])__[A-Z0-9][A-Z0-9_]*__(?=$|[^A-Za-z0-9])/i;
+  const awsInfraKeyPattern = /\b(?:aws(?:_[a-z0-9]+)*|arn|account_id|aws_account_id|region|availability_zone|azs?|transit_gateway_id|vpc(?:_[a-z0-9]+)*|subnet(?:s|_[a-z0-9]+)*|security_group(?:s|_[a-z0-9]+)*|kms(?:_[a-z0-9]+)*|iam(?:_[a-z0-9]+)*|route53(?:_[a-z0-9]+)*|acm(?:_[a-z0-9]+)*|cloudfront(?:_[a-z0-9]+)*|waf(?:_[a-z0-9]+)*|rds(?:_[a-z0-9]+)*|ec2(?:_[a-z0-9]+)*|eks(?:_[a-z0-9]+)*|ecr(?:_[a-z0-9]+)*|ecs(?:_[a-z0-9]+)*|elb(?:_[a-z0-9]+)*|elbv2(?:_[a-z0-9]+)*|alb(?:_[a-z0-9]+)*|s3(?:_[a-z0-9]+)*|sns(?:_[a-z0-9]+)*|sqs(?:_[a-z0-9]+)*|lambda(?:_[a-z0-9]+)*|autoscaling(?:_[a-z0-9]+)*|target_group(?:_[a-z0-9]+)*|launch_template(?:_[a-z0-9]+)*|nat_gateway(?:_[a-z0-9]+)*|internet_gateway(?:_[a-z0-9]+)*|ami(?:_[a-z0-9]+)*|private_subnets|public_subnets)\b/i;
+  const needsInputHintsByKey = {
+    aws_integration_id: "Choose the real Spacelift AWS integration for the target account.",
+    new_prefix: "Set the environment prefix used across repos, stacks, and node groups.",
+    repo_description: "Replace the starter repository description with the real repo summary.",
+    spacelift_space_id: "Choose the real Spacelift space for this environment.",
+    ssa_prefix: "Keep this aligned with the real environment prefix.",
+    ssa_iac_git_repo: "Set the actual IAC repository name that will hold the spec changes.",
+    ssa_rancher_context: "Choose the real Rancher context for this environment.",
+    ssa_rancher_cloud_integration: "Replace this with the actual Rancher cloud integration ID.",
+    ssa_rancher_worker_pool_id: "Replace this with the actual Rancher worker pool ID.",
+    environment: "Set the real environment slug instead of the starter placeholder.",
+    domain_name: "Replace this with the real DNS domain for the deployment.",
+    customer: "Use the actual customer code or short name.",
+    rancher_cluster_name: "Choose the Rancher management cluster that owns this deployment.",
+    rancher_aws_region: "Set the actual AWS region used by the Rancher-managed cluster.",
+    aws_account_alias: "Replace this with the real AWS account alias.",
+    transit_gateway_id: "Provide the actual Transit Gateway ID for the target network.",
+    vpc_endpoint_service: "Provide the actual PrivateLink endpoint service name.",
+    vpc_cidr_block: "Set the environment CIDR block for the target network.",
+  };
+  const needsInputCategoriesByKey = {
+    aws_integration_id: "Spacelift",
+    spacelift_space_id: "Spacelift",
+    ssa_iac_git_branch: "Spacelift",
+    new_prefix: "Naming",
+    repo_description: "Naming",
+    ssa_prefix: "Naming",
+    ssa_iac_git_repo: "Naming",
+    environment: "Naming",
+    customer: "Naming",
+    domain_name: "Naming",
+    ssa_rancher_context: "Rancher",
+    ssa_rancher_cloud_integration: "Rancher",
+    ssa_rancher_worker_pool_id: "Rancher",
+    rancher_cluster_name: "Rancher",
+    rancher_aws_region: "Rancher",
+    aws_account_alias: "Rancher",
+    transit_gateway_id: "Networking",
+    vpc_endpoint_service: "Networking",
+    vpc_cidr_block: "Networking",
+  };
+  const needsInputCategoryOrder = ["Naming", "Spacelift", "Rancher", "Networking", "Other"];
+  const semanticMatchers = [
+    {
+      key: "required",
+      className: "spec-editor-match--required",
+      label: "Needs Input",
+      title: "Placeholder, demo value, or fake identifier to replace",
+      matches(line) {
+        return detectNeedsInputSignals(line).length > 0;
+      },
+    },
+    {
+      key: "instance",
+      className: "spec-editor-match--instance",
+      label: "Compute Shapes",
+      title: "Compute shape or node size",
+      matches(line) {
+        return /\b(instance(?:_types?|_class|_size|_family)?|node_type|cache_node_type|broker_node_type|db_instance_class|machine_type|worker_type|shape|sku)\b/i.test(line)
+          || awsInstanceShapePattern.test(line);
+      },
+    },
+    {
+      key: "version",
+      className: "spec-editor-match--version",
+      label: "Versions",
+      title: "Version, release, or tag signal",
+      matches(line) {
+        return /\b(?:pc_version|cluster_version|eks_version|kubernetes_version|engine_version|kafka_version|redis_version|postgres(?:ql)?_version|mysql_version|version|release|tag|image_tag|app_version|runtime_version|chart_version|helm_chart_version)\b/i.test(line)
+          || /:\s*["']?(?:v?\d+(?:\.\d+){1,4}(?:[-+._][\w-]+)?|latest|stable|preview|release[-._][\w.-]+)["']?\s*(?:#.*)?$/i.test(line);
+      },
+    },
+    {
+      key: "aws",
+      className: "spec-editor-match--aws",
+      label: "AWS Infra",
+      title: "AWS service, region, or resource identifier",
+      matches(line) {
+        return matchesAwsInfraSignal(line);
+      },
+    },
+  ];
+  const activeSemanticKeys = new Set(["required"]);
+  let baselineState = captureFormState();
+  let isDirty = false;
+  let isSubmitting = false;
+  let cursorOutlineLine = 0;
+  let selectedOutlineLine = 0;
+  let selectedOutlineKey = "";
+  let outlinePulseTimeoutId = 0;
+  let semanticMatchCountByKey = {};
+  let semanticActiveLineCount = 0;
+  let needsInputItemCount = 0;
+  let needsInputItemsByLine = new Map();
+  let activeGuidedItem = null;
+  let editorSearchMatches = [];
+  let editorSearchIndex = -1;
+
+  if (editorUtilities) editorUtilities.hidden = false;
+
+  function captureFormState() {
+    return JSON.stringify({
+      title: titleInput?.value || "",
+      harborProject: harborProjectInput?.value || "",
+      pcVersion: pcVersionInput?.value || "",
+      architecture: architectureInputs.map((input) => [input.name, input.value]),
+      yaml: textarea.value || "",
+    });
+  }
+
+  function lineCount() {
+    return Math.max(1, textarea.value.split("\n").length);
+  }
+
+  function lineStartOffset(targetLine) {
+    if (!targetLine || targetLine < 2) return 0;
+    const lines = textarea.value.split("\n");
+    let offset = 0;
+    for (let i = 0; i < targetLine - 1 && i < lines.length; i += 1) {
+      offset += lines[i].length + 1;
+    }
+    return offset;
+  }
+
+  function lineFromOffset(offset) {
+    return textarea.value.slice(0, Math.max(0, offset)).split("\n").length;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function parseYamlLineParts(line) {
+    const withoutComment = String(line || "").replace(/\s+#.*$/, "");
+    const match = withoutComment.match(/^\s*(?:-\s*)?([^:#][^:]*?)\s*:\s*(.*)$/);
+    if (!match) {
+      const rawValue = withoutComment.trim();
+      return {
+        key: "",
+        value: rawValue,
+        normalizedValue: rawValue.replace(/^['"]|['"]$/g, ""),
+      };
+    }
+
+    const key = String(match[1] || "").trim().replace(/^['"]|['"]$/g, "");
+    const value = String(match[2] || "").trim();
+    return {
+      key,
+      value,
+      normalizedValue: value.replace(/^['"]|['"]$/g, ""),
+    };
+  }
+
+  function matchesAwsInfraSignal(line) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed || trimmed.startsWith("#")) return false;
+
+    const parts = parseYamlLineParts(line);
+    const targetValue = parts.normalizedValue || trimmed;
+
+    if (parts.key && awsInfraKeyPattern.test(parts.key)) {
+      return true;
+    }
+
+    return /\barn:aws[a-z-]*:[^\s"']+/i.test(targetValue)
+      || awsEndpointServicePattern.test(targetValue)
+      || awsResourceIdPattern.test(targetValue)
+      || awsAvailabilityZonePattern.test(targetValue)
+      || awsRegionPattern.test(targetValue);
+  }
+
+  function detectNeedsInputSignals(line) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed || trimmed.startsWith("#")) return [];
+
+    const parts = parseYamlLineParts(line);
+    const lowerKey = parts.key.toLowerCase();
+    const lowerValue = parts.normalizedValue.toLowerCase();
+    const lowerLine = trimmed.toLowerCase();
+    const signals = [];
+
+    function pushSignal(kind, reason) {
+      if (signals.some((signal) => signal.kind === kind)) return;
+      signals.push({
+        kind,
+        reason,
+        key: parts.key,
+        value: parts.normalizedValue || parts.value || trimmed,
+        hint: needsInputHintsByKey[lowerKey] || "",
+      });
+    }
+
+    if (templatePlaceholderPattern.test(trimmed)) {
+      pushSignal("placeholder", "Replace template placeholder");
+    }
+    if (/\b(?:replace[-_ ]?me|changeme|fill[-_ ]?me|todo|tbd|placeholder)\b/i.test(trimmed)) {
+      pushSignal("placeholder", "Replace template placeholder");
+    }
+    if (
+      lowerKey !== "spec_type"
+      && (
+        /\bdemo\b/.test(lowerValue)
+        || /\bdemo\b/.test(lowerKey)
+        || /\bdemo\b/.test(lowerLine)
+      )
+    ) {
+      pushSignal("demo", "Replace demo starter value");
+    }
+    if (/\bexample\.(?:internal|com|org|net)\b/i.test(trimmed)) {
+      pushSignal("example", "Replace example domain");
+    }
+    if (
+      /\b(?:tgw|vpce-svc|subnet|vpc|sg|ami|eni|igw|nat|rtb)-x{4,}\b/i.test(trimmed)
+      || /\bx{6,}\b/i.test(parts.normalizedValue)
+    ) {
+      pushSignal("aws-placeholder", "Replace placeholder AWS or network identifier");
+    }
+
+    return signals;
+  }
+
+  function collectNeedsInputItems() {
+    const items = [];
+    const lines = textarea.value.split("\n");
+    const contextStack = [];
+    const environmentNames = new Set(["dev", "test", "sit", "showroom", "training", "staging", "uat", "preprod", "prod"]);
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const parts = parseYamlLineParts(line);
+      const indent = (line.match(/^\s*/) || [""])[0].length;
+      while (contextStack.length && contextStack[contextStack.length - 1].indent >= indent) {
+        contextStack.pop();
+      }
+      if (parts.key && !String(parts.normalizedValue || "").trim()) {
+        contextStack.push({ indent, key: parts.key.toLowerCase() });
+      }
+      const signals = detectNeedsInputSignals(line);
+      if (!signals.length) continue;
+
+      const primary = signals[0];
+      const value = (primary.value || line.trim() || "(line value)").trim();
+      const category = categorizeNeedsInput(primary.key || parts.key || "", line);
+      const environment = [...contextStack].reverse().find((entry) => environmentNames.has(entry.key))?.key || "";
+      items.push({
+        line: index + 1,
+        key: primary.key || parts.key || "Line item",
+        reason: primary.reason,
+        value,
+        rawLine: line,
+        hint: primary.hint,
+        category,
+        group: environment ? `${environment.toUpperCase()} · ${category}` : category,
+      });
+    }
+
+    return items;
+  }
+
+  function categorizeNeedsInput(key, line) {
+    const normalizedKey = String(key || "").trim().toLowerCase();
+    if (needsInputCategoriesByKey[normalizedKey]) {
+      return needsInputCategoriesByKey[normalizedKey];
+    }
+
+    const lowerLine = String(line || "").toLowerCase();
+    if (/\b(?:aws|spacelift|integration|space_id)\b/.test(lowerLine)) return "Spacelift";
+    if (/\b(?:rancher|worker_pool|cloud_integration)\b/.test(lowerLine)) return "Rancher";
+    if (/\b(?:vpc|subnet|tgw|vpce|cidr|region)\b/.test(lowerLine)) return "Networking";
+    if (/\b(?:prefix|repo|customer|domain|environment)\b/.test(lowerLine)) return "Naming";
+    return "Other";
+  }
+
+  function formatGuidedYamlScalar(value) {
+    const trimmed = String(value || "").trim();
+    if (/^(?:true|false|null|~|-?\d+(?:\.\d+)?)$/i.test(trimmed)) return trimmed;
+    if (/^(?:yes|no|on|off)$/i.test(trimmed)) return JSON.stringify(trimmed);
+    if (/^[A-Za-z0-9_./:@+,-]+$/.test(trimmed)) return trimmed;
+    return JSON.stringify(trimmed);
+  }
+
+  function validateGuidedValue(item, value) {
+    const trimmed = String(value || "").trim();
+    const key = String(item?.key || "").toLowerCase();
+    if (!trimmed) return "Enter a value before applying the change.";
+    if (templatePlaceholderPattern.test(trimmed) || /\b(?:replace[-_ ]?me|changeme|todo|tbd|placeholder)\b/i.test(trimmed)) {
+      return "Replace the placeholder with a real value.";
+    }
+    if (key.includes("cidr")) {
+      const match = trimmed.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/(\d|[12]\d|3[0-2])$/);
+      if (!match || match[1].split(".").some((part) => Number(part) > 255)) return "Enter a valid IPv4 CIDR, for example 10.20.0.0/22.";
+    } else if (key.includes("domain")) {
+      if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(trimmed)) return "Enter a valid DNS domain, for example platform.example.com.";
+    } else if (key.includes("transit_gateway")) {
+      if (!/^tgw-[0-9a-f]{8,32}$/i.test(trimmed)) return "Enter a Transit Gateway ID beginning with tgw-.";
+    } else if (key.includes("vpc_endpoint_service")) {
+      if (!/^com\.amazonaws\.vpce\.[a-z0-9-]+\.vpce-svc-[0-9a-f]+$/i.test(trimmed)) return "Enter the complete VPC endpoint service name.";
+    } else if (/version|release|tag/.test(key)) {
+      if (!/^v?\d+(?:\.\d+){1,4}(?:[-+._][A-Za-z0-9.-]+)?$/.test(trimmed)) return "Enter a version such as 1.3.2 or v1.3.2-rc.1.";
+    } else if (/integration_id|space_id|worker_pool_id/.test(key)) {
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{7,}$/.test(trimmed)) return "Enter the real platform identifier (at least 8 letters, numbers, hyphens, or underscores).";
+    }
+    return "";
+  }
+
+  function buildGuidedReplacement(item, value) {
+    const rawLine = String(item?.rawLine || "");
+    const formatted = formatGuidedYamlScalar(value);
+    const mapping = rawLine.match(/^(\s*(?:-\s*)?[^:#][^:]*?:\s*)(.*)$/);
+    if (mapping) {
+      const comment = String(mapping[2] || "").match(/(\s+#.*)$/)?.[1] || "";
+      return `${mapping[1]}${formatted}${comment}`;
+    }
+    const listItem = rawLine.match(/^(\s*-\s*)(.*?)(\s+#.*)?$/);
+    if (listItem) return `${listItem[1]}${formatted}${listItem[3] || ""}`;
+    return formatted;
+  }
+
+  function refreshGuidedEditor() {
+    if (!activeGuidedItem || !guidedEditorValue) return;
+    const value = guidedEditorValue.value;
+    const error = validateGuidedValue(activeGuidedItem, value);
+    const replacement = buildGuidedReplacement(activeGuidedItem, value);
+    if (guidedEditorError) {
+      guidedEditorError.textContent = error;
+      guidedEditorError.hidden = !error;
+    }
+    guidedEditorValue.classList.toggle("is-invalid", Boolean(error));
+    if (guidedEditorApply) guidedEditorApply.disabled = Boolean(error);
+    if (guidedEditorPreview) {
+      guidedEditorPreview.textContent = `- ${activeGuidedItem.rawLine}\n+ ${replacement}`;
+    }
+  }
+
+  function openGuidedEditor(lineNumber) {
+    const item = needsInputItemsByLine.get(Number(lineNumber));
+    if (!item || !guidedEditor || !guidedEditorValue) return;
+    activeGuidedItem = item;
+    guidedEditor.hidden = false;
+    if (guidedEditorTitle) guidedEditorTitle.textContent = `${item.key} · line ${item.line}`;
+    if (guidedEditorHint) guidedEditorHint.textContent = item.hint || "Enter the real value required by this spec.";
+    guidedEditorValue.value = "";
+    guidedEditorValue.placeholder = item.value || "New value";
+    refreshGuidedEditor();
+    guidedEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    guidedEditorValue.focus({ preventScroll: true });
+  }
+
+  function closeGuidedEditor() {
+    activeGuidedItem = null;
+    if (guidedEditor) guidedEditor.hidden = true;
+    if (guidedEditorValue) guidedEditorValue.value = "";
+  }
+
+  function applyGuidedEditorValue() {
+    if (!activeGuidedItem || !guidedEditorValue) return;
+    const error = validateGuidedValue(activeGuidedItem, guidedEditorValue.value);
+    if (error) {
+      refreshGuidedEditor();
+      return;
+    }
+    const targetLine = activeGuidedItem.line;
+    const lines = textarea.value.split("\n");
+    lines[targetLine - 1] = buildGuidedReplacement(activeGuidedItem, guidedEditorValue.value);
+    textarea.value = lines.join("\n");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    closeGuidedEditor();
+    jumpToLine(targetLine, 1, 1, { revealOutline: true });
+  }
+
+  function getOutlineButtons() {
+    return outlineList
+      ? Array.from(outlineList.querySelectorAll("[data-outline-line]"))
+      : [];
+  }
+
+  function resolveOutlineTarget(lineNumber) {
+    const buttons = getOutlineButtons();
+    let activeButton = null;
+    for (const button of buttons) {
+      const buttonLine = Number(button.dataset.outlineLine || 0);
+      if (buttonLine <= lineNumber) {
+        activeButton = button;
+      }
+    }
+    if (!activeButton) {
+      return { button: null, line: 0, key: "" };
+    }
+    return {
+      button: activeButton,
+      line: Number(activeButton.dataset.outlineLine || 0),
+      key: activeButton.dataset.outlineKey || activeButton.textContent?.trim() || "",
+    };
+  }
+
+  function focusEditorWithoutScroll() {
+    try {
+      textarea.focus({ preventScroll: true });
+    } catch (_err) {
+      textarea.focus();
+    }
+  }
+
+  function scheduleDecorationSync() {
+    syncDecorations();
+    window.requestAnimationFrame(() => {
+      syncDecorations();
+      window.setTimeout(() => {
+        syncDecorations();
+      }, 180);
+    });
+  }
+
+  function waitForViewportSettle(callback) {
+    let lastY = window.scrollY;
+    let stableFrames = 0;
+    let attempts = 0;
+
+    function tick() {
+      const currentY = window.scrollY;
+      stableFrames = Math.abs(currentY - lastY) < 1 ? stableFrames + 1 : 0;
+      lastY = currentY;
+      attempts += 1;
+      if (stableFrames >= 4 || attempts >= 48) {
+        callback();
+        return;
+      }
+      window.requestAnimationFrame(tick);
+    }
+
+    window.requestAnimationFrame(tick);
+  }
+
+  function syncOutlineFocusUi() {
+    const hasSelection = Boolean(selectedOutlineLine && selectedOutlineKey);
+    shell.classList.toggle("spec-editor-shell--outline-active", hasSelection);
+
+    if (outlineFocusPanel instanceof HTMLElement) {
+      outlineFocusPanel.hidden = !hasSelection;
+    }
+    if (outlineChip instanceof HTMLElement) {
+      outlineChip.hidden = !hasSelection;
+    }
+    if (!hasSelection) {
+      return;
+    }
+
+    const lineLabel = `Line ${selectedOutlineLine}`;
+    if (outlineFocusKey) outlineFocusKey.textContent = selectedOutlineKey;
+    if (outlineFocusLine) outlineFocusLine.textContent = lineLabel;
+    if (outlineChipKey) outlineChipKey.textContent = selectedOutlineKey;
+    if (outlineChipLine) outlineChipLine.textContent = lineLabel;
+  }
+
+  function renderOutlineButtons(lineNumber = cursorOutlineLine) {
+    if (!outlineList) return;
+    const buttons = getOutlineButtons();
+    const selectedTarget = selectedOutlineLine
+      ? buttons.find((button) => Number(button.dataset.outlineLine || 0) === selectedOutlineLine)
+      : null;
+    const activeTarget = selectedTarget || resolveOutlineTarget(lineNumber).button;
+
+    for (const button of buttons) {
+      button.classList.remove("is-active", "is-locked");
+      if (selectedTarget && button === selectedTarget) {
+        button.classList.add("is-locked");
+      }
+      if (activeTarget && button === activeTarget) {
+        button.classList.add("is-active");
+      }
+    }
+  }
+
+  function clearOutlinePulse() {
+    for (const element of [outlineHighlight, outlineBeacon, outlineChip]) {
+      if (!(element instanceof HTMLElement)) continue;
+      element.classList.remove("is-pulsing");
+    }
+    if (outlinePulseTimeoutId) {
+      window.clearTimeout(outlinePulseTimeoutId);
+      outlinePulseTimeoutId = 0;
+    }
+  }
+
+  function triggerOutlinePulse() {
+    clearOutlinePulse();
+    for (const element of [outlineHighlight, outlineBeacon, outlineChip]) {
+      if (!(element instanceof HTMLElement)) continue;
+      void element.offsetWidth;
+      element.classList.add("is-pulsing");
+    }
+    outlinePulseTimeoutId = window.setTimeout(() => {
+      clearOutlinePulse();
+    }, 1100);
+  }
+
+  function createEmptySemanticCounts() {
+    return Object.fromEntries(semanticMatchers.map((matcher) => [matcher.key, 0]));
+  }
+
+  function buildSemanticMatchStyle(matchers) {
+    if (!matchers.length) return "";
+    if (matchers.length === 1) {
+      return "";
+    }
+    const tones = {
+      required: {
+        fill: "rgba(234, 88, 12, 0.18)",
+        accent: "rgba(234, 88, 12, 0.76)",
+      },
+      instance: {
+        fill: "rgba(25, 135, 84, 0.18)",
+        accent: "rgba(25, 135, 84, 0.72)",
+      },
+      version: {
+        fill: "rgba(42, 122, 224, 0.18)",
+        accent: "rgba(42, 122, 224, 0.72)",
+      },
+      aws: {
+        fill: "rgba(217, 119, 6, 0.18)",
+        accent: "rgba(217, 119, 6, 0.72)",
+      },
+    };
+    const stops = matchers.map((matcher, index) => {
+      const start = Math.round((index / matchers.length) * 100);
+      const end = Math.round(((index + 1) / matchers.length) * 100);
+      const tone = tones[matcher.key];
+      return `${tone.fill} ${start}% ${end}%`;
+    });
+    const accent = tones[matchers[0].key]?.accent || "rgba(72, 88, 122, 0.72)";
+    return `--spec-match-fill:linear-gradient(90deg, ${stops.join(", ")});--spec-match-border:${accent};--spec-match-glow:rgba(72, 88, 122, 0.08);`;
+  }
+
+  function rebuildNeedsInputList() {
+    if (!needsInputList || !needsInputCount) return;
+
+    const items = collectNeedsInputItems();
+    needsInputItemsByLine = new Map(items.map((item) => [item.line, item]));
+    needsInputItemCount = items.length;
+    if (readinessRequired) {
+      const complete = items.length === 0;
+      readinessRequired.classList.toggle("is-complete", complete);
+      readinessRequired.classList.toggle("is-blocked", !complete);
+      readinessRequired.classList.remove("is-checking");
+      const icon = readinessRequired.querySelector("i");
+      if (icon) icon.className = `fa-solid ${complete ? "fa-check" : "fa-exclamation"}`;
+      if (readinessRequiredStatus) {
+        readinessRequiredStatus.textContent = complete
+          ? "No placeholders or demo values detected"
+          : `${items.length} value${items.length === 1 ? "" : "s"} still need attention`;
+      }
+      if (readinessReviewButton) readinessReviewButton.hidden = complete;
+    }
+    needsInputCount.textContent = items.length
+      ? `${items.length} line${items.length === 1 ? "" : "s"} flagged`
+      : "No lines flagged";
+
+    if (!items.length) {
+      needsInputList.innerHTML = '<div class="spec-editor-review__empty">No placeholders or demo defaults are currently detected in this draft.</div>';
+      return;
+    }
+
+    const groupedItems = new Map();
+    for (const item of items) {
+      const group = item.group || item.category || "Other";
+      if (!groupedItems.has(group)) groupedItems.set(group, []);
+      groupedItems.get(group).push(item);
+    }
+
+    const orderedGroups = [...groupedItems.keys()].sort((left, right) => {
+      const leftCategory = left.includes(" · ") ? left.split(" · ").pop() : left;
+      const rightCategory = right.includes(" · ") ? right.split(" · ").pop() : right;
+      return needsInputCategoryOrder.indexOf(leftCategory) - needsInputCategoryOrder.indexOf(rightCategory)
+        || left.localeCompare(right);
+    });
+
+    needsInputList.innerHTML = orderedGroups
+      .map((group) => {
+        const categoryItems = groupedItems.get(group) || [];
+        const content = categoryItems.map((item) => {
+          const escapedKey = escapeHtml(item.key);
+          const escapedReason = escapeHtml(item.reason);
+          const escapedValue = escapeHtml(item.value);
+          const hint = item.hint
+            ? `<div class="spec-editor-review__item-hint"><strong>What to enter:</strong> ${escapeHtml(item.hint)}</div>`
+            : "";
+
+          return `
+            <div class="spec-editor-review__item">
+              <span class="spec-editor-review__item-main">
+                <span class="spec-editor-review__item-copy">
+                  <span class="spec-editor-review__item-key">${escapedKey}</span>
+                  <span class="spec-editor-review__item-reason">${escapedReason}</span>
+                </span>
+                <span class="spec-editor-review__item-line">Line ${item.line}</span>
+              </span>
+              <span class="spec-editor-review__item-current"><span>Current value</span><code class="spec-editor-review__item-value">${escapedValue}</code></span>
+              ${hint}
+              <span class="spec-editor-review__item-actions">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-needs-input-line="${item.line}">Show in YAML</button>
+                <button type="button" class="btn btn-primary btn-sm" data-guided-edit-line="${item.line}">Set Value</button>
+              </span>
+            </div>
+          `;
+        }).join("");
+
+        return `
+          <section class="spec-editor-review__group">
+            <div class="spec-editor-review__group-header">
+              <span class="spec-editor-review__group-title">${escapeHtml(group)}</span>
+              <span class="spec-editor-review__group-count">${categoryItems.length} line${categoryItems.length === 1 ? "" : "s"}</span>
+            </div>
+            ${content}
+          </section>
+        `;
+      })
+      .join("");
+  }
+
+  function renderSemanticSummary(counts, activeKeys) {
+    if (!semanticSummary) return;
+    if (!activeKeys.length) {
+      semanticSummary.innerHTML = '<span class="spec-editor-radar__badge spec-editor-radar__badge--muted">No filters active</span>';
+      return;
+    }
+
+    const badges = activeKeys.map((key) => {
+      const matcher = semanticMatchers.find((candidate) => candidate.key === key);
+      const count = counts[key] || 0;
+      if (!matcher) return "";
+      return `<span class="spec-editor-radar__badge spec-editor-radar__badge--${matcher.key}">${escapeHtml(matcher.label)} <strong>${count}</strong></span>`;
+    }).filter(Boolean);
+
+    semanticSummary.innerHTML = badges.join("");
+  }
+
+  function focusRange(selectionStart, selectionEnd = selectionStart, options = {}) {
+    const maxOffset = textarea.value.length;
+    const start = Math.min(Math.max(0, selectionStart), maxOffset);
+    const end = Math.min(Math.max(start, selectionEnd), maxOffset);
+    const targetLine = lineFromOffset(start);
+    const style = window.getComputedStyle(textarea);
+    const lineHeight = parseFloat(style.lineHeight) || 23.2;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    const scrollBehavior = options.scrollBehavior || "smooth";
+    focusEditorWithoutScroll();
+    textarea.setSelectionRange(start, end);
+    const targetTop = window.scrollY
+      + textarea.getBoundingClientRect().top
+      + paddingTop
+      + ((targetLine - 2) * lineHeight)
+      - 160;
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: scrollBehavior });
+    updateActiveOutline(targetLine);
+    scheduleDecorationSync();
+    if (options.revealOutline) {
+      waitForViewportSettle(() => {
+        scheduleDecorationSync();
+        triggerOutlinePulse();
+      });
+    }
+  }
+
+  function jumpToLine(targetLine, targetColumn = 1, selectionEndColumn = targetColumn, options = {}) {
+    if (!targetLine) return;
+    const lineOffset = lineStartOffset(targetLine);
+    const selectionStart = lineOffset + Math.max(0, targetColumn - 1);
+    const selectionEnd = lineOffset + Math.max(0, selectionEndColumn - 1);
+    focusRange(selectionStart, selectionEnd, options);
+  }
+
+  function refreshEditorSearch({ selectFirst = false } = {}) {
+    const query = String(editorSearch?.value || "");
+    editorSearchMatches = [];
+    editorSearchIndex = -1;
+    if (!query) {
+      if (editorSearchStatus) editorSearchStatus.textContent = "No search";
+      return;
+    }
+
+    const haystack = textarea.value.toLocaleLowerCase();
+    const needle = query.toLocaleLowerCase();
+    let offset = 0;
+    while (offset <= haystack.length - needle.length) {
+      const match = haystack.indexOf(needle, offset);
+      if (match < 0) break;
+      editorSearchMatches.push(match);
+      offset = match + Math.max(1, needle.length);
+    }
+    if (editorSearchStatus) {
+      editorSearchStatus.textContent = editorSearchMatches.length ? `${editorSearchMatches.length} found` : "No matches";
+    }
+    if (selectFirst && editorSearchMatches.length) selectEditorSearchMatch(0);
+  }
+
+  function selectEditorSearchMatch(index) {
+    if (!editorSearchMatches.length) return;
+    const query = String(editorSearch?.value || "");
+    editorSearchIndex = (index + editorSearchMatches.length) % editorSearchMatches.length;
+    const start = editorSearchMatches[editorSearchIndex];
+    focusRange(start, start + query.length);
+    if (editorSearchStatus) editorSearchStatus.textContent = `${editorSearchIndex + 1} of ${editorSearchMatches.length}`;
+  }
+
+  function moveEditorSearch(direction) {
+    if (!editorSearchMatches.length) refreshEditorSearch();
+    if (!editorSearchMatches.length) return;
+    selectEditorSearchMatch(editorSearchIndex + direction);
+  }
+
+  function replaceEditorRange(start, end, replacement, selectionStart, selectionEnd = selectionStart) {
+    textarea.setRangeText(replacement, start, end, "start");
+    textarea.setSelectionRange(selectionStart, selectionEnd);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function handleEditorIndent(event) {
+    if (event.key !== "Tab") return false;
+    event.preventDefault();
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (start === end && !event.shiftKey) {
+      replaceEditorRange(start, end, "  ", start + 2);
+      return true;
+    }
+
+    const blockStart = textarea.value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const nextNewline = textarea.value.indexOf("\n", end);
+    const blockEnd = nextNewline < 0 ? textarea.value.length : nextNewline;
+    const block = textarea.value.slice(blockStart, blockEnd);
+    const transformed = block.split("\n").map((line) => {
+      if (!event.shiftKey) return `  ${line}`;
+      return line.startsWith("  ") ? line.slice(2) : line.replace(/^\s/, "");
+    }).join("\n");
+    replaceEditorRange(blockStart, blockEnd, transformed, blockStart, blockStart + transformed.length);
+    return true;
+  }
+
+  function handleEditorEnter(event) {
+    if (event.key !== "Enter" || event.metaKey || event.ctrlKey || event.altKey) return false;
+    event.preventDefault();
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const lineStart = textarea.value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const beforeCursor = textarea.value.slice(lineStart, start);
+    const baseIndent = (beforeCursor.match(/^\s*/) || [""])[0];
+    const nestedIndent = beforeCursor.trimEnd().endsWith(":") ? "  " : "";
+    const insertion = `\n${baseIndent}${nestedIndent}`;
+    replaceEditorRange(start, end, insertion, start + insertion.length);
+    return true;
+  }
+
+  function updateDirtyState() {
+    const nextDirty = baselineState !== captureFormState();
+    isDirty = nextDirty;
+    const contentDirty = (textarea.value || "") !== baselineYaml;
+    workflowDraftStep?.classList.toggle("is-complete", !isDirty);
+    const draftStatus = workflowDraftStep?.querySelector("small");
+    if (draftStatus) draftStatus.textContent = isDirty ? "Unsaved changes" : "Saved locally";
+    if (validateCurrentRevisionButton) {
+      const originallyMatched = validateCurrentRevisionButton.dataset.validationMatched === "true";
+      validateCurrentRevisionButton.textContent = contentDirty
+        ? "Save & Revalidate Changes"
+        : (originallyMatched ? "Run Full Validation Again" : "Save & Run Full Validation");
+      validateCurrentRevisionButton.classList.toggle("btn-primary", contentDirty || publishDraftButton?.dataset.publishReady !== "true");
+      validateCurrentRevisionButton.classList.toggle("btn-outline-primary", !contentDirty && publishDraftButton?.dataset.publishReady === "true");
+    }
+    if (publishDraftButton) {
+      const originallyReady = publishDraftButton.dataset.publishReady === "true";
+      const requiredInputsComplete = needsInputItemCount === 0;
+      publishDraftButton.disabled = contentDirty || !requiredInputsComplete || !originallyReady;
+      publishDraftButton.classList.toggle("btn-success", !contentDirty && requiredInputsComplete && originallyReady);
+      publishDraftButton.classList.toggle("btn-outline-success", contentDirty || !requiredInputsComplete || !originallyReady);
+      publishDraftButton.title = contentDirty
+        ? "Run full validation again before publishing these changes."
+        : (!requiredInputsComplete
+          ? "Resolve required inputs before publishing."
+          : (originallyReady ? "Publish this validated draft to Confluence." : "Complete full validation before publishing."));
+      if (readyAlert) readyAlert.hidden = contentDirty || !requiredInputsComplete;
+      if (!requiredInputsComplete) {
+        workflowPublishStep?.classList.remove("is-ready");
+        const publishStatus = workflowPublishStep?.querySelector("small");
+        if (publishStatus) publishStatus.textContent = "Required inputs remain";
+      }
+    }
+    if (contentDirty) {
+      workflowSyntaxStep?.classList.remove("is-complete");
+      workflowValidationStep?.classList.remove("is-complete");
+      workflowPublishStep?.classList.remove("is-ready");
+      const syntaxStatus = workflowSyntaxStep?.querySelector("small");
+      const validationStatus = workflowValidationStep?.querySelector("small");
+      const publishStatus = workflowPublishStep?.querySelector("small");
+      if (syntaxStatus) syntaxStatus.textContent = "Changes not checked";
+      if (validationStatus) validationStatus.textContent = "Changes need validation";
+      if (publishStatus) publishStatus.textContent = "Locked after changes";
+      for (const item of [readinessSyntax, readinessValidation]) {
+        item?.classList.remove("is-complete");
+        item?.classList.add("is-blocked");
+        const icon = item?.querySelector("i");
+        if (icon) icon.className = "fa-solid fa-lock";
+      }
+      const readinessSyntaxStatus = readinessSyntax?.querySelector("small");
+      const readinessValidationStatus = readinessValidation?.querySelector("small");
+      if (readinessSyntaxStatus) readinessSyntaxStatus.textContent = "Save and check these changes";
+      if (readinessValidationStatus) readinessValidationStatus.textContent = "Revalidate these changes";
+    }
+    if (!dirtyStatus) return;
+
+    dirtyStatus.classList.remove(
+      "spec-editor-save-state--saved",
+      "spec-editor-save-state--dirty",
+      "spec-editor-save-state--working",
+      "spec-editor-save-state--error",
+    );
+    if (isSubmitting) {
+      dirtyStatus.textContent = "Working";
+      dirtyStatus.classList.add("spec-editor-save-state--working");
+      return;
+    }
+    if (isDirty) {
+      dirtyStatus.textContent = "Unsaved changes";
+      dirtyStatus.classList.add("spec-editor-save-state--dirty");
+    } else if (!savedParseOk) {
+      dirtyStatus.textContent = "Saved with YAML parse error";
+      dirtyStatus.classList.add("spec-editor-save-state--error");
+    } else {
+      dirtyStatus.textContent = "Saved";
+      dirtyStatus.classList.add("spec-editor-save-state--saved");
+    }
+  }
+
+  function updateGutter() {
+    autoSizeEditor();
+    const totalLines = lineCount();
+    const rows = [];
+    for (let i = 1; i <= totalLines; i += 1) {
+      let extraClass = "";
+      if (i === selectedOutlineLine) {
+        extraClass += " spec-editor-line-number--outline";
+      }
+      if (i === errorLine) {
+        extraClass += " spec-editor-line-number--error";
+      }
+      rows.push(`<div class="spec-editor-line-number${extraClass}">${i}</div>`);
+    }
+    gutterInner.innerHTML = rows.join("");
+    rebuildOutline();
+    rebuildNeedsInputList();
+    rebuildSemanticHighlights();
+    updateDirtyState();
+    syncDecorations();
+  }
+
+  function rebuildOutline() {
+    if (!outlineList) return;
+    const lines = textarea.value.split("\n");
+    const outlineItems = [];
+    const topLevelKeyPattern = /^([A-Za-z0-9_.-]+|"[^"]+"|'[^']+')\s*:/;
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!line || /^\s/.test(line) || line.trim().startsWith("#")) continue;
+      const match = line.match(topLevelKeyPattern);
+      if (!match) continue;
+      const rawKey = match[1] || "";
+      const key = rawKey.replace(/^['"]|['"]$/g, "");
+      const escapedKey = escapeHtml(key);
+      outlineItems.push(
+        `<button type="button" class="btn btn-sm spec-editor-outline__item" data-outline-line="${index + 1}" data-outline-key="${escapedKey}">${escapedKey}</button>`,
+      );
+    }
+
+    if (!outlineItems.length) {
+      outlineList.innerHTML = '<span class="spec-editor-outline__empty">No top-level keys found.</span>';
+      selectedOutlineLine = 0;
+      selectedOutlineKey = "";
+      cursorOutlineLine = 0;
+      syncOutlineFocusUi();
+      clearOutlinePulse();
+      return;
+    }
+
+    outlineList.innerHTML = outlineItems.join("");
+    if (selectedOutlineKey) {
+      const selectedButton = getOutlineButtons().find((button) => button.dataset.outlineKey === selectedOutlineKey);
+      if (selectedButton) {
+        selectedOutlineLine = Number(selectedButton.dataset.outlineLine || 0);
+      } else {
+        selectedOutlineLine = 0;
+        selectedOutlineKey = "";
+        clearOutlinePulse();
+      }
+    }
+    renderOutlineButtons();
+    syncOutlineFocusUi();
+  }
+
+  function updateActiveOutline(lineNumber) {
+    cursorOutlineLine = lineNumber;
+    renderOutlineButtons(lineNumber);
+  }
+
+  function clearOutlineSelection(options = {}) {
+    const hadSelection = Boolean(selectedOutlineLine);
+    selectedOutlineLine = 0;
+    selectedOutlineKey = "";
+    if (typeof options.lineNumber === "number") {
+      cursorOutlineLine = options.lineNumber;
+    }
+    syncOutlineFocusUi();
+    renderOutlineButtons(cursorOutlineLine);
+    clearOutlinePulse();
+    if (hadSelection) {
+      updateGutter();
+      return;
+    }
+    scheduleDecorationSync();
+  }
+
+  function selectOutline(lineNumber, key, options = {}) {
+    selectedOutlineLine = lineNumber;
+    selectedOutlineKey = key;
+    cursorOutlineLine = lineNumber;
+    syncOutlineFocusUi();
+    renderOutlineButtons(lineNumber);
+    updateGutter();
+    jumpToLine(lineNumber, 1, 1, {
+      scrollBehavior: options.scrollBehavior || "smooth",
+      revealOutline: true,
+    });
+  }
+
+  function rebuildSemanticHighlights() {
+    if (!semanticHighlights) return;
+    const lines = textarea.value.split("\n");
+    const matches = [];
+    const counts = createEmptySemanticCounts();
+    let activeLineCount = 0;
+
+    if (!activeSemanticKeys.size) {
+      semanticHighlights.innerHTML = "";
+      semanticMatchCountByKey = counts;
+      semanticActiveLineCount = 0;
+      updateSemanticButtons();
+      return;
+    }
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+
+      const matchedMatchers = semanticMatchers.filter(
+        (candidate) => activeSemanticKeys.has(candidate.key) && candidate.matches(line),
+      );
+      if (!matchedMatchers.length) continue;
+
+      activeLineCount += 1;
+      for (const matcher of matchedMatchers) {
+        counts[matcher.key] = (counts[matcher.key] || 0) + 1;
+      }
+
+      const classes = matchedMatchers.map((matcher) => matcher.className).join(" ");
+      const title = matchedMatchers.map((matcher) => matcher.title).join(" + ");
+      const style = buildSemanticMatchStyle(matchedMatchers);
+
+      matches.push(
+        `<div class="spec-editor-match ${classes}${matchedMatchers.length > 1 ? " spec-editor-match--multi" : ""}" data-match-line="${i + 1}" title="${escapeHtml(title)}"${style ? ` style="${style}"` : ""}></div>`,
+      );
+    }
+
+    semanticHighlights.innerHTML = matches.join("");
+    semanticMatchCountByKey = counts;
+    semanticActiveLineCount = activeLineCount;
+    updateSemanticButtons();
+  }
+
+  function updateSemanticButtons() {
+    const activeKeys = semanticMatchers
+      .filter((matcher) => activeSemanticKeys.has(matcher.key))
+      .map((matcher) => matcher.key);
+    for (const button of semanticToggleButtons) {
+      const key = button.dataset.semanticToggle;
+      const isActive = key === "all"
+        ? semanticMatchers.every((matcher) => activeSemanticKeys.has(matcher.key))
+        : activeSemanticKeys.has(key);
+
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+
+    if (semanticClearButton) {
+      const requiredOnly = activeSemanticKeys.size === 1 && activeSemanticKeys.has("required");
+      semanticClearButton.classList.toggle("is-active", requiredOnly);
+      semanticClearButton.setAttribute("aria-pressed", requiredOnly ? "true" : "false");
+    }
+
+    renderSemanticSummary(semanticMatchCountByKey, activeKeys);
+    if (semanticStatus) {
+      if (!activeSemanticKeys.size) {
+        semanticStatus.textContent = "Radar muted";
+      } else if (!semanticActiveLineCount) {
+        semanticStatus.textContent = "No live matches for the active filters";
+      } else {
+        semanticStatus.textContent = `${semanticActiveLineCount} YAML line${semanticActiveLineCount === 1 ? "" : "s"} lit across ${activeKeys.length} signal${activeKeys.length === 1 ? "" : "s"}`;
+      }
+    }
+  }
+
+  function setSemanticKeys(keys) {
+    activeSemanticKeys.clear();
+    for (const key of keys) {
+      activeSemanticKeys.add(key);
+    }
+    rebuildSemanticHighlights();
+    syncDecorations();
+  }
+
+  function autoSizeEditor() {
+    textarea.style.height = "auto";
+    const style = window.getComputedStyle(textarea);
+    const minHeight = parseFloat(style.minHeight) || 0;
+    textarea.style.height = `${Math.max(textarea.scrollHeight, minHeight)}px`;
+  }
+
+  function syncLineHighlight(target, lineNumber, lineHeight, paddingTop) {
+    if (!(target instanceof HTMLElement)) return;
+    if (!lineNumber || lineNumber > lineCount()) {
+      target.style.display = "none";
+      return;
+    }
+
+    const top = paddingTop + ((lineNumber - 1) * lineHeight) - textarea.scrollTop;
+    target.style.top = `${top}px`;
+    target.style.height = `${lineHeight}px`;
+    target.style.transform = `translateX(${-textarea.scrollLeft}px)`;
+    const visible = (top + lineHeight) >= 0 && top <= textarea.clientHeight;
+    target.style.display = visible ? "block" : "none";
+  }
+
+  function syncOutlineBeacon(lineNumber, lineHeight, paddingTop) {
+    if (!(outlineBeacon instanceof HTMLElement)) return;
+    if (!lineNumber || lineNumber > lineCount()) {
+      outlineBeacon.style.display = "none";
+      return;
+    }
+
+    const top = paddingTop + ((lineNumber - 1) * lineHeight) - textarea.scrollTop + (lineHeight / 2);
+    const visible = top >= 0 && top <= textarea.clientHeight;
+    outlineBeacon.style.top = `${top}px`;
+    outlineBeacon.style.transform = "translateY(-50%)";
+    outlineBeacon.style.display = visible ? "block" : "none";
+  }
+
+  function syncOutlineChip(lineNumber, lineHeight, paddingTop) {
+    if (!(outlineChip instanceof HTMLElement)) return;
+    if (!lineNumber || lineNumber > lineCount()) {
+      outlineChip.hidden = true;
+      return;
+    }
+
+    const top = paddingTop + ((lineNumber - 1) * lineHeight) - textarea.scrollTop - 10;
+    outlineChip.hidden = false;
+    outlineChip.style.top = `${Math.max(10, top)}px`;
+  }
+
+  function syncDecorations() {
+    const style = window.getComputedStyle(textarea);
+    const lineHeight = parseFloat(style.lineHeight) || 23.2;
+    const paddingTop = parseFloat(style.paddingTop) || 0;
+    gutterInner.style.transform = `translateY(${-textarea.scrollTop}px)`;
+    if (semanticHighlights) {
+      const matchedRows = semanticHighlights.querySelectorAll("[data-match-line]");
+      for (const row of matchedRows) {
+        const line = Number(row.dataset.matchLine || 0);
+        const top = paddingTop + ((line - 1) * lineHeight) - textarea.scrollTop;
+        row.style.top = `${top}px`;
+        row.style.height = `${lineHeight}px`;
+        row.style.transform = `translateX(${-textarea.scrollLeft}px)`;
+        const visible = (top + lineHeight) >= 0 && top <= textarea.clientHeight;
+        row.style.display = visible ? "block" : "none";
+      }
+    }
+    syncLineHighlight(outlineHighlight, selectedOutlineLine, lineHeight, paddingTop);
+    syncOutlineBeacon(selectedOutlineLine, lineHeight, paddingTop);
+    syncOutlineChip(selectedOutlineLine, lineHeight, paddingTop);
+    syncLineHighlight(errorHighlight, errorLine, lineHeight, paddingTop);
+  }
+
+  function jumpToError() {
+    if (!errorLine) return;
+    jumpToLine(errorLine, errorColumn);
+  }
+
+  function cardStorageKey(card) {
+    const cardId = card?.dataset.cardId || "";
+    return cardId ? `${collapseStoragePrefix}${cardId}` : "";
+  }
+
+  function readStoredCardState(card) {
+    const storageKey = cardStorageKey(card);
+    if (!storageKey) return null;
+    try {
+      return window.localStorage.getItem(storageKey);
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  function writeStoredCardState(card, collapsed) {
+    const storageKey = cardStorageKey(card);
+    if (!storageKey) return;
+    try {
+      window.localStorage.setItem(storageKey, collapsed ? "collapsed" : "expanded");
+    } catch (_err) {
+      // Ignore storage failures so toggles still work normally.
+    }
+  }
+
+  function setCardCollapsed(card, collapsed) {
+    if (!(card instanceof HTMLElement)) return;
+    const content = card.querySelector("[data-card-content]");
+    const button = card.querySelector("[data-card-toggle]");
+    if (!(content instanceof HTMLElement) || !(button instanceof HTMLElement)) return;
+    content.classList.toggle("is-collapsed", collapsed);
+    content.setAttribute("aria-hidden", collapsed ? "true" : "false");
+    const cardId = card.dataset.cardId || "section";
+    if (!content.id) content.id = `spec-card-content-${cardId}`;
+    button.textContent = collapsed ? "Show" : "Hide";
+    button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    button.setAttribute("aria-controls", content.id);
+  }
+
+  async function copyText(text, button) {
+    if (!text) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const fallbackField = document.createElement("textarea");
+        fallbackField.value = text;
+        fallbackField.setAttribute("readonly", "readonly");
+        fallbackField.style.position = "absolute";
+        fallbackField.style.left = "-9999px";
+        document.body.appendChild(fallbackField);
+        fallbackField.select();
+        const copied = document.execCommand("copy");
+        fallbackField.remove();
+        if (!copied) {
+          throw new Error("copy failed");
+        }
+      }
+      const originalText = button.textContent;
+      button.textContent = "Copied";
+      window.setTimeout(() => {
+        button.textContent = originalText;
+      }, 1200);
+    } catch (_err) {
+      const originalText = button.textContent;
+      button.textContent = "Failed";
+      window.setTimeout(() => {
+        button.textContent = originalText;
+      }, 1200);
+    }
+  }
+
+  textarea.addEventListener("input", () => {
+    cursorOutlineLine = lineFromOffset(textarea.selectionStart);
+    updateGutter();
+    if (editorSearch?.value) refreshEditorSearch();
+  });
+  textarea.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      editorSearch?.focus();
+      editorSearch?.select();
+      return;
+    }
+    if (handleEditorIndent(event)) return;
+    handleEditorEnter(event);
+  });
+  textarea.addEventListener("click", () => {
+    const clickedLine = lineFromOffset(textarea.selectionStart);
+    if (selectedOutlineLine && clickedLine !== selectedOutlineLine) {
+      clearOutlineSelection({ lineNumber: clickedLine });
+      return;
+    }
+    updateActiveOutline(clickedLine);
+    scheduleDecorationSync();
+  });
+  textarea.addEventListener("keyup", () => {
+    updateActiveOutline(lineFromOffset(textarea.selectionStart));
+    scheduleDecorationSync();
+  });
+  textarea.addEventListener("scroll", syncDecorations);
+  window.addEventListener("resize", syncDecorations);
+  for (const input of [titleInput, harborProjectInput, pcVersionInput, ...architectureInputs]) {
+    if (!input) continue;
+    input.addEventListener("input", updateDirtyState);
+    input.addEventListener("change", updateDirtyState);
+  }
+  for (const button of semanticToggleButtons) {
+    button.addEventListener("click", () => {
+      const key = button.dataset.semanticToggle;
+      if (key === "all") {
+        setSemanticKeys(semanticMatchers.map((matcher) => matcher.key));
+        return;
+      }
+
+      if (activeSemanticKeys.has(key)) {
+        activeSemanticKeys.delete(key);
+      } else {
+        activeSemanticKeys.add(key);
+      }
+      rebuildSemanticHighlights();
+      syncDecorations();
+    });
+  }
+  if (semanticClearButton) {
+    semanticClearButton.addEventListener("click", () => {
+      setSemanticKeys(["required"]);
+    });
+  }
+  if (outlineList) {
+    outlineList.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest("[data-outline-line]");
+      if (!(button instanceof HTMLElement)) return;
+      selectOutline(
+        Number(button.dataset.outlineLine || 0),
+        button.dataset.outlineKey || button.textContent?.trim() || "",
+      );
+    });
+  }
+  if (outlineClearButton) {
+    outlineClearButton.addEventListener("click", () => {
+      clearOutlineSelection({ lineNumber: lineFromOffset(textarea.selectionStart) });
+    });
+  }
+  if (needsInputList) {
+    needsInputList.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const guidedButton = target.closest("[data-guided-edit-line]");
+      if (guidedButton instanceof HTMLElement) {
+        openGuidedEditor(Number(guidedButton.dataset.guidedEditLine || 0));
+        return;
+      }
+      const button = target.closest("[data-needs-input-line]");
+      if (!(button instanceof HTMLElement)) return;
+      if (!activeSemanticKeys.has("required")) {
+        activeSemanticKeys.add("required");
+        rebuildSemanticHighlights();
+      }
+      syncDecorations();
+      jumpToLine(Number(button.dataset.needsInputLine || 0), 1, 1);
+    });
+  }
+  guidedEditorValue?.addEventListener("input", refreshGuidedEditor);
+  guidedEditorValue?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeGuidedEditor();
+    } else if (event.key === "Enter" && !guidedEditorApply?.disabled) {
+      event.preventDefault();
+      applyGuidedEditorValue();
+    }
+  });
+  guidedEditorApply?.addEventListener("click", applyGuidedEditorValue);
+  guidedEditorCloseButtons.forEach((button) => button.addEventListener("click", closeGuidedEditor));
+  readinessReviewButton?.addEventListener("click", () => {
+    const firstIssue = needsInputList?.querySelector("[data-needs-input-line]");
+    if (firstIssue instanceof HTMLElement) firstIssue.click();
+  });
+  for (const card of collapsibleCards) {
+    const storedState = readStoredCardState(card);
+    const defaultCollapsed = card.dataset.defaultCollapsed === "true";
+    setCardCollapsed(card, storedState ? storedState === "collapsed" : defaultCollapsed);
+  }
+  for (const button of cardToggleButtons) {
+    button.addEventListener("click", () => {
+      const card = button.closest("[data-collapsible-card]");
+      const content = card?.querySelector("[data-card-content]");
+      if (!(card instanceof HTMLElement) || !(content instanceof HTMLElement)) return;
+      const collapsed = !content.classList.contains("is-collapsed");
+      setCardCollapsed(card, collapsed);
+      writeStoredCardState(card, collapsed);
+    });
+  }
+  for (const button of copyButtons) {
+    button.addEventListener("click", () => {
+      copyText(button.dataset.copyText || "", button);
+    });
+  }
+  if (jumpButton) {
+    jumpButton.addEventListener("click", jumpToError);
+  }
+  editorSearch?.addEventListener("input", () => refreshEditorSearch({ selectFirst: true }));
+  editorSearch?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      moveEditorSearch(event.shiftKey ? -1 : 1);
+    } else if (event.key === "Escape") {
+      editorSearch.value = "";
+      refreshEditorSearch();
+      textarea.focus();
+    }
+  });
+  editorSearchPrevious?.addEventListener("click", () => moveEditorSearch(-1));
+  editorSearchNext?.addEventListener("click", () => moveEditorSearch(1));
+  const goToEditorLine = () => {
+    const requestedLine = Number(editorGoToLine?.value || 0);
+    if (!requestedLine) return;
+    const targetLine = Math.max(1, Math.min(lineCount(), Math.trunc(requestedLine)));
+    if (editorGoToLine) editorGoToLine.value = String(targetLine);
+    jumpToLine(targetLine, 1, 1, { revealOutline: true });
+  };
+  editorGoToButton?.addEventListener("click", goToEditorLine);
+  editorGoToLine?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    goToEditorLine();
+  });
+  form.addEventListener("submit", (event) => {
+    isSubmitting = true;
+    const submitter = event.submitter;
+    if (submitStatus) {
+      if (submitter === saveButton) {
+        submitStatus.textContent = "Saving draft...";
+      } else if (submitter === validateYamlButton) {
+        submitStatus.textContent = "Saving and checking syntax...";
+      } else if (submitter === validateCurrentRevisionButton) {
+        submitStatus.textContent = "Saving and starting full validation...";
+      } else if (submitter === publishDraftButton) {
+        submitStatus.textContent = "Publishing to Confluence...";
+      }
+    }
+    updateDirtyState();
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (!isDirty || isSubmitting) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!(event.metaKey || event.ctrlKey)) return;
+    if (event.key.toLowerCase() === "s" && saveButton) {
+      event.preventDefault();
+      form.requestSubmit(saveButton);
+      return;
+    }
+    if (event.key === "Enter" && validateYamlButton) {
+      event.preventDefault();
+      form.requestSubmit(validateYamlButton);
+    }
+  });
+
+  cursorOutlineLine = lineFromOffset(textarea.selectionStart);
+  updateGutter();
+  updateDirtyState();
+})();
+</script>
+{% endblock %}

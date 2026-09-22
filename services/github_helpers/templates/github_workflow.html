@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block content %}
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/github_workflow.css') }}">
+
+<!-- Highlight.js for Syntax Highlighting -->
+<link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" disabled>
+<link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" disabled>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+
+<div class="wizard-wrapper">
+  <div class="card shadow-sm card--wide">
+
+    <!-- Hero header -->
+    <div class="hero bg-gradient-primary text-white">
+      <div class="p-4 p-md-5 text-center">
+        <i class="fa-brands fa-github fa-3x mb-3"></i>
+        <h2 class="mb-1">Praxis Core Configuration</h2>
+        {% if is_prod %}
+          <p class="lead mb-0">Production requires an explicit confirmation before repository creation.</p>
+        {% else %}
+          <p class="lead mb-0">Choose the version before creating your GitHub repository.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card-body">
+
+      <form method="post" class="mt-3">
+
+        {{ form.csrf_token }}
+        <input type="hidden" name="env_slug" value="{{ env_slug }}">
+        <input type="hidden" id="repoName" value="{{ repo_name }}">
+
+        {% if is_prod %}
+          <div class="alert alert-danger mb-3">
+            <div class="fw-semibold">Production Confirmation Required</div>
+            <div class="small">Do you really want to create this production repository?</div>
+          </div>
+
+          {% if prod_confirm_error %}
+            <div class="alert alert-warning mb-3">{{ prod_confirm_error }}</div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label">Harbor Registry Project</label>
+            <input class="form-control" value="{{ prod_locked_values.harbor_registry_project }}" readonly disabled>
+            <div class="form-text">Locked in production.</div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Praxis Core Version</label>
+            <input class="form-control" value="{{ prod_locked_values.pc_version }}" readonly disabled>
+            <div class="form-text">Locked in production.</div>
+          </div>
+
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="prod_confirm" name="prod_confirm" value="1" required>
+            <label class="form-check-label" for="prod_confirm">
+              I understand and want to continue with production repository creation.
+            </label>
+          </div>
+        {% else %}
+          <div class="mb-3">
+            {{ form.harbor_registry_project.label }}
+            {{ form.harbor_registry_project(class="form-control") }}
+          </div>
+
+          <div class="mb-3">
+            {{ form.pc_version.label }}
+            {{ form.pc_version(class="form-control") }}
+          </div>
+        {% endif %}
+
+        {% if spec_yaml %}
+          <div class="mt-5 spec-preview-container">
+            <div class="row align-items-center mb-4">
+              <div class="col-md-6">
+                <h5 class="spec-header mb-md-0"><i class="fas fa-file-code me-2"></i>Spec File Preview</h5>
+              </div>
+              <div class="col-md-6">
+                <div class="d-flex justify-content-md-end gap-2 btn-toolbar-fancy">
+                  <div class="btn-group">
+                    <button type="button" class="btn btn-outline-info" onclick="toggleAllAccordions(true)">
+                      <i class="fas fa-expand-arrows-alt me-1"></i> Expand
+                    </button>
+                    <button type="button" class="btn btn-outline-info" onclick="toggleAllAccordions(false)">
+                      <i class="fas fa-compress-arrows-alt me-1"></i> Collapse
+                    </button>
+                  </div>
+                    <button type="button" class="btn btn-success" onclick="copyFullYaml(event)">
+                    <i class="fas fa-copy me-1"></i> Copy YAML
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hidden full YAML for copying -->
+            <textarea id="fullYamlSource" style="display:none;">{{ spec_yaml }}</textarea>
+
+            <div class="accordion" id="yamlAccordion">
+              {% set cleaned = spec_yaml.lstrip() %}
+              {% set parts = cleaned.split('# --- ') %}
+              {% set preamble = parts[0].strip() %}
+              {% set sections = parts[1:] %}
+
+              {% if preamble %}
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button class="accordion-button py-2 small" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#collapseMetadata">
+                      Spec Metadata
+                    </button>
+                  </h2>
+                  <div id="collapseMetadata" class="accordion-collapse collapse show">
+                    <div class="accordion-body p-0">
+                      <pre class="spec-pre mb-0"><code class="language-yaml">{{ preamble | e }}</code></pre>
+                    </div>
+                  </div>
+                </div>
+              {% endif %}
+
+              {% for block in sections %}
+                {% set block = block.strip() %}
+                {% if block %}
+                  {% set block_parts = block.split('---', 1) %}
+                  {% if block_parts|length == 2 %}
+                    {% set header = block_parts[0].strip() %}
+                    {% set content = block_parts[1] %}
+                    <div class="accordion-item">
+                      <h2 class="accordion-header">
+                        <button class="accordion-button collapsed py-2 small" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#collapse{{ loop.index }}">
+                          {{ header }}
+                        </button>
+                      </h2>
+                      <div id="collapse{{ loop.index }}" class="accordion-collapse collapse">
+                        <div class="accordion-body p-0">
+                          <pre class="spec-pre"><code class="language-yaml"># --- {{ header }} ---{{ content | e }}</code></pre>
+                        </div>
+                      </div>
+                    </div>
+                  {% endif %}
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        <div class="text-center d-flex justify-content-center gap-3 flex-wrap mt-4">
+
+          <a href="{{ back_url }}" class="btn btn-outline-secondary btn-lg">
+            <i class="fas fa-arrow-left me-2"></i> Back
+          </a>
+
+          <button type="button" id="createRepoBtn" class="btn btn-primary btn-lg" onclick="openConfirm()">
+            <i class="fa-brands fa-github me-2"></i>
+            {% if is_prod %}
+              Confirm & create GitHub repo
+            {% else %}
+              Create GitHub repo & upload spec
+            {% endif %}
+          </button>
+
+        </div>
+
+      </form>
+
+    </div><!-- card-body -->
+  </div><!-- card -->
+</div><!-- wrapper -->
+<div id="confirmOverlay" class="confirm-overlay d-none">
+  <div class="confirm-box">
+
+    <h5 class="mb-3">Confirm Repository Creation</h5>
+
+    <p class="mb-2">You are about to create:</p>
+    <div class="repo-name" id="confirmRepoName"></div>
+
+    <div class="confirm-warning mt-3">
+      Please review your spec file carefully before proceeding.
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-4">
+      <button class="btn btn-outline-secondary" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitConfirmed()">
+        Confirm & Create
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  // -----------------------------
+  // Highlight.js theme handling
+  // -----------------------------
+  function updateHljsTheme() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    document.getElementById('hljs-light').disabled = isDark;
+    document.getElementById('hljs-dark').disabled = !isDark;
+  }
+
+  updateHljsTheme();
+
+  document.querySelectorAll('pre code').forEach((el) => {
+    hljs.highlightElement(el);
+  });
+
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((m) => {
+      if (m.attributeName === 'data-theme') updateHljsTheme();
+    });
+  });
+
+  observer.observe(document.documentElement, { attributes: true });
+
+
+  // -----------------------------
+  // Accordion
+  // -----------------------------
+  window.toggleAllAccordions = function (show) {
+    const items = document.querySelectorAll('#yamlAccordion .accordion-collapse');
+    items.forEach(item => {
+      const bs = bootstrap.Collapse.getOrCreateInstance(item, { toggle: false });
+      show ? bs.show() : bs.hide();
+    });
+  };
+
+
+  // -----------------------------
+  // Copy YAML
+  // -----------------------------
+  window.copyFullYaml = function (event) {
+    const copyText = document.getElementById("fullYamlSource");
+    const btn = event?.currentTarget;
+    const original = btn.innerHTML;
+
+    navigator.clipboard.writeText(copyText.value).then(() => {
+      btn.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
+      btn.classList.add('btn-success');
+
+      setTimeout(() => {
+        btn.innerHTML = original;
+        btn.classList.remove('btn-success');
+      }, 2000);
+    });
+  };
+
+
+  // -----------------------------
+  // Modal logic
+  // -----------------------------
+  const overlay = document.getElementById('confirmOverlay');
+  const repoNameEl = document.getElementById('repoName');
+  const confirmRepoName = document.getElementById('confirmRepoName');
+
+  window.openConfirm = function () {
+    confirmRepoName.innerText = repoNameEl?.value || 'this repository';
+    overlay.classList.remove('d-none');
+  };
+
+  window.closeConfirm = function () {
+    overlay.classList.add('d-none');
+  };
+
+  window.submitConfirmed = function () {
+    const btn = document.getElementById('createRepoBtn');
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Creating...';
+
+    document.querySelector('form').submit();
+  };
+
+
+  // -----------------------------
+  // ONE-TIME event bindings
+  // -----------------------------
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeConfirm();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeConfirm();
+  });
+
+});
+</script>
+
+{% endblock %}

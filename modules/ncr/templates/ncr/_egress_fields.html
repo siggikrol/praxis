@@ -1,0 +1,96 @@
+<!-- Egress fields partial -->
+<div class="row">
+  <div class="col-md-6 mb-3">
+    <label class="form-label">{{ form.source_service.label }}</label>
+    {{ form.source_service(class="form-control") }}
+    {% if form.source_service.errors %}
+      <div class="text-danger small">
+        {{ form.source_service.errors[0] }}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="col-md-6 mb-3">
+    <label class="form-label">{{ form.source_address.label }}</label>
+    {{ form.source_address(class="form-control") }}
+    {% if form.source_address.errors %}
+      <div class="text-danger small">
+        {{ form.source_address.errors[0] }}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6 mb-3">
+    <label class="form-label">{{ form.destination_address.label }}</label>
+    {{ form.destination_address(class="form-control") }}
+    {% if form.destination_address.errors %}
+      <div class="text-danger small">
+        {{ form.destination_address.errors[0] }}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="col-md-6 mb-3">
+    <label class="form-label">{{ form.destination_description.label }}</label>
+    {{ form.destination_description(class="form-control") }}
+    {% if form.destination_description.errors %}
+      <div class="text-danger small">
+        {{ form.destination_description.errors[0] }}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-4 mb-3">
+    <label class="form-label">{{ form.protocol.label }}</label>
+    {{ form.protocol(class="form-select") }}
+    {% if form.protocol.errors %}
+      <div class="text-danger small">
+        {{ form.protocol.errors[0] }}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="col-md-4 mb-3">
+    <label class="form-label">{{ form.destination_port.label }}</label>
+    {{ form.destination_port(class="form-control") }}
+    {% if form.destination_port.errors %}
+      <div class="text-danger small">
+        {{ form.destination_port.errors[0] }}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="col-md-4 mb-3">
+    <label class="form-label">{{ form.port_range.label }}</label>
+    {{ form.port_range(class="form-control") }}
+    {% if form.port_range.errors %}
+      <div class="text-danger small">
+        {{ form.port_range.errors[0] }}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="mb-3">
+  <label class="form-label">{{ form.justification.label }}</label>
+  {{ form.justification(class="form-control") }}
+  {% if form.justification.errors %}
+    <div class="text-danger small">
+      {{ form.justification.errors[0] }}
+    </div>
+  {% endif %}
+</div>
+
+<div class="mb-3">
+  <label class="form-label">{{ form.notes.label }}</label>
+  {{ form.notes(class="form-control", rows="3") }}
+  {% if form.notes.errors %}
+    <div class="text-danger small">
+      {{ form.notes.errors[0] }}
+    </div>
+  {% endif %}
+</div>

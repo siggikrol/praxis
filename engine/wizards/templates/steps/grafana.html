@@ -1,0 +1,5 @@
+{% extends "wizard_step.html" %}
+{% block form_fields %}
+  {{ form.hidden_tag() }}
+  {{ render_form_fields(form) }}
+{% endblock %}

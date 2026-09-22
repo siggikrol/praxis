@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-shell status-page">
+
+    {% set hero_title = "Spacelift Cache" %}
+    {% set hero_subtitle = "Cached Spacelift status with manual refresh" %}
+    {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('status.index') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Status Hub
+  </a>
+
+    {% set current_status_page = "spacelift_cache" %}
+    {% include "status/_subnav.html" %}
+
+        <div class="tool-panel tool-panel--compact">
+          <div class="tool-toolbar mb-0">
+            <div>
+              <div class="tool-panel__title">Cache Controls</div>
+              <div class="tool-panel__subtitle">Inspect the cached payload or trigger an immediate refresh.</div>
+            </div>
+            <div class="tool-toolbar__group">
+              <form method="post" action="{{ url_for('status.spacelift_refresh') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-primary btn-sm" type="submit">
+                  <i class="fa-solid fa-rotate me-1"></i> Refresh Cache
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        {% if last_spacelift_refresh %}
+          <div class="alert {% if last_spacelift_refresh.error %}alert-danger{% else %}alert-success{% endif %} py-2">
+            <div class="fw-semibold">Last refresh</div>
+            <div class="small text-muted">{{ last_spacelift_refresh.generated_at_iso or "-" }}</div>
+            {% if last_spacelift_refresh.error %}
+              <div class="small text-monospace mt-1">{{ last_spacelift_refresh.error }}</div>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        {% if spacelift.refresh_error %}
+          <div class="alert alert-warning py-2">
+            <div class="fw-semibold">Live refresh failed, showing cached data</div>
+            <div class="small text-monospace">{{ spacelift.refresh_error }}</div>
+          </div>
+        {% endif %}
+
+        {% if spacelift.error %}
+          <div class="alert alert-danger py-2">
+            <div class="fw-semibold">Unable to fetch Spacelift data</div>
+            <div class="small text-monospace">{{ spacelift.error }}</div>
+          </div>
+        {% endif %}
+
+        <div class="row g-4">
+          <div class="col-12 col-lg-6">
+            <div class="card tool-panel h-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-solid fa-database"></i>
+                <strong>Cache Entries</strong>
+                <span class="ms-auto badge bg-{% if spacelift.stale %}warning text-dark{% else %}success{% endif %}">
+                  {% if spacelift.stale %}Stale{% else %}Fresh{% endif %}
+                </span>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                      <tr>
+                        <th scope="row">Source</th>
+                        <td><code>{{ spacelift.source or "-" }}</code></td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Generated (UTC)</th>
+                        <td><code>{{ spacelift.generated_at_iso or "-" }}</code></td>
+                      </tr>
+                      <tr>
+                        <th scope="row">TTL</th>
+                        <td><code>{{ spacelift.ttl_seconds if spacelift.ttl_seconds is not none else "-" }}s</code></td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Cache Path</th>
+                        <td class="text-break"><code>{{ spacelift.cache_path or "-" }}</code></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <div class="card tool-panel h-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-solid fa-rocket"></i>
+                <strong>Spacelift Status</strong>
+                <span class="ms-auto badge bg-{% if spacelift.ok %}success{% else %}danger{% endif %}">
+                  {% if spacelift.ok %}Healthy{% else %}Error{% endif %}
+                </span>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                      <tr>
+                        <th scope="row">Account</th>
+                        <td>{{ spacelift.account or "-" }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">API URL</th>
+                        <td class="text-break">{{ spacelift.api_url or "-" }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">AWS Integrations</th>
+                        <td>{{ spacelift.aws_integrations if spacelift.aws_integrations is not none else "-" }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Spaces</th>
+                        <td>{{ spacelift.spaces if spacelift.spaces is not none else "-" }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+  </div>
+{% endblock %}

@@ -1,0 +1,20 @@
+<nav class="artiac-subnav" aria-label="Artiac sections">
+  <a class="artiac-subnav__item{% if current_artiac_page == 'status' %} is-active{% endif %}"
+     href="{{ url_for('artiac_control.index') }}"
+     {% if current_artiac_page == 'status' %}aria-current="page"{% endif %}>
+    <span class="artiac-subnav__icon"><i class="fa-solid fa-wave-square"></i></span>
+    <span>
+      <strong>Job status</strong>
+      <small>Runtime health and recent runs</small>
+    </span>
+  </a>
+  <a class="artiac-subnav__item{% if current_artiac_page == 'archives' %} is-active{% endif %}"
+     href="{{ url_for('iac_artifacts_explorer.list_view') }}"
+     {% if current_artiac_page == 'archives' %}aria-current="page"{% endif %}>
+    <span class="artiac-subnav__icon"><i class="fa-solid fa-box-archive"></i></span>
+    <span>
+      <strong>Module archives</strong>
+      <small>Published packages and comparisons</small>
+    </span>
+  </a>
+</nav>

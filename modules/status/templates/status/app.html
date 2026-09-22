@@ -1,0 +1,470 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-shell status-page">
+
+    {% set hero_title = "Praxis App Status" %}
+    {% set hero_subtitle = "Quick health and configuration signals" %}
+    {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('status.index') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Status Hub
+  </a>
+
+    {% set current_status_page = "app" %}
+    {% include "status/_subnav.html" %}
+
+        <div class="row g-4">
+          <div class="col-12 col-xl-6">
+            <div class="card tool-panel h-100 status-subcard">
+                      <div class="card-header status-subcard-header d-flex align-items-center gap-2">
+                        <i class="fa-solid fa-user"></i>
+                        <strong>Current Session</strong>
+                      </div>
+                      <div class="card-body">
+                        <div class="table-responsive">
+                          <table class="table table-sm table-borderless align-middle mb-2">
+                            <tbody>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Current user</th>
+                                <td class="text-end">
+                                  {% if user %}
+                                    <code>{{ user }}</code>
+                                  {% else %}
+                                    -
+                                  {% endif %}
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Auth method</th>
+                                <td class="text-end">
+                                  <span class="badge {% if session_meta.auth_method == 'aad' %}bg-primary{% else %}bg-secondary{% endif %}">
+                                    {{ session_meta.auth_method or "unknown" }}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Login time (UTC)</th>
+                                <td class="text-end"><code>{{ session_meta.login_ts_iso or "-" }}</code></td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Session id</th>
+                                <td class="text-end"><code>{{ session_meta.sid_short or "-" }}</code></td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Active sessions</th>
+                                <td class="text-end">
+                                  <span class="badge bg-success">{{ active_sessions.active_count if active_sessions else 0 }}</span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Active users</th>
+                                <td class="text-end">
+                                  <span class="badge bg-success">{{ active_sessions.active_users_count if active_sessions else 0 }}</span>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {% if active_sessions and active_sessions.error %}
+                          <div class="alert alert-warning py-2 mb-0 small">
+                            Unable to read active sessions: <code>{{ active_sessions.error }}</code>
+                          </div>
+                        {% elif active_sessions and active_sessions.entries %}
+                          <div class="small text-muted mb-1">
+                            Active session inventory ({{ active_sessions.window_minutes }}m window)
+                          </div>
+                          <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                              <thead>
+                                <tr>
+                                  <th scope="col">User</th>
+                                  <th scope="col">Method</th>
+                                  <th scope="col">Last seen (UTC)</th>
+                                  <th scope="col">Pod</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {% for e in active_sessions.entries %}
+                                  <tr>
+                                    <td class="text-break"><code>{{ e.user }}</code></td>
+                                    <td><span class="badge bg-secondary">{{ e.auth_method }}</span></td>
+                                    <td><code>{{ e.last_seen_iso or "-" }}</code></td>
+                                    <td class="text-break">{{ e.pod or "-" }}</td>
+                                  </tr>
+                                {% endfor %}
+                              </tbody>
+                            </table>
+                          </div>
+                          {% if active_sessions.truncated %}
+                            <div class="small text-muted mt-1">Showing first {{ (active_sessions.entries or [])|length }} entries.</div>
+                          {% endif %}
+                        {% else %}
+                          <div class="small text-muted">No active sessions recorded yet.</div>
+                        {% endif %}
+                        <div class="small text-muted mt-2">{{ active_sessions.scope_note if active_sessions else "" }}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="col-12 col-xl-6">
+                    <div class="card tool-panel h-100 status-subcard">
+                      <div class="card-header status-subcard-header d-flex align-items-center gap-2">
+                        <i class="fa-solid fa-rocket"></i>
+                        <strong>Spacelift</strong>
+                      </div>
+                      <div class="card-body">
+                        <div class="table-responsive">
+                          <table class="table table-sm table-borderless align-middle mb-0">
+                            <tbody>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Account</th>
+                                <td class="text-end">{{ env_flags.spacelift_account or "-" }}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">API URL</th>
+                                <td class="text-end text-break">{{ env_flags.spacelift_api_url or "-" }}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Config path</th>
+                                <td class="text-end text-break">
+                                  {{ env_flags.spacelift_config_path or "-" }}
+                                  {% if env_flags.spacelift_config and env_flags.spacelift_config.exists %}
+                                    <span class="badge bg-success ms-2">exists</span>
+                                  {% elif env_flags.spacelift_config_path %}
+                                    <span class="badge bg-danger ms-2">missing</span>
+                                  {% endif %}
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Token/key</th>
+                                <td class="text-end">
+                                  <span class="badge {% if env_flags.spacelift_creds_present %}bg-success{% else %}bg-danger{% endif %}">
+                                    {% if env_flags.spacelift_creds_present %}present{% else %}missing{% endif %}
+                                  </span>
+                                  {% if env_flags.spacelift_creds_source %}
+                                    <span class="text-muted small ms-2">{{ env_flags.spacelift_creds_source }}</span>
+                                  {% endif %}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="col-12 col-xl-6">
+                    <div class="card tool-panel h-100 status-subcard">
+                      <div class="card-header status-subcard-header d-flex align-items-center gap-2">
+                        <i class="fa-solid fa-gear"></i>
+                        <strong>Runtime & Session</strong>
+                      </div>
+                      <div class="card-body">
+                        <div class="table-responsive">
+                          <table class="table table-sm table-borderless align-middle mb-0">
+                            <tbody>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">App version</th>
+                                <td class="text-end"><code>{{ app_meta.app_version or "-" }}</code></td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">AUTH_ENABLED</th>
+                                <td class="text-end">
+                                  <span class="badge {% if flags.AUTH_ENABLED %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {{ flags.AUTH_ENABLED }}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Session backend</th>
+                                <td class="text-end"><code>{{ app_meta.session_type or "-" }}</code></td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Session dir</th>
+                                <td class="text-end text-break"><code>{{ app_meta.session_dir or "-" }}</code></td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Session files</th>
+                                <td class="text-end">
+                                  {% if session_stats.ok %}
+                                    <span class="badge bg-success">{{ session_stats.count if session_stats.count is not none else "-" }}</span>
+                                  {% else %}
+                                    <span class="badge bg-danger">error</span>
+                                    {% if session_stats.error %}
+                                      <div class="small text-monospace mt-1">{{ session_stats.error }}</div>
+                                    {% endif %}
+                                  {% endif %}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="col-12 col-xl-6">
+                    <div class="card tool-panel status-subcard h-100">
+                      <div class="card-header status-subcard-header d-flex align-items-center gap-2">
+                        <i class="fa-brands fa-aws"></i>
+                        <strong>AWS</strong>
+                      </div>
+                      <div class="card-body">
+                        <div class="table-responsive">
+                          <table class="table table-sm table-borderless align-middle mb-0">
+                            <tbody>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">AWS creds</th>
+                                <td class="text-end">
+                                  <span class="badge {% if env_flags.aws_access_key_id and env_flags.aws_secret_access_key %}bg-success{% else %}bg-danger{% endif %}">
+                                    {% if env_flags.aws_access_key_id and env_flags.aws_secret_access_key %}present{% else %}missing{% endif %}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">AWS region</th>
+                                <td class="text-end">{{ env_flags.aws_default_region or "-" }}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">Releases S3 bucket</th>
+                                <td class="text-end text-break">{{ env_flags.releases_s3_bucket or "-" }}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row" class="text-start text-nowrap">IaC Archive S3 bucket</th>
+                                <td class="text-end text-break">{{ env_flags.iac_archive_s3_bucket or "-" }}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <div class="card tool-panel h-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-brands fa-aws"></i>
+                <strong>S3 Access</strong>
+                <span class="ms-auto badge bg-{% if s3.ok %}success{% else %}danger{% endif %}">
+                  {% if s3.ok %}Healthy{% else %}Error{% endif %}
+                </span>
+              </div>
+              <div class="card-body">
+                {% if s3.note %}
+                  <div class="text-muted small">{{ s3.note }}</div>
+                {% endif %}
+                {% if s3.buckets %}
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle">
+                      <thead>
+                        <tr>
+                          <th scope="col">Bucket</th>
+                          <th scope="col">Env key</th>
+                          <th scope="col">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for b in s3.buckets %}
+                          <tr>
+                            <td class="text-break">{{ b.name }}</td>
+                            <td><code>{{ b.env_key }}</code></td>
+                            <td>
+                              {% if b.ok %}
+                                <span class="badge bg-success">ok</span>
+                              {% else %}
+                                <span class="badge bg-danger">error</span>
+                                {% if b.error %}
+                                  <div class="small text-monospace mt-1">{{ b.error }}</div>
+                                {% endif %}
+                              {% endif %}
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <div class="card tool-panel h-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-solid fa-satellite-dish"></i>
+                <strong>Artiac API</strong>
+                <span class="ms-auto badge bg-{% if artiac.ok %}success{% else %}danger{% endif %}">
+                  {% if artiac.ok %}Healthy{% else %}Error{% endif %}
+                </span>
+              </div>
+              <div class="card-body">
+                {% if artiac.error %}
+                  <div class="alert alert-danger">
+                    <div class="fw-semibold">Error contacting Artiac API</div>
+                    <div class="small text-monospace">{{ artiac.error }}</div>
+                  </div>
+                {% endif %}
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle">
+                    <tbody>
+                      <tr>
+                        <th scope="row">Base URL</th>
+                        <td class="text-break">{{ artiac.base_url or "-" }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Status code</th>
+                        <td>{{ artiac.status_code if artiac.status_code is not none else "-" }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Modules</th>
+                        <td>{{ artiac.modules_count if artiac.modules_count is not none else "-" }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {% if artiac.data %}
+                  <details class="mt-2">
+                    <summary class="small text-muted">Show raw response</summary>
+                    <pre class="tool-code-block tool-scroll tool-scroll--sm small mt-2">{{ artiac.data | tojson(indent=2) }}</pre>
+                  </details>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <div class="card tool-panel h-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-solid fa-cubes"></i>
+                <strong>Modules</strong>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle">
+                    <tbody>
+                      <tr>
+                        <th scope="row">Available (plugin.py)</th>
+                        <td>{{ modules.available_count }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Enabled</th>
+                        <td>{{ modules.enabled_count }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Home links</th>
+                        <td>{{ modules.home_links_count }}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Wizard plugins</th>
+                        <td>{{ modules.wizard_plugins_count }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {% if modules.enabled_raw %}
+                  <div class="small text-muted">ENABLED_MODULES override is set.</div>
+                {% else %}
+                  <div class="small text-muted">ENABLED_MODULES not set - all modules with plugin.py are enabled.</div>
+                {% endif %}
+
+                {% if modules.enabled_details %}
+                  <details class="mt-2">
+                    <summary class="small text-muted">Show modules (enabled/disabled)</summary>
+                    <div class="mt-2">
+                      <div class="status-modules">
+                        {% for mod in modules.enabled_details %}
+                          <div class="status-module-item">
+                            <div class="status-module-meta">
+                              <div class="status-module-title">
+                                <div class="fw-semibold">{{ mod.title }}</div>
+                                <div class="small text-muted">
+                                  <span class="text-muted">-</span>
+                                  <span class="font-monospace">{{ mod.name }}</span>
+                                </div>
+                              </div>
+                              <div class="d-flex align-items-center gap-2">
+                                {% if mod.category %}
+                                  <span class="badge bg-secondary-subtle text-secondary">{{ mod.category }}</span>
+                                {% endif %}
+                                <span class="badge {% if mod.enabled %}bg-success{% else %}bg-danger{% endif %}">
+                                  {% if mod.enabled %}enabled{% else %}disabled{% endif %}
+                                </span>
+                              </div>
+                            </div>
+                            <div class="small text-muted mt-1">
+                              {{ mod.description or "No description provided." }}
+                            </div>
+                          </div>
+                        {% endfor %}
+                      </div>
+                      {% if modules.unknown_enabled %}
+                        <div class="alert alert-warning mt-3 mb-0">
+                          Enabled list includes unknown modules: {{ modules.unknown_enabled | join(", ") }}
+                        </div>
+                      {% endif %}
+                    </div>
+                  </details>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <div class="card tool-panel h-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-brands fa-github"></i>
+                <strong>GitHub API</strong>
+                <span class="ms-auto badge bg-{% if gh.token_present %}success{% else %}secondary{% endif %}">
+                  token {% if gh.token_present %}present{% else %}missing{% endif %}
+                </span>
+              </div>
+              <div class="card-body">
+                {% if gh.error %}
+                  <div class="alert alert-danger">
+                    <div class="fw-semibold">Error contacting GitHub</div>
+                    <div class="small text-monospace">{{ gh.error }}</div>
+                  </div>
+                {% endif %}
+
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle">
+                    <thead>
+                      <tr>
+                        <th scope="col">Resource</th>
+                        <th scope="col">Remaining</th>
+                        <th scope="col">Limit</th>
+                        <th scope="col">Resets (UTC)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>core</td>
+                        <td>{{ gh.core.remaining if gh.core.remaining is not none else "-" }}</td>
+                        <td>{{ gh.core.limit if gh.core.limit is not none else "-" }}</td>
+                        <td class="small text-muted">{{ gh.core.reset_iso or "-" }}</td>
+                      </tr>
+                      <tr>
+                        <td>search</td>
+                        <td>{{ gh.search.remaining if gh.search.remaining is not none else "-" }}</td>
+                        <td>{{ gh.search.limit if gh.search.limit is not none else "-" }}</td>
+                        <td class="small text-muted">{{ gh.search.reset_iso or "-" }}</td>
+                      </tr>
+                      <tr>
+                        <td>graphql</td>
+                        <td>{{ gh.graphql.remaining if gh.graphql.remaining is not none else "-" }}</td>
+                        <td>{{ gh.graphql.limit if gh.graphql.limit is not none else "-" }}</td>
+                        <td class="small text-muted">{{ gh.graphql.reset_iso or "-" }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+  </div>
+{% endblock %}

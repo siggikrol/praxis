@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Wizard – {{ env_slug }}</title></head>
+<body>
+  <h1>Wizard: {{ env_slug }}</h1>
+  <ul>
+    {% for idx, s in enumerate(steps) %}
+      <li>
+        <a href="{{ url_for(env_slug + '.step', step=s[0]) }}">{{ s[0] }}</a>
+        — {% if progress[idx].done %}done{% else %}todo{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</body>
+</html>

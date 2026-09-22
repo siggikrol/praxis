@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="wizard-wrapper">
+  <div class="card shadow-sm card--wide">
+
+    <!-- Hero header -->
+    <div class="hero bg-gradient-primary text-white">
+      <div class="p-4 p-md-5 text-center">
+        <i class="fas fa-check-circle fa-3x mb-3"></i>
+        <h2 class="mb-1">All Done!</h2>
+        <p class="lead mb-0">Your spec has been generated with comments.</p>
+      </div>
+    </div>
+
+    <div class="card-body">
+
+      <!-- Top buttons -->
+      <div class="text-center mb-4 d-flex justify-content-center gap-2 flex-wrap">
+        <a href="{{ download_url }}" class="btn btn-secondary btn-lg">
+          <i class="fas fa-download me-2"></i> Download Spec YAML
+        </a>
+
+        <form method="get" action="{{ url_for('github.github_workflow') }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ github_csrf }}">
+          <input type="hidden" name="env_slug" value="{{ env_slug }}">
+          <button class="btn btn-outline-dark btn-lg" type="submit">
+            <i class="fa-brands fa-github me-1"></i> Continue to Github repo creation
+          </button>
+        </form>
+      </div>
+
+      <!-- View toggles -->
+      <div class="text-center mb-3">
+        <button id="singleViewBtn" class="btn btn-outline-primary btn-sm">Single View</button>
+        <button id="sideBySideBtn" class="btn btn-outline-primary btn-sm">Side-by-Side</button>
+        <button id="collapseAllBtn" class="btn btn-outline-secondary btn-sm ms-2">Collapse All</button>
+        <button id="expandAllBtn" class="btn btn-outline-secondary btn-sm ms-1">Expand All</button>
+        <button id="copyYamlBtn" class="btn btn-outline-secondary btn-sm ms-3">
+          <i class="fas fa-copy me-1"></i> Copy YAML
+        </button>
+      </div>
+
+      <!-- SINGLE VIEW WITH ACCORDION -->
+      <div id="singleView" class="mb-4">
+
+        <div class="accordion" id="yamlAccordion">
+
+          {% set cleaned = spec_yaml.lstrip() %}
+          {% set sections = cleaned.split('# --- ') %}
+
+          {% for block in sections %}
+            {% set block = block.strip() %}
+            {% if block %}
+
+              {% set header = block.split('---', 1)[0].strip() %}
+              {% set content = block.split('---', 1)[1] %}
+
+              <div class="accordion-item">
+                <h2 class="accordion-header" id="heading{{ loop.index }}">
+                  <button class="accordion-button" type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#collapse{{ loop.index }}">
+                    {{ header }}
+                  </button>
+                </h2>
+
+                <div id="collapse{{ loop.index }}" class="accordion-collapse collapse show">
+                  <div class="accordion-body">
+                    <pre class="spec-pre"># --- {{ header }} ---{{ content | e }}</pre>
+                  </div>
+                </div>
+
+              </div>
+
+            {% endif %}
+          {% endfor %}
+
+        </div>
+      </div>
+
+      <!-- SIDE-BY-SIDE -->
+      <div id="sideBySide" class="row mb-4" style="display:none;">
+
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-light"><strong>Raw YAML</strong></div>
+            <div class="card-body">
+              <pre class="spec-pre">{{ spec_yaml | e }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-light"><strong>Highlighted YAML</strong></div>
+            <div class="card-body">
+              <pre class="spec-pre hljs yaml">{{ spec_yaml | e }}</pre>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom actions -->
+      <div class="text-center d-flex justify-content-center gap-3 flex-wrap mt-4">
+
+        <a class="btn btn-primary btn-lg" href="{{ back_url }}">
+          <i class="fas fa-arrow-left me-2"></i> Back
+        </a>
+
+        <form method="post"
+              action="{{ url_for(request.blueprint + '.wizard_reset') }}"
+              onsubmit="return confirm('This will erase all wizard data and start over. Continue?');"
+              class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-danger btn-lg">
+            <i class="fas fa-rotate-left me-2"></i> Start Fresh
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<style>
+.spec-pre {
+  white-space: pre;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.3rem;
+}
+.accordion-button { font-weight: 600; }
+#singleView .accordion-item { margin-bottom: .5rem; }
+</style>
+
+<script>
+// Toggle views
+singleViewBtn.onclick = () => {
+  singleView.style.display = "block";
+  sideBySide.style.display = "none";
+};
+sideBySideBtn.onclick = () => {
+  singleView.style.display = "none";
+  sideBySide.style.display = "flex";
+};
+
+// Collapse all
+collapseAllBtn.onclick = () => {
+  document.querySelectorAll('.accordion-collapse').forEach(c => c.classList.remove('show'));
+};
+
+// Expand all
+expandAllBtn.onclick = () => {
+  document.querySelectorAll('.accordion-collapse').forEach(c => c.classList.add('show'));
+};
+
+// Copy YAML
+copyYamlBtn.onclick = async () => {
+  await navigator.clipboard.writeText(`{{ spec_yaml | e }}`);
+  alert("YAML copied to clipboard!");
+};
+</script>
+{% endblock %}

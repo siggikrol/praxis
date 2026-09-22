@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-shell status-page">
+
+    {% set hero_title = "PC Source Cache" %}
+    {% set hero_subtitle = "Disk-backed cache for PC Source wizard lists" %}
+    {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('status.index') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Status Hub
+  </a>
+
+    {% set current_status_page = "pc_source_cache" %}
+    {% include "status/_subnav.html" %}
+
+        {% if request.args.get('cache_cleared') == '1' %}
+          <div class="alert alert-success py-2" role="status">
+            Deleted the disk cache for <code>{{ selected_branch or 'default' }}</code>. The wizard will fetch it again when needed.
+          </div>
+        {% endif %}
+
+        <div class="tool-panel tool-panel--compact">
+          <div class="tool-toolbar mb-0">
+            <div>
+              <div class="tool-panel__title">Cache Controls</div>
+              <div class="tool-panel__subtitle">Filter cached branches or refresh their source inventory.</div>
+            </div>
+            <div class="tool-toolbar__group">
+              <form method="get" action="{{ url_for('status.pc_source_cache') }}" class="d-flex align-items-center gap-2">
+                <label for="pcSourceBranch" class="tool-toolbar__label mb-0">Branch</label>
+                <select id="pcSourceBranch" name="branch" class="form-select form-select-sm tool-filter-select" onchange="this.form.submit()">
+                  <option value="" {% if not selected_branch %}selected{% endif %}>Configured + cached</option>
+                  {% for b in (all_branches or []) %}
+                    <option value="{{ b }}" {% if selected_branch == b %}selected{% endif %}>{{ b }}</option>
+                  {% endfor %}
+                </select>
+                {% if selected_branch %}
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('status.pc_source_cache') }}">Show All</a>
+                {% endif %}
+              </form>
+              <form method="post" action="{{ url_for('status.pc_source_cache_job_start') }}" data-pc-source-refresh-form="1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% if selected_branch %}<input type="hidden" name="branch" value="{{ selected_branch }}">{% endif %}
+                <button class="btn btn-primary btn-sm" type="submit" data-pc-source-refresh-btn="1">
+                  <i class="fa-solid fa-rotate me-1"></i>
+                  {% if selected_branch %}Refresh Selected Branch{% else %}Refresh Configured Branches{% endif %}
+                </button>
+              </form>
+              {% if selected_branch %}
+                <form method="post" action="{{ url_for('status.pc_source_cache_clear') }}" onsubmit="return window.confirm('Delete the cached PC Source inventory for {{ selected_branch|e }}? The next use will fetch it again from GitHub.');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="branch" value="{{ selected_branch }}">
+                  <input type="hidden" name="confirm" value="delete">
+                  <button class="btn btn-outline-danger btn-sm" type="submit">
+                    <i class="fa-solid fa-trash-can me-1"></i> Delete Cached Branch
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <div id="pcSourceJobPanel" class="alert alert-info d-none py-2" role="status" aria-live="polite">
+          <div class="d-flex align-items-center gap-2">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            <div class="fw-semibold" id="pcSourceJobTitle">Refreshing PC Source cache…</div>
+            <div class="ms-auto small text-muted" id="pcSourceJobState"></div>
+          </div>
+          <div class="progress mt-2" style="height: 6px;">
+            <div id="pcSourceJobProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          </div>
+          <div class="mt-2" id="pcSourceJobEvents"></div>
+        </div>
+
+        <div class="alert alert-info py-2 status-context-note">
+          <div class="small">
+            Source: this information is fetched from the Praxis Core GitHub repository
+            {% if github_owner and github_repo %}
+              <code>{{ github_owner }}/{{ github_repo }}</code>.
+            {% elif github_repo %}
+              <code>{{ github_repo }}</code>.
+            {% else %}
+              configured via <code>PS_GITHUB_OWNER</code> and <code>PS_GITHUB_REPO</code>/<code>PC_GENERIC_REPO</code>.
+            {% endif %}
+            {% if github_url %}
+              <a href="{{ github_url }}" target="_blank" rel="noopener">Open repository</a>.
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="row g-4">
+          <div class="col-12">
+            <div class="card tool-panel w-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-solid fa-sliders"></i>
+                <strong>Config</strong>
+              </div>
+              <div class="card-body small">
+                <div class="row g-3">
+                  <div class="col-12">
+                    <details class="status-config-fold" open>
+                      <summary class="status-config-summary">
+                        <i class="fa-solid fa-gauge-high me-2"></i>Runtime
+                      </summary>
+                      <div class="pt-2">
+                        <div class="table-responsive">
+                          <table class="table table-sm align-middle mb-0">
+                            <tbody>
+                              <tr>
+                                <th class="text-muted">Now (UTC)</th>
+                                <td><code>{{ data.now_iso or "—" }}</code></td>
+                              </tr>
+                              <tr>
+                                <th class="text-muted">Refresher Enabled</th>
+                                <td>
+                                  <span class="badge {% if data.config.refresher_enabled %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {% if data.config.refresher_enabled %}Enabled{% else %}Disabled{% endif %}
+                                  </span>
+                                </td>
+                              </tr>
+                              {% if selected_branch %}
+                                <tr>
+                                  <th class="text-muted">Viewing Branch</th>
+                                  <td><code>{{ selected_branch }}</code></td>
+                                </tr>
+                              {% endif %}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div class="col-12">
+                    <details class="status-config-fold">
+                      <summary class="status-config-summary">
+                        <i class="fa-solid fa-clock me-2"></i>Refresh Policy
+                      </summary>
+                      <div class="pt-2">
+                        <ul class="list-unstyled mb-0">
+                          <li><span class="text-muted">Refresh Interval:</span> <code>{{ data.config.refresh_interval_seconds }}s</code></li>
+                          <li class="mt-1"><span class="text-muted">Refresh Branches:</span> <code>{{ (data.config.refresh_branches or [])|join(", ") }}</code></li>
+                          <li class="mt-1"><span class="text-muted">TTL:</span> <code>{{ data.config.ttl_seconds }}s</code></li>
+                        </ul>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div class="col-12">
+                    <details class="status-config-fold">
+                      <summary class="status-config-summary">
+                        <i class="fa-solid fa-folder-tree me-2"></i>Storage
+                      </summary>
+                      <div class="pt-2">
+                        <ul class="list-unstyled mb-0">
+                          <li><span class="text-muted">Cache dir:</span> <code>{{ data.config.cache_dir }}</code></li>
+                        </ul>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div id="pcSourceCachesWrap" class="h-100">
+              {% include "status/pc_source_cache/_caches.html" %}
+            </div>
+          </div>
+        </div>
+
+        <div id="pcSourcePreviewsWrap" class="mt-4">
+          {% include "status/pc_source_cache/_previews.html" %}
+        </div>
+
+  </div>
+{% endblock %}
+
+{% block step_scripts %}
+<script>
+(() => {
+  const selectedBranch = {{ (selected_branch or "")|tojson }};
+  const cachesUrl = {{ url_for('status.pc_source_cache_partials_caches')|tojson }};
+  const previewsUrl = {{ url_for('status.pc_source_cache_partials_previews')|tojson }};
+  const panel = document.getElementById('pcSourceJobPanel');
+  const title = document.getElementById('pcSourceJobTitle');
+  const state = document.getElementById('pcSourceJobState');
+  const progress = document.getElementById('pcSourceJobProgressBar');
+  const events = document.getElementById('pcSourceJobEvents');
+  const forms = document.querySelectorAll('[data-pc-source-refresh-form="1"]');
+
+  const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+  const disableButtons = (disabled) => document.querySelectorAll('[data-pc-source-refresh-btn="1"]').forEach((button) => { button.disabled = disabled; });
+
+  async function refreshContent() {
+    const query = selectedBranch ? `?branch=${encodeURIComponent(selectedBranch)}` : '';
+    const [cachesResponse, previewsResponse] = await Promise.all([
+      fetch(`${cachesUrl}${query}`, {headers: {'Accept': 'text/html'}}),
+      fetch(`${previewsUrl}${query}`, {headers: {'Accept': 'text/html'}}),
+    ]);
+    if (!cachesResponse.ok || !previewsResponse.ok) throw new Error('Unable to reload refreshed cache details');
+    document.getElementById('pcSourceCachesWrap').innerHTML = await cachesResponse.text();
+    document.getElementById('pcSourcePreviewsWrap').innerHTML = await previewsResponse.text();
+  }
+
+  function render(job) {
+    panel.classList.remove('d-none');
+    const jobState = job.state || 'unknown';
+    const total = Number(job.total_steps || 0);
+    const complete = Number(job.completed_steps || 0);
+    const percent = total ? Math.min(100, Math.round((complete * 100) / total)) : 0;
+    state.textContent = jobState;
+    progress.style.width = `${percent}%`;
+    progress.setAttribute('aria-valuenow', String(percent));
+    progress.classList.toggle('bg-success', jobState === 'done' && job.ok === true);
+    progress.classList.toggle('bg-danger', jobState === 'error' || (jobState === 'done' && job.ok === false));
+    const recent = Array.isArray(job.events) ? job.events.slice(-6) : [];
+    events.innerHTML = recent.map((event) => `<div class="small"><span class="badge bg-secondary me-1">${escapeHtml(event.level || 'info')}</span>${escapeHtml(event.message)}</div>`).join('');
+    if (jobState === 'done' || jobState === 'error') {
+      title.textContent = job.ok ? 'PC Source cache refreshed' : 'PC Source refresh completed with errors';
+      disableButtons(false);
+      return true;
+    }
+    return false;
+  }
+
+  async function poll(url) {
+    try {
+      const response = await fetch(url, {headers: {'Accept': 'application/json'}});
+      const job = await response.json();
+      if (!response.ok) throw new Error(job.error || `HTTP ${response.status}`);
+      if (render(job)) {
+        await refreshContent();
+      } else {
+        window.setTimeout(() => poll(url), 700);
+      }
+    } catch (error) {
+      panel.classList.remove('d-none', 'alert-info');
+      panel.classList.add('alert-danger');
+      title.textContent = 'Unable to refresh PC Source cache';
+      state.textContent = error.message;
+      disableButtons(false);
+    }
+  }
+
+  forms.forEach((form) => form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    disableButtons(true);
+    panel.classList.remove('d-none', 'alert-danger');
+    panel.classList.add('alert-info');
+    try {
+      const response = await fetch(form.action, {method: 'POST', body: new FormData(form), headers: {'Accept': 'application/json'}});
+      const job = await response.json();
+      if (!response.ok) throw new Error(job.error || `HTTP ${response.status}`);
+      if (render(job)) {
+        await refreshContent();
+      } else {
+        poll(job.poll_url);
+      }
+    } catch (error) {
+      panel.classList.remove('alert-info');
+      panel.classList.add('alert-danger');
+      title.textContent = 'Unable to start PC Source refresh';
+      state.textContent = error.message;
+      disableButtons(false);
+    }
+  }));
+})();
+</script>
+{% endblock %}

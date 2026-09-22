@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell snow-review-page">
+  {% set hero_title = request_template.title %}
+  {% set hero_subtitle = "Review and adjust the request before it is entered into ServiceNow." %}
+  {% set hero_eyebrow = "ServiceNow Request Preparation" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('environment_readiness.workspace', draft=draft_id) }}"><i class="fa-solid fa-arrow-left"></i> Back to readiness wizard</a>
+
+  {% if notice %}<div class="alert alert-success">{{ notice }}</div>{% endif %}
+  {% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+
+  {% if submission and submission.status == 'pending' %}
+  <div class="alert alert-warning">A submission is in progress or its outcome is unknown. Check ServiceNow for an existing request and attach its reference below. Do not create another request.</div>
+  {% elif submission and submission.request_number %}
+  <div class="alert alert-info">ServiceNow recorded request {{ submission.request_number }}. If it is not attached to this draft, attach that reference below.</div>
+  {% endif %}
+
+  <section class="snow-review-intro">
+    <i class="fa-solid fa-file-pen"></i>
+    <div><h2>Prepared from the readiness draft</h2><p>{{ request_template.description }}</p><p>Review every value. Saving this template or opening the portal does not satisfy the foundation gate; attach the real ServiceNow number after submission.</p></div>
+  </section>
+
+  {% if request_debug_text %}<details class="snow-review-card"><summary>Show generated provenance and component details</summary><p>Current generated details for troubleshooting. These are excluded from the exported request content.</p><pre style="white-space:pre-wrap">{{ request_debug_text }}</pre></details>{% endif %}
+
+  <form method="post" id="serviceNowReviewForm">
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <input type="hidden" name="draft_id" value="{{ draft_id }}">
+    <input type="hidden" name="draft_version" value="{{ data.get('_version', 0) }}">
+    <input type="hidden" name="content_version" value="{{ request_template.get('content_version', '') }}">
+    {% if request_template.get('requires_confirmation') %}<details class="alert alert-warning"><summary>Networking contract decisions still require confirmation; current requirements are preserved.</summary><ul>{% for item in request_template.requires_confirmation %}<li>{{ item }}</li>{% endfor %}</ul></details>{% endif %}
+    {% if request_type == 'ncr' %}<div class="alert alert-info">Automatic submission requires confirmed NCR catalog mappings and character limits. Complete content is sent only to a configured catalog variable; Praxis will report missing configuration before submission.</div>{% endif %}
+    {% if data.get('servicenow_templates', {}).get(request_type, {}).get('needs_review') %}<div class="alert alert-warning">This template predates configuration changes. Compare it with the current draft values below. Updating this template does not update an existing ServiceNow request.</div>{% endif %}
+    <section class="snow-review-card">
+      <div class="snow-review-card__heading"><div><h2>Request template</h2><p>Edit anything that needs clarification before sending.</p></div>{% if request_type != 'ncr' %}<button class="btn btn-outline-primary" id="copyServiceNowTemplate" type="button"><i class="fa-regular fa-copy me-1"></i>Copy template</button>{% endif %}</div>
+      <div class="snow-review-fields">
+        {% for field in request_template.fields %}<div class="snow-review-field{% if field.type == 'textarea' %} is-wide{% endif %}"><label class="form-label" for="template_{{ field.key }}">{{ field.label }}{% if field.key == 'connectivity_manifest' %} <span class="snow-profile-badge"><i class="fa-solid fa-wand-magic-sparkles"></i> Selected automatically for this environment</span>{% endif %}</label>{% if request_type == 'ncr' and field.key == 'connectivity_manifest' %}
+          <div class="snow-requirements-export">
+            <button class="btn btn-outline-primary" id="copyNetworkingRequirements" type="button"><i class="fa-regular fa-copy me-1"></i>Copy text</button>
+            <button class="btn btn-outline-primary" id="downloadNetworkingRequirements" type="button"><i class="fa-solid fa-download me-1"></i>Download .md</button>
+            <span class="form-text">Only the text in this box belongs in the ServiceNow request. Your edits are included.</span>
+            <span id="networkingExportStatus" class="form-text" role="status" aria-live="polite"></span>
+          </div>
+        {% endif %}{% if field.type == 'textarea' %}<textarea class="form-control{% if field.key == 'connectivity_manifest' %} snow-connectivity-manifest{% endif %}" id="template_{{ field.key }}" name="template_{{ field.key }}" rows="{% if field.key == 'connectivity_manifest' %}18{% else %}4{% endif %}" required>{{ field.value }}</textarea>{% else %}<input class="form-control" id="template_{{ field.key }}" name="template_{{ field.key }}" type="{{ field.type }}" value="{{ field.value }}" required>{% endif %}{% if field.current_value is defined and field.current_value != field.value %}<details class="form-text"><summary>Current draft value differs</summary><pre style="white-space:pre-wrap">{{ field.current_value }}</pre></details>{% endif %}{% if field.key == 'connectivity_manifest' %}<div class="form-text">The latest published networking template is selected automatically for this environment. No template URL or version selection is needed.</div>{% endif %}</div>{% endfor %}
+      </div>
+      <div class="snow-review-actions"><button class="btn btn-outline-secondary" type="submit" name="review_action" value="refresh_template" formnovalidate>Regenerate from environment</button><button class="btn btn-outline-primary" type="submit" name="review_action" value="save_review"><i class="fa-solid fa-floppy-disk me-1"></i>Save review</button>{% if servicenow[request_type] %}<button class="btn btn-success" type="submit" name="review_action" value="submit_oauth"><i class="fa-solid fa-paper-plane me-1"></i>Submit to ServiceNow</button>{% else %}<button class="btn btn-secondary" type="button" disabled title="OAuth and the catalog item are not configured"><i class="fa-solid fa-lock me-1"></i>OAuth submission unavailable</button>{% endif %}</div>
+    </section>
+
+    <section class="snow-manual-card">
+      <div class="snow-manual-card__heading"><i class="fa-solid fa-arrow-up-right-from-square"></i><div><h2>Manual ServiceNow handoff</h2><p>Use this until Praxis’s OAuth integration and catalog mappings are available.</p></div></div>
+      {% if submission %}<p>Check the existing submission in <a href="{{ servicenow.portal_url }}" target="_blank" rel="noopener noreferrer">ServiceNow</a>, then attach its reference below.</p>{% else %}<ol><li>{% if request_type == 'ncr' %}Copy or download the Networking requirements text above.{% else %}Copy the prepared template above.{% endif %}</li><li><a href="{{ servicenow.portal_url }}" target="_blank" rel="noopener noreferrer">Open the PRAXIS ServiceNow portal</a> and create the correct service request.</li><li>{% if request_type == 'ncr' %}Paste the copied text or attach the downloaded Markdown file as the request content, submit it, then return with the real REQ/RITM/SCTASK number.{% else %}Paste the template into the request, submit it, then return with the real REQ/RITM/SCTASK number.{% endif %}</li></ol>{% endif %}
+      <div class="row g-3 align-items-end"><div class="col-md-4"><label class="form-label" for="manualReference">ServiceNow reference</label><input class="form-control" id="manualReference" name="manual_reference" placeholder="REQ, RITM, or SCTASK number" data-uppercase-ticket></div><div class="col-md-6"><label class="form-label" for="manualReferenceUrl">Direct request link <span class="text-muted small">Optional</span></label><input class="form-control" id="manualReferenceUrl" name="manual_reference_url" type="url" placeholder="https://servicenow.example.com/..."></div><div class="col-md-2"><button class="btn btn-primary w-100" type="submit" name="review_action" value="attach_manual">Attach request</button></div></div>
+    </section>
+  </form>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll("[data-uppercase-ticket]").forEach((input) => input.addEventListener("blur", () => { input.value = input.value.trim().toUpperCase(); }));
+  const requirements = document.getElementById("template_connectivity_manifest");
+  const exportStatus = document.getElementById("networkingExportStatus");
+  document.getElementById("copyNetworkingRequirements")?.addEventListener("click", async () => {
+    const text = requirements.value;
+    try {
+      await navigator.clipboard.writeText(text);
+      exportStatus.textContent = "Networking requirements copied.";
+    } catch (_error) {
+      requirements.focus();
+      requirements.select();
+      exportStatus.textContent = "Clipboard unavailable. Networking requirements selected; press Ctrl+C or Command+C to copy.";
+    }
+  });
+  document.getElementById("downloadNetworkingRequirements")?.addEventListener("click", () => {
+    const blob = new Blob([requirements.value], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const filenamePart = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100);
+    const environment = filenamePart(document.getElementById("template_environment_name")?.value || "") || "environment";
+    const architecture = filenamePart(document.getElementById("template_setup_type")?.value || {{ data.get('setup_type', '')|tojson }}).replace(/^catalyst-/, "") || "network";
+    link.download = `${environment}-${architecture}-networking-request.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    exportStatus.textContent = "Networking requirements download started.";
+  });
+  document.getElementById("copyServiceNowTemplate")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const fields = [...document.querySelectorAll("#serviceNowReviewForm [name^='template_']")];
+    const text = fields.map((field) => `${field.closest('.snow-review-field')?.querySelector('label')?.textContent.trim() || field.name}\n${field.value || '-'}\n`).join("\n");
+    try { await navigator.clipboard.writeText(text); button.innerHTML = '<i class="fa-solid fa-check me-1"></i>Copied'; window.setTimeout(() => { button.innerHTML = '<i class="fa-regular fa-copy me-1"></i>Copy template'; }, 1500); }
+    catch (_error) { window.prompt("Copy this ServiceNow request template", text); }
+  });
+});
+</script>
+
+<style>
+.snow-review-page { margin:0 auto; }.snow-review-intro { display:flex; gap:.8rem; margin:1rem 0; padding:1rem; border:1px solid var(--accent-blue-border,var(--border-default)); border-radius:.85rem; background:var(--accent-blue-bg); }.snow-review-intro>i { margin-top:.2rem; color:var(--accent-blue); }.snow-review-intro h2,.snow-review-card h2,.snow-manual-card h2 { margin:0; font-size:1rem; }.snow-review-intro p,.snow-review-card p,.snow-manual-card p { margin:.25rem 0 0; color:var(--text-secondary); font-size:.8rem; }
+.snow-review-card,.snow-manual-card { margin-top:1rem; padding:1rem; border:1px solid var(--border-default); border-radius:1rem; background:var(--bg-surface); }.snow-review-card__heading { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }.snow-review-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }.snow-review-field.is-wide { grid-column:1/-1; }.snow-review-actions { display:flex; justify-content:flex-end; gap:.65rem; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-subtle); }
+.snow-requirements-export { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin-bottom:.5rem; }.snow-requirements-export .form-text { margin:0; }
+.snow-profile-badge { display:inline-flex; align-items:center; gap:.25rem; margin-left:.35rem; padding:.15rem .4rem; border-radius:999px; background:var(--accent-blue-bg); color:var(--accent-blue); font-size:.65rem; font-weight:700; }.snow-connectivity-manifest { font-family:var(--font-monospace,monospace); font-size:.74rem; line-height:1.45; }
+.snow-manual-card { border-color:var(--accent-amber-border); }.snow-manual-card__heading { display:flex; gap:.65rem; }.snow-manual-card__heading>i { margin-top:.2rem; color:var(--accent-amber); }.snow-manual-card ol { margin:1rem 0; color:var(--text-secondary); font-size:.82rem; }.snow-ncr-helper { padding:.7rem; border-radius:.65rem; background:var(--bg-elevated); }
+@media(max-width:800px){.snow-review-fields { grid-template-columns:1fr 1fr; }}@media(max-width:560px){.snow-review-fields { grid-template-columns:1fr; }.snow-review-field.is-wide { grid-column:auto; }.snow-review-card__heading,.snow-review-actions { align-items:stretch; flex-direction:column; }}
+</style>
+{% endblock %}

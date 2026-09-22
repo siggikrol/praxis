@@ -1,0 +1,233 @@
+{% extends "wizard_step.html" %}
+
+{% block step_body %}
+  {# Jinja 3.x doesn't let assignments inside loops escape to the outer scope. #}
+  {% set ns = namespace(meta=none) %}
+  {% for f in form if f.type == 'FormField' %}
+    {% if ns.meta is none and f.form._redis_node_types_meta is defined %}
+      {% set ns.meta = f.form._redis_node_types_meta %}
+    {% endif %}
+  {% endfor %}
+  {% set _meta = ns.meta %}
+
+  <div class="mb-3">
+    <div class="alert alert-info py-2 mb-2 w-100 wizard-inline-alert">
+      <div class="small">
+        Node types are fetched from the AWS ElastiCache API and cached (24h by default).
+        {% if _meta is not none %}
+          {% set _src_class = "bg-success" if _meta.source == "aws_cache" else "bg-warning text-dark" %}
+          {% set _state_class = "bg-warning text-dark" if _meta.stale else "bg-success" %}
+          <span class="badge {{ _src_class }} ms-2" title="{{ _meta.cache_path }}">source={{ _meta.source }}</span>
+          <span class="badge bg-secondary ms-1">region={{ _meta.region }}</span>
+          <span class="badge bg-secondary ms-1">count={{ _meta.count }}</span>
+          <span class="badge {{ _state_class }} ms-1">{{ "stale" if _meta.stale else "fresh" }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="d-flex justify-content-end gap-2">
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, redis_node_types_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh node types
+      </a>
+    </div>
+  </div>
+
+  {{ super() }}
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const LEGACY_GENERATION_CUTOFF = {
+      t: 2,
+      m: 4,
+      c: 4,
+      r: 4,
+    };
+
+    function setSelectHealth(selectEl, noteEl, level, message) {
+      if (!selectEl || !noteEl) return;
+      selectEl.classList.remove("ps-health-warning", "ps-health-danger");
+      noteEl.classList.remove("ps-health-note-warning", "ps-health-note-danger");
+      noteEl.textContent = "";
+      noteEl.style.display = "none";
+      selectEl.removeAttribute("title");
+
+      if (level === "warning") {
+        selectEl.classList.add("ps-health-warning");
+        noteEl.classList.add("ps-health-note-warning");
+        noteEl.textContent = message || "A newer option is available.";
+        noteEl.style.display = "block";
+        selectEl.title = noteEl.textContent;
+        return;
+      }
+      if (level === "danger") {
+        selectEl.classList.add("ps-health-danger");
+        noteEl.classList.add("ps-health-note-danger");
+        noteEl.textContent = message || "Selected option is deprecated.";
+        noteEl.style.display = "block";
+        selectEl.title = noteEl.textContent;
+      }
+    }
+
+    function parseInstanceType(value) {
+      const raw = String(value || "").trim().toLowerCase();
+      if (!raw) return { prefix: "cache", family: "", size: "" };
+      const parts = raw.split(".");
+      if (parts.length >= 3 && (parts[0] === "db" || parts[0] === "cache")) {
+        return { prefix: parts[0], family: parts[1], size: parts.slice(2).join(".") };
+      }
+      if (parts.length >= 2) {
+        return { prefix: "cache", family: parts[0], size: parts.slice(1).join(".") };
+      }
+      return { prefix: "cache", family: raw, size: "" };
+    }
+
+    function parseFamilyToken(family) {
+      const raw = String(family || "").trim().toLowerCase();
+      const m = raw.match(/^([a-z]+)(\d+)([a-z0-9]*)$/);
+      if (!m) return null;
+      return {
+        family: raw,
+        root: m[1],
+        generation: Number(m[2]),
+        suffix: m[3] || "",
+      };
+    }
+
+    function archClassForSuffix(suffix) {
+      const s = String(suffix || "").toLowerCase();
+      return s.includes("g") ? "arm" : "x86";
+    }
+
+    function buildFamilyInventory(selectEl) {
+      const byRoot = new Map();
+      Array.from(selectEl.options).forEach((opt) => {
+        const parsed = parseInstanceType(opt.value);
+        const token = parseFamilyToken(parsed.family);
+        if (!token) return;
+        if (!byRoot.has(token.root)) {
+          byRoot.set(token.root, { generations: new Set(), families: new Map() });
+        }
+        const entry = byRoot.get(token.root);
+        entry.generations.add(token.generation);
+        if (!entry.families.has(token.family)) {
+          entry.families.set(token.family, token);
+        }
+      });
+      return byRoot;
+    }
+
+    function compareCandidateFamilies(a, b, selectedToken) {
+      const da = a.generation - selectedToken.generation;
+      const db = b.generation - selectedToken.generation;
+      if (da !== db) return da - db;
+
+      const selectedArch = archClassForSuffix(selectedToken.suffix);
+      const archA = archClassForSuffix(a.suffix);
+      const archB = archClassForSuffix(b.suffix);
+      if (archA !== archB) {
+        if (archA === selectedArch) return -1;
+        if (archB === selectedArch) return 1;
+        return archA === "x86" ? -1 : 1;
+      }
+      return a.family.localeCompare(b.family);
+    }
+
+    function pickReplacementInstanceType(parsed, selectedToken, rootEntry, availableValues) {
+      const families = Array.from(rootEntry.families.values())
+        .filter((token) => token.generation > selectedToken.generation)
+        .sort((a, b) => compareCandidateFamilies(a, b, selectedToken));
+
+      for (const candidate of families) {
+        const exact = `${parsed.prefix}.${candidate.family}.${parsed.size}`;
+        if (availableValues.has(exact)) return exact;
+      }
+      return "";
+    }
+
+    function analyzeInstanceTypeHealth(value, familyInventory, availableValues) {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (!normalized) return null;
+
+      const parsed = parseInstanceType(normalized);
+      const selectedToken = parseFamilyToken(parsed.family);
+      if (!selectedToken || !parsed.size) return null;
+
+      const rootEntry = familyInventory.get(selectedToken.root);
+      if (!rootEntry) return null;
+
+      const generations = Array.from(rootEntry.generations.values()).sort((a, b) => a - b);
+      const maxGeneration = generations.length ? generations[generations.length - 1] : selectedToken.generation;
+      if (maxGeneration <= selectedToken.generation) return null;
+
+      const cutoff = LEGACY_GENERATION_CUTOFF[selectedToken.root];
+      const isLegacy = Number.isInteger(cutoff) && selectedToken.generation <= cutoff;
+      const replacement = pickReplacementInstanceType(parsed, selectedToken, rootEntry, availableValues);
+      return {
+        level: isLegacy ? "danger" : "warning",
+        replacement,
+      };
+    }
+
+    function attachRedisInstanceTypeHealth() {
+      const selects = Array.from(document.querySelectorAll('select[name$="redis_instance_type"]'));
+      selects.forEach((selectEl) => {
+        const noteId = `${selectEl.id}-health-note`;
+        let noteEl = document.getElementById(noteId);
+        if (!noteEl) {
+          noteEl = document.createElement("div");
+          noteEl.id = noteId;
+          noteEl.className = "ps-health-note";
+          selectEl.insertAdjacentElement("afterend", noteEl);
+        }
+
+        const availableValues = new Set(
+          Array.from(selectEl.options)
+            .map((opt) => String(opt.value || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
+        const familyInventory = buildFamilyInventory(selectEl);
+
+        const evaluate = () => {
+          const value = String(selectEl.value || "").trim().toLowerCase();
+          if (!value) {
+            setSelectHealth(selectEl, noteEl, "", "");
+            return;
+          }
+
+          const finding = analyzeInstanceTypeHealth(value, familyInventory, availableValues);
+          if (!finding) {
+            setSelectHealth(selectEl, noteEl, "", "");
+            return;
+          }
+
+          if (finding.level === "danger") {
+            setSelectHealth(
+              selectEl,
+              noteEl,
+              "danger",
+              finding.replacement
+                ? `Legacy instance type selected. Suggested replacement: ${finding.replacement}.`
+                : "Legacy instance type selected. Newer generation exists."
+            );
+            return;
+          }
+
+          setSelectHealth(
+            selectEl,
+            noteEl,
+            "warning",
+            finding.replacement
+              ? `Older instance type selected. Suggested replacement: ${finding.replacement}.`
+              : "Older instance type selected. Newer generation exists."
+          );
+        };
+
+        selectEl.addEventListener("change", evaluate);
+        evaluate();
+      });
+    }
+
+    attachRedisInstanceTypeHealth();
+  });
+  </script>
+{% endblock %}

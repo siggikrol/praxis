@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% set title = "Compare IAC Archives" %}
+{% set subtitle = key_a ~ " vs " ~ key_b %}
+
+<div class="page-shell artiac-page">
+
+  {% set hero_title = title %}
+  {% set hero_subtitle = subtitle %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('iac_artifacts_explorer.list_view', module=request.args.get('module'), version=request.args.get('version')) }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Archives
+  </a>
+  {% set current_artiac_page = "archives" %}
+  {% include "artiac_control/_subnav.html" %}
+
+  <div class="tool-panel tool-panel--compact">
+    <div class="row g-4 small">
+      <div class="col-lg-6">
+        <div class="tool-toolbar__label mb-1">Archive A</div>
+        <div class="fw-semibold">{{ identity_a.module }} · v{{ identity_a.version }}</div>
+        <div class="text-muted">{{ metadata_a.modified }} · {{ metadata_a.size }} bytes</div>
+      </div>
+      <div class="col-lg-6">
+        <div class="tool-toolbar__label mb-1">Archive B</div>
+        <div class="fw-semibold">{{ identity_b.module }} · v{{ identity_b.version }}</div>
+        <div class="text-muted">{{ metadata_b.modified }} · {{ metadata_b.size }} bytes</div>
+      </div>
+    </div>
+    <div class="tool-inline-summary mb-0 mt-3">
+      {% if identity_a.module == identity_b.module %}
+        Version transition: <strong>{{ identity_a.version }} → {{ identity_b.version }}</strong>
+      {% else %}
+        Cross-module comparison: <strong>{{ identity_a.module }} → {{ identity_b.module }}</strong>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="artiac-compare-summary">
+    <div class="artiac-catalog-stat">
+      <strong>{{ comparison_summary.total }}</strong>
+      <span>files considered</span>
+    </div>
+    <div class="artiac-catalog-stat is-added">
+      <strong>{{ comparison_summary.added }}</strong>
+      <span>added</span>
+    </div>
+    <div class="artiac-catalog-stat is-error">
+      <strong>{{ comparison_summary.removed }}</strong>
+      <span>removed</span>
+    </div>
+    <div class="artiac-catalog-stat is-warning">
+      <strong>{{ comparison_summary.modified }}</strong>
+      <span>modified</span>
+    </div>
+    <div class="artiac-catalog-stat">
+      <strong>{{ comparison_summary.unchanged }}</strong>
+      <span>unchanged</span>
+    </div>
+  </div>
+
+  {% if all_files %}
+    <div class="card tool-panel tool-panel--flush">
+      <div class="card-header">
+        <div class="tool-panel__heading">
+          <i class="fa-solid fa-code-compare"></i>
+          <div>
+            <div class="tool-panel__title">Archive Diff</div>
+            <div class="tool-panel__meta">{{ diff_summary }}</div>
+          </div>
+        </div>
+        <div class="tool-toolbar__group">
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="onlyChangesToggle">
+            <label class="form-check-label" for="onlyChangesToggle">Show only changed lines</label>
+          </div>
+          <label class="small text-muted" for="fileSelect">File</label>
+          <select id="fileSelect" class="form-select form-select-sm">
+            {% for f in all_files %}
+              <option value="{{ f }}" {% if f == selected_file %}selected{% endif %}>[{{ file_states.get(f, 'unchanged') }}] {{ f }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-bordered table-sm diff-table mb-0">
+            <thead class="table-light">
+              <tr>
+                <th class="w-50">A: {{ key_a }}</th>
+                <th class="w-50">B: {{ key_b }}</th>
+              </tr>
+            </thead>
+            <tbody id="diffBody">
+              {% for row in diff_rows %}
+              <tr class="diff-row {{ row.css }}" data-changed="{{ '1' if row.css else '0' }}">
+                <td class="diff-left"><pre>{{ row.a|safe }}</pre></td>
+                <td class="diff-right"><pre>{{ row.b|safe }}</pre></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="alert alert-warning">Neither archive contains files.</div>
+  {% endif %}
+
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const toggle = document.getElementById("onlyChangesToggle");
+  const rows = document.querySelectorAll(".diff-row");
+  if (toggle) {
+    toggle.addEventListener("change", () => {
+      const showOnlyChanged = toggle.checked;
+      rows.forEach(row => {
+        const changed = row.dataset.changed === "1";
+        if (showOnlyChanged && !changed) {
+          row.style.display = "none";
+        } else {
+          row.style.display = "";
+        }
+      });
+    });
+  }
+
+  const fileSelect = document.getElementById("fileSelect");
+  if (fileSelect) {
+    fileSelect.addEventListener("change", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("file", fileSelect.value);
+      window.location.href = url.toString();
+    });
+  }
+});
+</script>
+
+{% endblock %}

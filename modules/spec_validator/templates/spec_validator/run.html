@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-shell">
+  {% set hero_title = "Praxis Core Validation Run" %}
+  {% set hero_subtitle = source_label ~ " | Job: " ~ job.job_id %}
+  {% set hero_eyebrow = "Spec Workbench" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ index_url }}">
+    <i class="fa-solid fa-arrow-left"></i> {{ back_label }}
+  </a>
+
+  <div class="tool-panel tool-panel--compact">
+    <div class="tool-toolbar mb-0">
+      <div>
+        <div class="tool-panel__title">Full Validation</div>
+        <div class="tool-panel__subtitle">Praxis Core is checking the saved draft snapshot.</div>
+      </div>
+      <div class="tool-toolbar__group">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('tools') }}">
+          <i class="fa-solid fa-screwdriver-wrench me-1"></i> Tools
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card tool-panel spec-run-card">
+    <div class="card-body">
+      <div class="spec-run-summary" id="runSummary" role="status" aria-live="polite">
+        <span class="spec-run-summary__icon" id="runIcon"><i class="fa-solid fa-spinner fa-spin"></i></span>
+        <div class="spec-run-summary__copy">
+          <h3 id="runTitle" class="h5 mb-1">Validation is running</h3>
+          <div id="runMessage" class="text-muted">You can keep this page open while Praxis Core checks the draft.</div>
+          <div id="runReturnNotice" class="small text-muted mt-2 d-none"></div>
+        </div>
+        <div id="runState" class="badge text-bg-secondary">{{ job.state }}</div>
+      </div>
+      <div class="progress mt-2" style="height: 0.6rem;">
+        <div id="runProgress"
+             class="progress-bar progress-bar-striped progress-bar-animated"
+             role="progressbar"
+             aria-valuemin="0"
+             aria-valuemax="100"
+             aria-valuenow="0"
+             style="width:0%;"></div>
+      </div>
+
+      <div id="runError" class="alert alert-danger py-2 mt-3 d-none mb-0"></div>
+
+      <div id="runActions" class="d-flex flex-wrap gap-2 mt-3">
+        <a id="runPrimaryAction" class="btn btn-primary d-none" href="{{ index_url }}">Return to Draft</a>
+        <button id="runStayButton" type="button" class="btn btn-outline-secondary d-none">Stay on this page</button>
+      </div>
+
+      <details class="spec-run-technical mt-4">
+        <summary>Technical Details</summary>
+        <div class="spec-run-technical__body">
+          <div class="small text-muted mb-3">
+            Job <code>{{ job.job_id }}</code>
+            <span id="runMeta"></span>
+          </div>
+          <div>
+            <div class="fw-semibold mb-1">Events</div>
+            <div id="runEvents" class="small"></div>
+          </div>
+          <div id="runFullErrorSection" class="mt-3 d-none">
+            <div class="fw-semibold mb-1">Full Error</div>
+            <pre id="runFullError" class="tool-code-block run-log-pre mb-0"></pre>
+          </div>
+          <div class="mt-3">
+            <div class="fw-semibold mb-1">Core Logs</div>
+            <pre id="runLog" class="tool-code-block run-log-pre mb-0"></pre>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<style>
+.run-log-pre {
+  max-height: 520px;
+}
+
+.spec-run-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.spec-run-summary__icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: var(--accent-blue);
+  background: var(--accent-blue-bg);
+  border: 1px solid var(--accent-blue-border);
+}
+
+.spec-run-summary__copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.spec-run-technical {
+  border-top: 1px solid var(--border-default);
+  padding-top: 1rem;
+}
+
+.spec-run-technical > summary {
+  cursor: pointer;
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.spec-run-technical__body {
+  padding-top: 1rem;
+}
+
+@media (max-width: 575.98px) {
+  .spec-run-summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+</style>
+{% endblock %}
+
+{% block step_scripts %}
+<script>
+(() => {
+  const initialJob = {{ job|tojson }};
+  const statusUrl = {{ status_url|tojson }};
+  const draftUrl = {{ index_url|tojson }};
+  const hasDraft = {{ has_draft|tojson }};
+
+  const runState = document.getElementById("runState");
+  const runProgress = document.getElementById("runProgress");
+  const runIcon = document.getElementById("runIcon");
+  const runTitle = document.getElementById("runTitle");
+  const runMessage = document.getElementById("runMessage");
+  const runReturnNotice = document.getElementById("runReturnNotice");
+  const runPrimaryAction = document.getElementById("runPrimaryAction");
+  const runStayButton = document.getElementById("runStayButton");
+  const runMeta = document.getElementById("runMeta");
+  const runError = document.getElementById("runError");
+  const runFullErrorSection = document.getElementById("runFullErrorSection");
+  const runFullError = document.getElementById("runFullError");
+  const runEvents = document.getElementById("runEvents");
+  const runLog = document.getElementById("runLog");
+  let returnTimer = 0;
+  let returnCountdownTimer = 0;
+
+  function summarizeError(error) {
+    const cleaned = String(error || "")
+      .split("HTTP response headers:")[0]
+      .split("HTTP response body:")[0]
+      .trim();
+    if (!cleaned) return "Praxis Core could not validate this draft.";
+    return cleaned.length > 420 ? `${cleaned.slice(0, 417)}...` : cleaned;
+  }
+
+  function cancelAutoReturn() {
+    if (returnTimer) window.clearTimeout(returnTimer);
+    if (returnCountdownTimer) window.clearInterval(returnCountdownTimer);
+    returnTimer = 0;
+    returnCountdownTimer = 0;
+    runReturnNotice?.classList.add("d-none");
+    runStayButton?.classList.add("d-none");
+  }
+
+  function scheduleDraftReturn() {
+    if (!hasDraft || returnTimer) return;
+    let seconds = 5;
+    runReturnNotice?.classList.remove("d-none");
+    runStayButton?.classList.remove("d-none");
+    if (runReturnNotice) runReturnNotice.textContent = `Returning to the draft in ${seconds} seconds…`;
+    returnCountdownTimer = window.setInterval(() => {
+      seconds -= 1;
+      if (runReturnNotice) runReturnNotice.textContent = `Returning to the draft in ${Math.max(0, seconds)} seconds…`;
+    }, 1000);
+    returnTimer = window.setTimeout(() => {
+      window.location.assign(draftUrl);
+    }, 5000);
+  }
+
+  runStayButton?.addEventListener("click", cancelAutoReturn);
+
+  function escapeHtml(s) {
+    return (s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function pct(job) {
+    const total = Number(job.total_steps || 0);
+    const done = Number(job.completed_steps || 0);
+    if (!total) {
+      if ((job.state || "") === "running") return 45;
+      if ((job.state || "") === "done" || (job.state || "") === "error") return 100;
+      return 0;
+    }
+    return Math.max(0, Math.min(100, Math.round((done * 100) / total)));
+  }
+
+  function render(job) {
+    const state = job.state || "unknown";
+    const ok = job.ok;
+
+    if (runState) {
+      runState.textContent = ok === true ? "Passed" : ok === false || state === "error" ? "Failed" : "Running";
+      runState.className = `badge ${ok === true ? "text-bg-success" : (ok === false || state === "error" ? "text-bg-danger" : "text-bg-secondary")}`;
+    }
+    if (runProgress) {
+      const p = pct(job);
+      runProgress.style.width = `${p}%`;
+      runProgress.setAttribute("aria-valuenow", String(p));
+      runProgress.classList.remove("bg-danger", "bg-success");
+      if (state === "error" || (state === "done" && ok === false)) {
+        runProgress.classList.add("bg-danger");
+      } else if (state === "done" && ok === true) {
+        runProgress.classList.add("bg-success");
+      }
+      runProgress.classList.toggle("progress-bar-animated", state !== "done" && state !== "error");
+    }
+    if (runMeta) {
+      const image = job.image || "-";
+      const ns = (job.k8s || {}).namespace || "-";
+      const pod = (job.k8s || {}).pod_name || "-";
+      runMeta.textContent = ` · Image ${image} · Namespace ${ns} · Pod ${pod}`;
+    }
+    if (runError) {
+      const err = job.error || "";
+      runError.textContent = summarizeError(err);
+      runError.classList.toggle("d-none", !err);
+      runFullErrorSection?.classList.toggle("d-none", !err);
+      if (runFullError) runFullError.textContent = err;
+    }
+    if (runEvents) {
+      const evs = Array.isArray(job.events) ? job.events : [];
+      if (!evs.length) {
+        runEvents.innerHTML = '<div class="text-muted">No activity yet.</div>';
+      } else {
+        runEvents.innerHTML = evs.map((e) => {
+          const ts = e.ts_epoch ? new Date(e.ts_epoch * 1000).toISOString() : "";
+          const lvl = (e.level || "info").toLowerCase();
+          const badgeClass = lvl === "error"
+            ? "bg-danger"
+            : (lvl === "warning" ? "bg-warning text-dark" : "bg-secondary");
+          return (
+            `<div class="d-flex align-items-start gap-2 mb-1">` +
+              `<span class="badge ${badgeClass}">${escapeHtml(lvl)}</span>` +
+              `<code class="text-muted">${escapeHtml(ts)}</code>` +
+              `<span>${escapeHtml(e.message || "")}</span>` +
+            `</div>`
+          );
+        }).join("");
+      }
+    }
+    if (runLog) {
+      runLog.textContent = job.log_tail || "";
+    }
+
+    const passed = state === "done" && ok === true;
+    const failed = state === "error" || (state === "done" && ok === false);
+    if (passed) {
+      if (runIcon) runIcon.innerHTML = '<i class="fa-solid fa-check"></i>';
+      if (runTitle) runTitle.textContent = "Full validation passed";
+      if (runMessage) runMessage.textContent = "This saved draft revision passed Praxis Core validation and can continue toward publication.";
+      if (runPrimaryAction) {
+        runPrimaryAction.textContent = hasDraft ? "Continue to Draft" : "Return to Spec Workbench";
+        runPrimaryAction.href = draftUrl;
+        runPrimaryAction.classList.remove("d-none");
+      }
+      scheduleDraftReturn();
+    } else if (failed) {
+      cancelAutoReturn();
+      if (runIcon) runIcon.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+      if (runTitle) runTitle.textContent = "Full validation failed";
+      if (runMessage) runMessage.textContent = "Return to the draft, fix the reported issue, and run full validation again.";
+      if (runPrimaryAction) {
+        runPrimaryAction.textContent = hasDraft ? "Return to Draft and Fix Issues" : "Return to Spec Workbench";
+        runPrimaryAction.href = draftUrl;
+        runPrimaryAction.classList.remove("d-none");
+      }
+    }
+  }
+
+  async function poll() {
+    while (true) {
+      const resp = await fetch(statusUrl, {
+        headers: { "Accept": "application/json", "Cache-Control": "no-store" },
+      });
+      const job = await resp.json();
+      render(job);
+      if ((job.state === "done") || (job.state === "error")) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  render(initialJob || {});
+  if ((initialJob.state || "") !== "done" && (initialJob.state || "") !== "error") {
+    poll().catch((err) => {
+      if (runError) {
+        runError.textContent = String(err || "Polling failed");
+        runError.classList.remove("d-none");
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

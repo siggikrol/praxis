@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-shell status-page">
+
+    {% set hero_title = "AWS Catalog Cache" %}
+    {% set hero_subtitle = "Disk-backed caches for wizard dropdowns and options" %}
+    {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('status.index') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Status Hub
+  </a>
+
+    {% set current_status_page = "aws_catalogs" %}
+    {% include "status/_subnav.html" %}
+
+        <div class="tool-panel tool-panel--compact">
+          <div class="tool-toolbar mb-0">
+          <div>
+            <div class="tool-panel__title">Cache Controls</div>
+            <div class="tool-panel__subtitle">Filter catalog entries or refresh their AWS source data.</div>
+          </div>
+          <div class="tool-toolbar__group">
+          <form method="get" action="{{ url_for('status.aws_catalogs') }}" class="d-flex align-items-center gap-2">
+            <label for="awsCatalogRegion" class="tool-toolbar__label mb-0">Region</label>
+            <select id="awsCatalogRegion"
+                    name="region"
+                    class="form-select form-select-sm tool-filter-select"
+                    onchange="this.form.submit()">
+              <option value="" {% if not selected_region %}selected{% endif %}>Configured + cached</option>
+              {% for r in (all_regions or []) %}
+                <option value="{{ r }}" {% if selected_region == r %}selected{% endif %}>{{ r }}</option>
+              {% endfor %}
+            </select>
+            {% if selected_region %}
+              <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('status.aws_catalogs') }}">Clear</a>
+            {% endif %}
+          </form>
+
+          <div class="d-flex flex-wrap gap-2">
+            {% if selected_region %}
+              <form method="post" action="{{ url_for('status.aws_catalogs_job_start') }}" class="d-inline" data-aws-catalog-refresh-form="1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="catalog" value="all">
+                <input type="hidden" name="region" value="{{ selected_region }}">
+                <button class="btn btn-primary btn-sm" type="submit" data-aws-catalog-refresh-btn="1">
+                  <i class="fa-solid fa-rotate me-1"></i> Refresh Selected Region
+                </button>
+              </form>
+            {% endif %}
+            <form method="post" action="{{ url_for('status.aws_catalogs_job_start') }}" class="d-inline" data-aws-catalog-refresh-form="1">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="catalog" value="all">
+              <button class="btn {% if selected_region %}btn-outline-primary{% else %}btn-primary{% endif %} btn-sm" type="submit" data-aws-catalog-refresh-btn="1">
+                <i class="fa-solid fa-rotate me-1"></i> Refresh Configured Regions
+              </button>
+            </form>
+          </div>
+          </div>
+        </div>
+        </div>
+
+        <div id="awsCatalogJobPanel" class="alert alert-info d-none py-2">
+          <div class="d-flex align-items-center gap-2">
+            <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+            <div class="fw-semibold" id="awsCatalogJobTitle">Refreshing AWS catalogs…</div>
+            <div class="ms-auto small text-muted" id="awsCatalogJobState"></div>
+          </div>
+          <div class="progress mt-2" style="height: 6px;">
+            <div id="awsCatalogJobProgressBar"
+                 class="progress-bar progress-bar-striped progress-bar-animated"
+                 role="progressbar"
+                 style="width: 0%;"
+                 aria-valuemin="0"
+                 aria-valuemax="100"
+                 aria-valuenow="0"></div>
+          </div>
+          <div class="mt-2" id="awsCatalogJobEvents"></div>
+          <details class="mt-2">
+            <summary class="small text-muted">Details</summary>
+            <pre id="awsCatalogJobJson" class="tool-code-block tool-scroll tool-scroll--sm small mt-2"></pre>
+          </details>
+        </div>
+
+        {% if last_refresh %}
+          <div class="alert {% if last_refresh.error %}alert-danger{% else %}alert-success{% endif %} py-2">
+            <div class="fw-semibold">Last refresh</div>
+            <div class="small text-muted mb-2">
+              catalog=<code>{{ last_refresh.catalog }}</code>
+              regions=<code>{{ (last_refresh.regions or [])|join(", ") }}</code>
+              {% if last_refresh.engine %}engine=<code>{{ last_refresh.engine }}</code>{% endif %}
+            </div>
+            <pre class="tool-code-block tool-scroll tool-scroll--sm small">{{ last_refresh|tojson(indent=2) }}</pre>
+          </div>
+        {% endif %}
+
+        <div class="row g-4">
+          <div class="col-12">
+            <div class="card tool-panel h-100 w-100">
+              <div class="card-header d-flex align-items-center gap-2">
+                <i class="fa-solid fa-sliders"></i>
+                <strong>Config</strong>
+              </div>
+              <div class="card-body small">
+                <div class="row g-3">
+                  <div class="col-12">
+                    <details class="status-config-fold" open>
+                      <summary class="status-config-summary">
+                        <i class="fa-solid fa-gauge-high me-2"></i>Runtime
+                      </summary>
+                      <div class="pt-2">
+                        <div class="table-responsive">
+                          <table class="table table-sm align-middle mb-0">
+                            <tbody>
+                              <tr>
+                                <th class="text-muted">Now (UTC)</th>
+                                <td><code>{{ data.now_iso or "—" }}</code></td>
+                              </tr>
+                              <tr>
+                                <th class="text-muted">Refresher Enabled</th>
+                                <td>
+                                  <span class="badge {% if data.config.refresher_enabled %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {% if data.config.refresher_enabled %}Enabled{% else %}Disabled{% endif %}
+                                  </span>
+                                </td>
+                              </tr>
+                              <tr>
+                                <th class="text-muted">Refresh Interval</th>
+                                <td><code>{{ data.config.refresh_interval_seconds }}s</code></td>
+                              </tr>
+                              <tr>
+                                <th class="text-muted">Regions</th>
+                                <td><code>{{ (data.config.refresh_regions or [])|join(", ") }}</code></td>
+                              </tr>
+                              {% if selected_region %}
+                                <tr>
+                                  <th class="text-muted">Viewing Region</th>
+                                  <td><code>{{ selected_region }}</code></td>
+                                </tr>
+                              {% endif %}
+                              <tr>
+                                <th class="text-muted">Aurora Engine</th>
+                                <td><code>{{ data.config.default_aurora_engine }}</code></td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div class="col-12">
+                    <details class="status-config-fold">
+                      <summary class="status-config-summary">
+                        <i class="fa-solid fa-folder-tree me-2"></i>Cache Paths
+                      </summary>
+                      <div class="pt-2">
+                        <ul class="list-unstyled mb-0">
+                          {% for key, value in data.config.cache_dirs.items() %}
+                          <li class="mt-1"><span class="text-muted">{{ data.config.catalog_labels[key] }}:</span> <code>{{ value }}</code></li>
+                          {% endfor %}
+                        </ul>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div class="col-12">
+                    <details class="status-config-fold">
+                      <summary class="status-config-summary">
+                        <i class="fa-solid fa-clock me-2"></i>TTL Settings
+                      </summary>
+                      <div class="pt-2">
+                        <ul class="list-unstyled mb-0">
+                          {% for key, value in data.config.ttls.items() %}
+                          <li class="mt-1"><span class="text-muted">{{ data.config.catalog_labels[key] }}:</span> <code>{{ value }}s</code></li>
+                          {% endfor %}
+                        </ul>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div id="awsCatalogCachesWrap" class="h-100">
+              {% include "status/aws_catalogs/_caches.html" %}
+            </div>
+          </div>
+        </div>
+
+        <div id="awsCatalogPreviewsWrap" class="mt-4">
+          {% include "status/aws_catalogs/_previews.html" %}
+          <a class="btn btn-sm btn-outline-secondary mt-2" href="{{ url_for('status.aws_catalogs_iam_policy') }}" target="_blank" rel="noopener">Required IAM policy JSON</a>
+        </div>
+
+  </div>
+{% endblock %}
+
+{% block step_scripts %}
+<script>
+(() => {
+  const selectedRegion = {{ (selected_region or "")|tojson }};
+  const partialCachesUrl = {{ url_for("status.aws_catalogs_partials_caches")|tojson }};
+  const partialPreviewsUrl = {{ url_for("status.aws_catalogs_partials_previews")|tojson }};
+  const jobStatusUrlTemplate = {{ url_for("status.aws_catalogs_job_status", job_id="__JOB__")|tojson }};
+
+  const panel = document.getElementById('awsCatalogJobPanel');
+  const titleEl = document.getElementById('awsCatalogJobTitle');
+  const stateEl = document.getElementById('awsCatalogJobState');
+  const progressEl = document.getElementById('awsCatalogJobProgressBar');
+  const eventsEl = document.getElementById('awsCatalogJobEvents');
+  const jsonEl = document.getElementById('awsCatalogJobJson');
+
+  let polling = false;
+
+  function escapeHtml(s) {
+    return (s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function setRefreshButtonsDisabled(disabled) {
+    document.querySelectorAll('[data-aws-catalog-refresh-btn="1"]').forEach((btn) => {
+      btn.disabled = !!disabled;
+    });
+  }
+
+  function pct(job) {
+    const total = Number(job.total_steps || 0);
+    const done = Number(job.completed_steps || 0);
+    if (!total) return 0;
+    return Math.max(0, Math.min(100, Math.round((done * 100) / total)));
+  }
+
+  function renderJob(job) {
+    if (!panel) return;
+    panel.classList.remove('d-none');
+
+    const state = job.state || 'unknown';
+    const ok = job.ok;
+
+    if (titleEl) {
+      titleEl.textContent = (state === 'running' || state === 'queued') ? 'Refreshing AWS catalogs…' : 'AWS catalog refresh';
+    }
+    if (stateEl) {
+      stateEl.textContent = `${state}${ok === true ? ' (ok)' : ok === false ? ' (errors)' : ''}`;
+    }
+    if (progressEl) {
+      const p = pct(job);
+      progressEl.style.width = `${p}%`;
+      progressEl.setAttribute('aria-valuenow', String(p));
+      progressEl.classList.toggle('bg-danger', state === 'error');
+      progressEl.classList.toggle('bg-success', state === 'done' && ok === true);
+      progressEl.classList.toggle('bg-warning', state === 'done' && ok === false);
+    }
+
+    const evs = Array.isArray(job.events) ? job.events : [];
+    const last = evs.slice(-12);
+    if (eventsEl) {
+      if (!last.length) {
+        eventsEl.innerHTML = '<div class="text-muted small">No activity yet.</div>';
+      } else {
+        eventsEl.innerHTML = last.map((e) => {
+          const ts = e.ts_epoch ? new Date(e.ts_epoch * 1000).toISOString() : '';
+          const lvl = (e.level || 'info').toLowerCase();
+          const msg = escapeHtml(e.message || '');
+          const badgeClass = (lvl === 'error') ? 'bg-danger'
+            : (lvl === 'warning') ? 'bg-warning text-dark'
+            : 'bg-secondary';
+          return (
+            `<div class="d-flex align-items-start gap-2 mb-1">` +
+              `<span class="badge ${badgeClass}">${escapeHtml(lvl)}</span>` +
+              `<code class="text-muted small">${escapeHtml(ts)}</code>` +
+              `<span class="small">${msg}</span>` +
+            `</div>`
+          );
+        }).join('');
+      }
+    }
+
+    if (jsonEl) {
+      jsonEl.textContent = JSON.stringify(job, null, 2);
+    }
+  }
+
+  async function refreshPartials() {
+    const qs = selectedRegion ? `?region=${encodeURIComponent(selectedRegion)}` : '';
+
+    const cachesWrap = document.getElementById('awsCatalogCachesWrap');
+    const previewsWrap = document.getElementById('awsCatalogPreviewsWrap');
+
+    if (cachesWrap) {
+      const r = await fetch(partialCachesUrl + qs, { headers: { 'X-Requested-With': 'fetch' } });
+      cachesWrap.innerHTML = await r.text();
+    }
+    if (previewsWrap) {
+      const r = await fetch(partialPreviewsUrl + qs, { headers: { 'X-Requested-With': 'fetch' } });
+      previewsWrap.innerHTML = await r.text();
+    }
+
+    wireRefreshForms();
+  }
+
+  async function pollJob(jobId) {
+    if (polling) return;
+    polling = true;
+    setRefreshButtonsDisabled(true);
+    try {
+      const url = jobStatusUrlTemplate.replace('__JOB__', jobId);
+      while (true) {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json', 'Cache-Control': 'no-store' } });
+        const job = await readJsonResponse(resp, 'poll AWS catalog refresh');
+        renderJob(job);
+        if ((job.state === 'done') || (job.state === 'error')) break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      await refreshPartials();
+    } finally {
+      setRefreshButtonsDisabled(false);
+      polling = false;
+    }
+  }
+
+  async function onSubmitRefreshForm(ev) {
+    ev.preventDefault();
+    const form = ev.currentTarget;
+    if (!form || polling) return;
+
+    setRefreshButtonsDisabled(true);
+    try {
+      const resp = await fetch(form.action, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+        body: new FormData(form),
+      });
+      const data = await readJsonResponse(resp, 'start AWS catalog refresh');
+      if (!resp.ok) {
+        renderJob({
+          state: 'error',
+          ok: false,
+          total_steps: 1,
+          completed_steps: 0,
+          events: [{ ts_epoch: Date.now() / 1000, level: 'error', message: data.error || 'Failed to start refresh job' }],
+        });
+        return;
+      }
+      if (data.job_id) {
+        await pollJob(data.job_id);
+      }
+    } catch (err) {
+      renderJob({
+        state: 'error',
+        ok: false,
+        total_steps: 1,
+        completed_steps: 0,
+        events: [{ ts_epoch: Date.now() / 1000, level: 'error', message: String(err) }],
+      });
+    } finally {
+      setRefreshButtonsDisabled(false);
+    }
+  }
+
+  function wireRefreshForms() {
+    document.querySelectorAll('form[data-aws-catalog-refresh-form="1"]').forEach((form) => {
+      if (form.dataset.awsCatalogBound === '1') return;
+      form.dataset.awsCatalogBound = '1';
+      form.addEventListener('submit', onSubmitRefreshForm);
+    });
+  }
+
+  async function readJsonResponse(resp, action) {
+    const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
+    if (!contentType.includes('application/json')) {
+      const body = (await resp.text()).trim();
+      const summary = body.startsWith('<')
+        ? 'gateway returned an HTML error page'
+        : (body.slice(0, 160) || 'empty response');
+      throw new Error(`${action} failed: HTTP ${resp.status}; ${summary}`);
+    }
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(
+        `${action} failed: HTTP ${resp.status}; ${data.error || 'unknown error'}`
+      );
+    }
+    return data;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    wireRefreshForms();
+  });
+})();
+</script>
+{% endblock %}

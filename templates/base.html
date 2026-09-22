@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Praxis{% endblock %}</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <!-- Apply saved theme before CSS loads to prevent flash -->
+  <script>(function(){var t=localStorage.getItem('ps-theme');if(t)document.documentElement.setAttribute('data-theme',t);})();</script>
+  <link rel="icon" href="{{ url_for('static', filename='img/praxis.svg') }}" type="image/svg+xml">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body>
+
+  <nav class="navbar studio-nav-shell">
+    <div class="container-fluid px-3 px-xl-4 d-flex align-items-center">
+      <a class="navbar-brand brand brand--48" href="{{ url_for('index') }}">
+        <img class="brand-image" src="{{ url_for('static', filename='img/praxis.svg') }}" alt="" aria-hidden="true">
+        <span class="brand-text">Praxis</span>
+      </a>
+
+      <button class="studio-nav-menu" type="button" data-bs-toggle="collapse"
+              data-bs-target="#studioPrimaryNav" aria-controls="studioPrimaryNav"
+              aria-expanded="false" aria-label="Open main navigation">
+        <i class="fa-solid fa-bars" aria-hidden="true"></i><span>Menu</span>
+      </button>
+
+      <div class="collapse ms-auto align-items-center studio-nav-actions" id="studioPrimaryNav">
+        {% set runtime_env_label = (runtime_env or "unknown") %}
+        <span class="studio-runtime-badge me-3" data-env="{{ runtime_env_label }}" title="Studio runtime environment">
+          {{ runtime_env_label | upper }}
+        </span>
+
+        {% set current_endpoint = request.endpoint or '' %}
+        <a class="nav-pill{% if current_endpoint == 'index' %} nav-pill--active{% endif %}" href="{{ url_for('index') }}"{% if current_endpoint == 'index' %} aria-current="page"{% endif %}><i class="fa-solid fa-house"></i> Home</a>
+        {% if has_endpoint is defined and has_endpoint('environment_readiness.published_setups') %}<a class="nav-pill nav-pill--readiness{% if current_endpoint.startswith('environment_readiness.') %} nav-pill--active{% endif %}" href="{{ url_for('environment_readiness.published_setups') }}"{% if current_endpoint.startswith('environment_readiness.') %} aria-current="page"{% endif %}><i class="fa-solid fa-shield-halved"></i> Readiness Gate</a>{% endif %}
+        <a class="nav-pill{% if current_endpoint == 'wizards' or '/wizard/' in request.path or request.path.startswith(('/wizards/', '/single-vpc/', '/multi-vpc/', '/rgs/', '/loyalty/', '/unified/')) %} nav-pill--active{% endif %}" href="{{ url_for('wizards') }}"><i class="fa-solid fa-wand-magic-sparkles"></i> Wizards</a>
+        {% set tool_active = current_endpoint == 'tools' or request.path.startswith(('/artiac', '/iac-artifacts', '/ncr', '/praxisrelease', '/releases', '/spec-validator', '/status')) %}
+        <a class="nav-pill{% if tool_active %} nav-pill--active{% endif %}" href="{{ url_for('tools') }}"{% if tool_active %} aria-current="page"{% endif %}><i class="fa-solid fa-screwdriver-wrench"></i> Tools</a>
+        <a class="nav-pill{% if current_endpoint == 'info' %} nav-pill--active{% endif %}" href="{{ url_for('info') }}"{% if current_endpoint == 'info' %} aria-current="page"{% endif %}><i class="fa-solid fa-circle-info"></i> About Praxis</a>
+        {% if config.get("DOCS_URL") %}
+        <a class="nav-pill nav-pill--muted"
+           href="{{ config['DOCS_URL'] }}?utm_source=app&utm_medium=nav&utm_campaign={{ app_version }}"
+           target="_blank" rel="noopener">
+          <i class="fa-solid fa-book-open"></i> Documentation <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+        </a>
+
+        {% endif %}
+
+        <button class="theme-toggle ms-2" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">
+          <i class="fa-solid fa-moon" id="themeIcon"></i>
+        </button>
+
+        {% if auth_enabled %}
+          <div class="studio-nav-auth ms-3">
+            {% if session.get('user') %}
+              <span class="auth-user"><i class="fa-solid fa-circle-user me-1"></i>{{ session.get('user') }}</span>
+              <a class="nav-pill nav-pill--muted ms-2" href="{{ url_for('auth.logout') }}"
+                 aria-label="Sign out" title="Sign out">
+                <i class="fa-solid fa-right-from-bracket"></i>
+              </a>
+            {% else %}
+              <a class="nav-pill ms-2" href="{{ url_for('auth.login', next=request.path) }}">
+                <i class="fa-solid fa-right-to-bracket"></i> Sign in
+              </a>
+            {% endif %}
+          </div>
+        {% endif %}
+
+      </div>
+    </div>
+  </nav>
+
+  <main class="studio-page-body{% block content_container_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="studio-footer">
+    <div class="studio-footer__copy">Praxis v{{ APP_VERSION }}</div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Theme toggle -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const btn  = document.getElementById('themeToggle');
+      const icon = document.getElementById('themeIcon');
+
+      function applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        localStorage.setItem('ps-theme', theme);
+        icon.className = theme === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+      }
+
+      // Sync icon on load
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      icon.className = current === 'dark' ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+
+      btn.addEventListener('click', () => {
+        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+      });
+    });
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const tooltipTriggerList = Array.prototype.slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+    });
+
+    function applyConditionalRequired(form) {
+      const deps = form.querySelectorAll('[data-required-when]');
+      deps.forEach(el => {
+        const rule = el.getAttribute('data-required-when');
+        if (!rule || rule.indexOf(':') === -1) return;
+        const parts = rule.split(':');
+        const depName = parts[0];
+        const wantVal = parts.slice(1).join(':');
+        const dep = form.querySelector(`[name="${depName}"]`);
+        if (!dep) return;
+        const current = (dep.value || '').toLowerCase();
+        const required = current === (wantVal || '').toLowerCase();
+        if (required) el.setAttribute('required', '');
+        else el.removeAttribute('required');
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('form').forEach(form => {
+        applyConditionalRequired(form);
+        form.addEventListener('change', () => applyConditionalRequired(form));
+        form.addEventListener('input', () => applyConditionalRequired(form));
+      });
+    });
+  </script>
+
+  {% block step_scripts %}{% endblock %}
+</body>
+</html>

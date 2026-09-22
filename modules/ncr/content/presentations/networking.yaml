@@ -1,0 +1,117 @@
+schema_version: 1
+title: Networking / NCR Service Request
+description: Request the allocations and connectivity that the Networking team must complete before foundation provisioning.
+sections:
+  ingress: |-
+    ENVIRONMENT APPLICATION ENDPOINTS
+    Source: approved VPN/office/partner sources; baseline allow IPs {{ defaults.allow_ips | join(', ') }}
+    {% for item in endpoints %}- [ ] [{{ item.exposure }}] {{ item.host }} | {{ item.protocol }} | {{ item.namespace }}/{{ item.name }}{{ '\n' if not loop.last else '' }}{% endfor %}
+  egress: |-
+    REQUIRED OUTBOUND / MANAGEMENT ACCESS
+    {% for item in egress %}- [ ] {{ item.source }} -> {{ item.destination }} | {{ item.protocol }} | {{ item.purpose }}{{ '\n' if not loop.last else '' }}{% endfor %}
+  routing: |-
+    ACCOUNT / ROUTING DELIVERY
+    - [ ] Classification: {{ data.get('production_classification') or '<PROD/NONPROD>' }}
+    - [ ] Requested network size: {{ data.get('requested_network_size') or '<network size>' }}
+    {% for item in routing %}- [ ] {{ item.requirement }}{{ '\n' if not loop.last else '' }}{% endfor %}{% if profile.allocation.get('requirement') %}
+    - [ ] {{ profile.allocation.requirement }}{% endif %}{% for item in conditional %}
+    - [ ] {{ item.requirement }}{% endfor %}{% for name, vpc in profile.vpcs.items() if vpc.requested_prefix is defined %}
+    - [ ] Requested {{ name.upper() }} VPC prefix: /{{ vpc.requested_prefix }}{% endfor %}
+  cidr: '{% for vpc in vpcs %}{{ vpc.name }}: {{ vpc.requested_prefix }}{{ ''\n'' if not loop.last else '''' }}{% endfor %}'
+  dns: 'Base DNS domain: {{ domain }}'
+  cross_vpc: ''
+  shared_services: '{% for item in egress %}{{ item.destination }} | {{ item.protocol }} | {{ item.purpose }}{{ ''\n'' if
+    not loop.last else '''' }}{% endfor %}'
+  manifest: |-
+    CONNECTIVITY PROFILE: {{ platform.title() }} ({{ manifest_environment }})
+
+    {{ sections.ingress }}
+
+    {{ sections.egress }}
+
+    {{ sections.routing }}
+fields:
+- key: short_description
+  label: Short description
+  value: Network readiness for {{ environment }}
+  type: text
+- key: requested_for
+  label: Requested for
+  value: '{{ data.get(''requester'', '''') }}'
+  type: text
+- key: customer
+  label: Customer
+  value: '{{ data.get(''customer'', '''') }}'
+  type: text
+- key: environment_name
+  label: Environment name
+  value: '{{ data.get(''environment_name'', '''') }}'
+  type: text
+- key: setup_type
+  label: Praxis setup
+  value: '{{ data.get(''setup_type'', '''').replace(''-'', '' '').title() }}'
+  type: text
+- key: environment_type
+  label: Environment type
+  value: '{{ data.get(''environment_type'', '''') }}'
+  type: text
+- key: production_classification
+  label: Classification
+  value: '{{ data.get(''production_classification'', '''') }}'
+  type: text
+- key: aws_region
+  label: Requested AWS region
+  value: '{{ data.get(''aws_region'', '''') }}'
+  type: text
+- key: target_date
+  label: Required by
+  value: '{{ data.get(''target_date'', '''') }}'
+  type: date
+- key: jira_epic
+  label: Jira environment epic
+  value: '{{ data.get(''jira_epic'', '''') }}'
+  type: text
+- key: architect
+  label: Architect
+  value: '{{ data.get(''architect'', '''') }}'
+  type: text
+- key: devops_receiver
+  label: Receiving DevOps owner
+  value: '{{ data.get(''devops_receiver'', '''') }}'
+  type: text
+- key: draft_url
+  label: Praxis readiness draft
+  value: '{{ draft_url }}'
+  type: url
+- key: requested_network_size
+  label: Requested network size
+  value: '{{ data.get(''requested_network_size'', '''') }}'
+  type: text
+- key: requested_vpc_count
+  label: Required VPC CIDR allocations
+  value: '{{ profile.allocation.get(''review'', '''') }}'
+  type: textarea
+  condition:
+    field: has_allocation_review
+    equals: true
+- key: dns_domain
+  label: Base DNS domain
+  value: '{{ data.get(''dns_domain'', '''') }}'
+  type: text
+- key: rancher_target
+  label: Rancher target
+  value: '{{ data.get(''rancher_target'', '''') }}'
+  type: text
+- key: internet_access_requirement
+  label: VPC internet access required at handoff
+  value: '{{ profile.routing.internet.review_requirement }}'
+  type: textarea
+- key: connectivity_manifest
+  label: Requested endpoints and connectivity
+  value: '{{ manifest }}'
+  type: textarea
+- key: business_justification
+  label: Business justification / notes
+  value: '{{ data.get(''additional_notes'') or ''Networking must be ready before Praxis provisioning starts for '' ~ environment
+    ~ ''.'' }}'
+  type: textarea

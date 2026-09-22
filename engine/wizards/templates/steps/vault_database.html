@@ -1,0 +1,347 @@
+{% extends "wizard_step.html" %}
+
+{% block step_body %}
+  {% set ns = namespace(meta=none) %}
+  {% for f in form if f.type == 'FormField' %}
+    {% if ns.meta is none and f.form._vault_database_instance_classes_meta is defined %}
+      {% set ns.meta = f.form._vault_database_instance_classes_meta %}
+    {% endif %}
+  {% endfor %}
+  {% set _class_meta = ns.meta %}
+  {% set _version_meta = form._vault_database_engine_versions_meta if form._vault_database_engine_versions_meta is defined else none %}
+
+  <div class="mb-3">
+    <div class="alert alert-info py-2 mb-2 w-100 wizard-inline-alert">
+      <div class="small">
+        <div>
+          PostgreSQL versions are fetched from the AWS RDS API and cached (24h by default).
+          {% if _version_meta is not none %}
+            <span class="badge {{ 'bg-success' if _version_meta.source == 'aws_cache' else 'bg-warning text-dark' }} ms-2" title="{{ _version_meta.cache_path }}">source={{ _version_meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _version_meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _version_meta.count }}</span>
+            <span class="badge {{ 'bg-warning text-dark' if _version_meta.stale else 'bg-success' }} ms-1">{{ "stale" if _version_meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+        <div class="mt-1">
+          PostgreSQL instance classes are fetched from the AWS RDS API and cached (24h by default).
+          {% if _class_meta is not none %}
+            <span class="badge {{ 'bg-success' if _class_meta.source == 'aws_cache' else 'bg-warning text-dark' }} ms-2" title="{{ _class_meta.cache_path }}">source={{ _class_meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _class_meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _class_meta.count }}</span>
+            <span class="badge {{ 'bg-warning text-dark' if _class_meta.stale else 'bg-success' }} ms-1">{{ "stale" if _class_meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="d-flex justify-content-end gap-2">
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, vault_database_engine_versions_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh PostgreSQL versions
+      </a>
+      <a class="btn btn-sm btn-outline-secondary"
+         id="vaultDatabaseInstanceClassesRefresh"
+         href="{{ url_for('.wizard_step', step=step, vault_database_instance_classes_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh instance classes
+      </a>
+    </div>
+  </div>
+
+  {% set default_parameter_count = form._vault_default_parameter_count if form._vault_default_parameter_count is defined else 0 %}
+  {% for field in form if field.type != 'CSRFTokenField' %}
+    {% if field.name == 'vault_database_instance_parameters' %}
+      <section class="vault-params-panel mb-4"
+               id="vaultParametersPanel"
+               data-default-count="{{ default_parameter_count }}"
+               aria-labelledby="vaultParamsTitle">
+        <div class="vault-params-panel__header">
+          <div>
+            <div class="vault-params-panel__eyebrow">RDS configuration</div>
+            <h3 id="vaultParamsTitle" class="vault-params-panel__title">
+              PostgreSQL parameters
+            </h3>
+            <p class="vault-params-panel__description">
+              Runtime settings applied through the Vault database parameter group.
+              Changes marked pending reboot take effect during the next database restart.
+            </p>
+          </div>
+          <span class="vault-params-panel__count">
+            <span id="vaultParameterCount">{{ field|length }}</span> parameters
+          </span>
+        </div>
+
+        <div class="vault-params-list" id="vaultParameterList">
+          <section class="vault-param-group" aria-labelledby="vaultDefaultParametersTitle">
+            <div class="vault-param-group__header">
+              <h4 id="vaultDefaultParametersTitle">Required defaults</h4>
+              <span>{{ default_parameter_count }} parameters</span>
+            </div>
+            <div class="vault-param-group__rows" data-vault-default-parameters>
+          {% for entry in field %}
+            {% if loop.index0 < default_parameter_count %}
+            {% set parameter = entry.form %}
+            <div class="vault-param-card"
+                 data-vault-parameter-card
+                 data-default="true">
+              <div class="vault-param-card__number" aria-hidden="true">
+                {{ "%02d"|format(loop.index) }}
+              </div>
+              <div class="vault-param-card__content">
+                <div class="vault-param-card__fields">
+                  <div>
+                    <label class="form-label" for="{{ parameter.name.id }}">Parameter name</label>
+                    {{ parameter.name(class="form-control") }}
+                    {% if parameter.name.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.name.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.value.id }}">Value</label>
+                    {{ parameter.value(class="form-control") }}
+                    {% if parameter.value.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.value.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.apply_method.id }}">Apply timing</label>
+                    {{ parameter.apply_method(class="form-select") }}
+                    {% if parameter.apply_method.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.apply_method.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                {% if parameter.csrf_token is defined %}{{ parameter.csrf_token }}{% endif %}
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+            </div>
+          </section>
+
+          <section class="vault-param-group{% if field|length == default_parameter_count %} d-none{% endif %}"
+                   data-vault-custom-group
+                   aria-labelledby="vaultCustomParametersTitle">
+            <div class="vault-param-group__header">
+              <h4 id="vaultCustomParametersTitle">Custom parameters</h4>
+              <span data-vault-custom-count>{{ (field|length) - default_parameter_count }} parameters</span>
+            </div>
+            <div class="vault-param-group__rows" data-vault-custom-parameters>
+          {% for entry in field %}
+            {% if loop.index0 >= default_parameter_count %}
+            {% set parameter = entry.form %}
+            <div class="vault-param-card"
+                 data-vault-parameter-card
+                 data-default="false">
+              <div class="vault-param-card__number" aria-hidden="true">
+                {{ "%02d"|format(loop.index) }}
+              </div>
+              <div class="vault-param-card__content">
+                <div class="vault-param-card__fields">
+                  <div>
+                    <label class="form-label" for="{{ parameter.name.id }}">Parameter name</label>
+                    {{ parameter.name(class="form-control") }}
+                    {% if parameter.name.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.name.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.value.id }}">Value</label>
+                    {{ parameter.value(class="form-control") }}
+                    {% if parameter.value.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.value.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.apply_method.id }}">Apply timing</label>
+                    {{ parameter.apply_method(class="form-select") }}
+                    {% if parameter.apply_method.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.apply_method.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div class="vault-param-card__action">
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-vault-parameter>Remove</button>
+                  </div>
+                </div>
+                {% if parameter.csrf_token is defined %}{{ parameter.csrf_token }}{% endif %}
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+            </div>
+          </section>
+        </div>
+
+        <div class="vault-params-panel__footer">
+          <span class="small text-muted">
+            Default entries are protected; custom entries remain fully editable.
+          </span>
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  id="addVaultParameter">
+            + Add parameter
+          </button>
+        </div>
+
+        {% if field.errors %}
+          <div class="text-danger small px-3 pb-3">{{ field.errors[0] }}</div>
+        {% endif %}
+      </section>
+
+      <template id="vaultParameterTemplate">
+        <div class="vault-param-card"
+             data-vault-parameter-card
+             data-default="false">
+          <div class="vault-param-card__number" aria-hidden="true"></div>
+          <div class="vault-param-card__content">
+            <div class="vault-param-card__fields">
+              <div>
+                <label class="form-label" for="vault_database_instance_parameters-__index__-name">Parameter name</label>
+                <input class="form-control"
+                       id="vault_database_instance_parameters-__index__-name"
+                       name="vault_database_instance_parameters-__index__-name"
+                       type="text"
+                       value="">
+              </div>
+              <div>
+                <label class="form-label" for="vault_database_instance_parameters-__index__-value">Value</label>
+                <input class="form-control"
+                       id="vault_database_instance_parameters-__index__-value"
+                       name="vault_database_instance_parameters-__index__-value"
+                       type="text"
+                       value="">
+              </div>
+              <div>
+                <label class="form-label" for="vault_database_instance_parameters-__index__-apply_method">Apply timing</label>
+                <select class="form-select"
+                        id="vault_database_instance_parameters-__index__-apply_method"
+                        name="vault_database_instance_parameters-__index__-apply_method">
+                  <option value="pending-reboot">pending-reboot</option>
+                  <option value="immediate">immediate</option>
+                </select>
+              </div>
+              <div class="vault-param-card__action">
+                <button type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        data-remove-vault-parameter>
+                  Remove
+                </button>
+              </div>
+            </div>
+            <input type="hidden"
+                   id="vault_database_instance_parameters-__index__-csrf_token"
+                   name="vault_database_instance_parameters-__index__-csrf_token"
+                   value="{{ csrf_token() }}">
+          </div>
+        </div>
+      </template>
+    {% elif field.type == 'FormField' %}
+      {% set env_key = field.name|lower %}
+      {% set env_base = env_key.split('_', 1)[0] %}
+      <div class="env-section mb-4" data-env="{{ env_base }}">
+        <div class="env-chip" data-env="{{ env_base }}">{{ env_key|upper }}</div>
+        <div class="env-section__body">
+          {% for subfield in field.form if subfield.type != 'CSRFTokenField' %}
+            {{ render_field(subfield, step) }}
+          {% endfor %}
+        </div>
+      </div>
+    {% else %}
+      {{ render_field(field, step) }}
+    {% endif %}
+  {% endfor %}
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const version = document.getElementById("vault_database_engine_version");
+    const family = document.getElementById("vault_database_instance_pgroup_family");
+    const refreshClasses = document.getElementById("vaultDatabaseInstanceClassesRefresh");
+    if (!version || !family) return;
+
+    const syncFamily = function () {
+      const match = String(version.value || "").match(/^(\d+)/);
+      if (match) family.value = `postgres${match[1]}`;
+      if (refreshClasses) {
+        const url = new URL(refreshClasses.href, window.location.href);
+        url.searchParams.set("engine_version", version.value);
+        refreshClasses.href = url.toString();
+      }
+    };
+    version.addEventListener("change", syncFamily);
+    syncFamily();
+
+    const parameterList = document.getElementById("vaultParameterList");
+    const parameterTemplate = document.getElementById("vaultParameterTemplate");
+    const addParameter = document.getElementById("addVaultParameter");
+    const parameterCount = document.getElementById("vaultParameterCount");
+    const customGroup = parameterList?.querySelector("[data-vault-custom-group]");
+    const customParameters = parameterList?.querySelector("[data-vault-custom-parameters]");
+    const customCount = parameterList?.querySelector("[data-vault-custom-count]");
+
+    if (parameterList && parameterTemplate && addParameter) {
+      const reindexParameters = () => {
+        const cards = Array.from(
+          parameterList.querySelectorAll("[data-vault-parameter-card]")
+        );
+        cards.forEach((card, index) => {
+          const number = card.querySelector(".vault-param-card__number");
+          if (number) number.textContent = String(index + 1).padStart(2, "0");
+
+          card.querySelectorAll("[name]").forEach((el) => {
+            el.name = el.name.replace(
+              /vault_database_instance_parameters-\d+-/,
+              `vault_database_instance_parameters-${index}-`
+            );
+          });
+          card.querySelectorAll("[id]").forEach((el) => {
+            el.id = el.id.replace(
+              /vault_database_instance_parameters-\d+-/,
+              `vault_database_instance_parameters-${index}-`
+            );
+          });
+          card.querySelectorAll("label[for]").forEach((label) => {
+            label.htmlFor = label.htmlFor.replace(
+              /vault_database_instance_parameters-\d+-/,
+              `vault_database_instance_parameters-${index}-`
+            );
+          });
+        });
+        if (parameterCount) parameterCount.textContent = String(cards.length);
+        const customCards = cards.filter((card) => card.dataset.default !== "true");
+        if (customCount) {
+          customCount.textContent = `${customCards.length} ${customCards.length === 1 ? "parameter" : "parameters"}`;
+        }
+        if (customGroup) customGroup.classList.toggle("d-none", customCards.length === 0);
+      };
+
+      addParameter.addEventListener("click", () => {
+        const index = parameterList.querySelectorAll(
+          "[data-vault-parameter-card]"
+        ).length;
+        const fragment = parameterTemplate.content.cloneNode(true);
+        fragment.querySelectorAll("[name], [id], label[for]").forEach((el) => {
+          if (el.name) el.name = el.name.replaceAll("__index__", String(index));
+          if (el.id) el.id = el.id.replaceAll("__index__", String(index));
+          if (el.htmlFor) {
+            el.htmlFor = el.htmlFor.replaceAll("__index__", String(index));
+          }
+        });
+        (customParameters || parameterList).appendChild(fragment);
+        reindexParameters();
+        const added = (customParameters || parameterList).lastElementChild;
+        const firstInput = added ? added.querySelector('input[type="text"]') : null;
+        if (firstInput) firstInput.focus();
+      });
+
+      parameterList.addEventListener("click", (event) => {
+        const removeButton = event.target.closest("[data-remove-vault-parameter]");
+        if (!removeButton) return;
+        const card = removeButton.closest("[data-vault-parameter-card]");
+        if (!card || card.dataset.default === "true") return;
+        card.remove();
+        reindexParameters();
+      });
+
+      reindexParameters();
+    }
+  });
+  </script>
+{% endblock %}

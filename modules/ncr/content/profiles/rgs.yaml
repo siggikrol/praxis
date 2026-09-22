@@ -1,0 +1,27 @@
+schema_version: 1
+extends: platform-common
+platform: rgs
+endpoints:
+  rgs-internal-urls:
+    namespace: rgs
+    name: internal-urls
+    gateways: internal-urls
+    host: '*.{ENV}.int.{DOMAIN}'
+    protocol: HTTPS/TCP 443
+  rgs-gateway-api:
+    namespace: rgs
+    name: gateway-api
+    gateways: gateway-api
+    host: api-rgs.{ENV}.{DOMAIN}
+    protocol: HTTPS/TCP 443
+  rgs-gateway-web:
+    namespace: rgs
+    name: gateway-web
+    gateways: gateway-web
+    host: web-rgs.{ENV}.{DOMAIN}
+    protocol: HTTPS/TCP 443
+vpcs:
+  environment:
+    cidr_field: vpc_cidr
+allocation:
+  source_placeholder: <allocated environment VPC/EKS CIDR>

@@ -1,0 +1,1383 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell">
+  {% set hero_title = "Spec Workbench" %}
+  {% set hero_subtitle = "Create a draft, validate exact revisions, and publish approved specs to Confluence." %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+
+  <div class="tool-panel tool-panel--compact">
+    <div class="tool-toolbar mb-0">
+      <div>
+        <div class="tool-panel__title">Workbench Status</div>
+        <div class="tool-panel__subtitle">Draft creation, exact validation, and publication readiness.</div>
+      </div>
+      <div class="tool-toolbar__group">
+        <span
+          class="badge {% if core_validate and core_validate.enabled %}text-bg-success{% else %}text-bg-warning{% endif %}">
+          Core Validation: {% if core_validate and core_validate.enabled %}Ready{% else %}Unavailable{% endif %}
+        </span>
+        <span class="badge {% if confluence.enabled %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+          Confluence Publish: {% if confluence.enabled %}Configured{% else %}Not Configured{% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+      {% if error %}
+      <div class="alert alert-danger py-2">{{ error }}</div>
+      {% endif %}
+      {% if notice %}
+      <div class="alert alert-success py-2">{{ notice }}</div>
+      {% endif %}
+
+      <div class="spec-workbench-flow">
+      <section class="spec-workbench-drafts" aria-labelledby="myDraftsHeading">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div>
+          <h4 id="myDraftsHeading" class="mb-0">My Drafts</h4>
+          <div class="text-muted small">Resume an existing draft or start a new one below.</div>
+        </div>
+        <a class="btn btn-primary btn-sm" href="#new-draft">
+          <i class="fa-solid fa-plus me-1"></i> New Draft
+        </a>
+      </div>
+
+      {% if drafts %}
+      <div class="spec-draft-breakout">
+        <div class="row g-2 spec-draft-list">
+          {% for draft in drafts %}
+          <div class="col-lg-4 col-md-6 d-flex">
+          {% set validation_state = draft.last_validation_state %}
+          {% set validation_ok = draft.last_validation_ok %}
+          {% if validation_state == 'done' and validation_ok %}
+          {% set draft_state_label = 'Validated' %}
+          {% set draft_state_class = 'text-bg-success' %}
+          {% elif validation_state == 'error' or (validation_state == 'done' and not validation_ok) %}
+          {% set draft_state_label = 'Validation Failed' %}
+          {% set draft_state_class = 'text-bg-danger' %}
+          {% elif validation_state %}
+          {% set draft_state_label = validation_state|replace('-', ' ')|title %}
+          {% set draft_state_class = 'text-bg-secondary' %}
+          {% else %}
+          {% set draft_state_label = 'Drafting' %}
+          {% set draft_state_class = 'text-bg-secondary' %}
+          {% endif %}
+          <div class="card shadow-sm border-0 h-100 w-100 spec-draft-card">
+            <div class="spec-draft-card-bar"></div>
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start gap-3">
+                <div>
+                  <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                    <div class="h5 mb-0">{{ draft.title }}</div>
+                    <span class="badge {{ draft_state_class }}">{{ draft_state_label }}</span>
+                    {% if draft.last_revision_number %}
+                    <span class="badge surface border">Rev {{ "%03d"|format(draft.last_revision_number) }}</span>
+                    {% endif %}
+                  </div>
+                  <div class="small text-muted">Updated {{ format_ts(draft.updated_at) }}</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 justify-content-end">
+                  <a class="btn btn-outline-primary btn-sm"
+                    href="{{ url_for('spec_validator.draft_page', draft_id=draft.id) }}">Open</a>
+                  <form action="{{ url_for('spec_validator.delete_draft_route', draft_id=draft.id) }}" method="post"
+                    onsubmit="return confirm('Delete this draft? This removes local draft history only.');">
+                    {% if csrf_token is defined %}
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {% endif %}
+                    <button type="submit" class="btn btn-outline-danger btn-sm">Delete</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="card border-0 shadow-sm">
+        <div class="card-body py-4 text-center text-muted">
+          No drafts yet. Choose a starting point below to create your first draft.
+        </div>
+      </div>
+      {% endif %}
+      </section>
+
+      <section id="new-draft" class="spec-workbench-create" aria-labelledby="newDraftHeading">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <div>
+          <h4 id="newDraftHeading" class="mb-0">New Draft</h4>
+          <div class="text-muted small">Choose one starting point. You can use a template or bring an existing spec.</div>
+        </div>
+      </div>
+
+      <div class="row g-4 align-items-start">
+        <div class="col-xxl-8 col-xl-7">
+          <div class="card shadow-sm border-0 spec-workbench-panel h-100">
+            <div class="spec-workbench-panel-bar"></div>
+            <div class="card-body p-3 p-md-4">
+              <div class="d-flex align-items-center gap-3 mb-3">
+                <span class="spec-workbench-icon">
+                  <i class="fa-solid fa-plus"></i>
+                </span>
+                <div>
+                  <div class="fw-semibold">Choose a Starting Point</div>
+                  <div class="text-muted small">Template setup and YAML import are kept separate so it is clear what will create the draft.</div>
+                </div>
+              </div>
+
+              <div class="spec-create-mode-picker mb-4" role="tablist" aria-label="Draft starting point">
+                <button id="createFromTemplateTab" type="button" class="spec-create-mode{% if selected_template_key or not error %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if selected_template_key or not error else 'false' }}" tabindex="{{ '0' if selected_template_key or not error else '-1' }}"
+                        aria-controls="templateDraftPanel" data-create-mode="template">
+                  <i class="fa-solid fa-wand-magic-sparkles"></i>
+                  <span><strong>Create from Template</strong><small>Generate a starter spec from a supported wizard.</small></span>
+                </button>
+                <button id="importExistingYamlTab" type="button" class="spec-create-mode{% if error and not selected_template_key %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if error and not selected_template_key else 'false' }}" tabindex="{{ '0' if error and not selected_template_key else '-1' }}"
+                        aria-controls="importDraftPanel" data-create-mode="import">
+                  <i class="fa-solid fa-file-import"></i>
+                  <span><strong>Import Existing YAML</strong><small>Paste a spec or upload a YAML file.</small></span>
+                </button>
+              </div>
+
+              <div id="templateDraftPanel" role="tabpanel" aria-labelledby="createFromTemplateTab" data-create-panel="template"{% if error and not selected_template_key %} hidden{% endif %}>
+
+              <section class="spec-template-step mb-3" aria-labelledby="templateStepOne">
+                <div class="spec-template-step__header">
+                  <span class="spec-template-step__number">1</span>
+                  <div>
+                    <div id="templateStepOne" class="fw-semibold">Choose a Template</div>
+                    <div class="small text-muted">Select the scaffold that best matches the spec you are creating.</div>
+                  </div>
+                </div>
+                <div class="spec-template-grid">
+                  {% for template in wizard_templates %}
+                  <a class="spec-template-card{% if selected_template_key == template.key %} is-selected{% endif %}"
+                    data-template-choice
+                    {% if selected_template_key == template.key %}aria-current="true"{% endif %}
+                    href="{{ url_for('spec_validator.index', template=template.key, pc_version=selected_template_pc_version, template_env_csv=selected_template_env_csv, template_prefix=selected_template_prefix, template_domain=selected_template_domain, vpc_profile=selected_template_vpc_profile, rancher_cluster=selected_template_rancher_cluster, rancher_context=selected_template_rancher_context, release_customer=template_release_customer, release_key=template_release_key) }}">
+                    <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
+                      <span class="fw-semibold">{{ template.label }}</span>
+                      {% if selected_template_key == template.key %}
+                      <span class="badge text-bg-primary">Loaded</span>
+                      {% endif %}
+                    </div>
+                    <div class="text-muted small">{{ template.description }}</div>
+                  </a>
+                  {% endfor %}
+                </div>
+              </section>
+
+              <div class="spec-template-config mb-4">
+                <div class="spec-template-config__header">
+                  <div class="spec-template-step__header mb-0">
+                    <span class="spec-template-step__number">2</span>
+                    <div>
+                      <div class="fw-semibold">Configure the Template</div>
+                      <div class="small text-muted">Complete the required inputs, then generate an updated preview.</div>
+                    </div>
+                  </div>
+                </div>
+                <form id="specTemplateOptionsForm" method="get" class="row g-3">
+                  {% if selected_template_key %}
+                  <input type="hidden" name="template" value="{{ selected_template_key }}">
+                  {% endif %}
+                  <div class="col-12">
+                    <div class="spec-template-config__groups">
+                      <details class="spec-template-config__group spec-template-config__group--release"{% if template_release_customer or template_release_key or template_release_error %} open{% endif %}>
+                        <summary class="spec-template-release-summary">
+                          <span>
+                            <span class="spec-template-config__group-eyebrow">Release Merge</span>
+                            <span class="spec-template-config__group-title">Add Deployment Versions</span>
+                          </span>
+                          <span class="spec-field-tag spec-field-tag--optional">Optional</span>
+                        </summary>
+                        <div class="spec-template-config__controls">
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templateReleaseCustomer">Release Customer <span class="spec-field-tag spec-field-tag--optional">Optional</span></label>
+                            <select id="templateReleaseCustomer"
+                                    class="form-select"
+                                    name="release_customer"
+                                    {% if not selected_template_key %}disabled{% endif %}>
+                              <option value="">Select customer</option>
+                              {% for value, label in template_release_customers %}
+                              <option value="{{ value }}" {% if template_release_customer == value %}selected{% endif %}>{{ label }}</option>
+                              {% endfor %}
+                            </select>
+                            <div class="spec-template-option__hint">Choose the release catalog</div>
+                          </div>
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templateReleaseKey">Release Archive <span class="spec-field-tag spec-field-tag--optional">Optional</span></label>
+                            <select id="templateReleaseKey"
+                                    class="form-select"
+                                    name="release_key"
+                                    {% if not selected_template_key or not template_release_customer %}disabled{% endif %}>
+                              <option value="">Select release archive</option>
+                              {% for value, label in template_release_choices %}
+                              <option value="{{ value }}" {% if template_release_key == value %}selected{% endif %}>{{ label }}</option>
+                              {% endfor %}
+                            </select>
+                            <div class="spec-template-option__hint">Appends the deployment versions block</div>
+                          </div>
+                        </div>
+                        {% if template_release_source and template_release_source.bucket %}
+                        <div class="spec-template-config__source">
+                          <span class="spec-template-config__source-label">Source</span>
+                          <code>s3://{{ template_release_source.bucket }}{% if template_release_source.prefix %}/{{ template_release_source.prefix }}{% endif %}/</code>
+                        </div>
+                        {% endif %}
+                      </details>
+
+                      <section class="spec-template-config__group">
+                        <div class="spec-template-config__group-header">
+                          <span class="spec-template-config__group-eyebrow">Scaffold</span>
+                          <span class="spec-template-config__group-title">Core Template Inputs</span>
+                        </div>
+                        <div class="spec-template-config__controls">
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templatePcVersion">Praxis Core Version <span class="spec-field-tag spec-field-tag--required">Required</span></label>
+                            <input id="templatePcVersion"
+                                   class="form-control"
+                                   type="text"
+                                   name="pc_version"
+                                   value="{{ selected_template_pc_version }}"
+                                   placeholder="{{ defaults.pc_version or '1.3.1' }}">
+                            <div class="spec-template-option__hint"><code>praxis_core_version</code> header</div>
+                          </div>
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templatePrefix">Base Prefix <span class="spec-field-tag spec-field-tag--required">Required</span></label>
+                            <input id="templatePrefix"
+                                   class="form-control"
+                                   type="text"
+                                   name="template_prefix"
+                                   value="{{ selected_template_prefix }}"
+                                   placeholder="{{ selected_template_prefix_placeholder }}"
+                                   data-template-prefix-suffix="{{ selected_template_prefix_suffix }}"
+                                   {% if not selected_template_key %}disabled{% endif %}>
+                            <div class="spec-template-option__hint">
+                              {% if selected_template_prefix_suffix %}
+                              Must end in <code>-{{ selected_template_prefix_suffix }}</code>. Example: <code>{{ selected_template_prefix_placeholder }}</code>
+                              {% else %}
+                              Select a template to apply the correct suffix automatically
+                              {% endif %}
+                            </div>
+                          </div>
+                          <div class="spec-template-option spec-template-option--wide">
+                            <div class="spec-template-option__heading">
+                              <label class="form-label mb-0" for="templateEnvDev">Environment <span class="spec-field-tag spec-field-tag--required">Required</span></label>
+                              <span class="spec-template-env-summary" data-template-env-summary>
+                                {% if selected_template_env_summary %}
+                                {{ selected_template_env_summary }}
+                                {% else %}
+                                Template default
+                                {% endif %}
+                              </span>
+                            </div>
+                            <div class="spec-template-env-picker{% if not selected_template_key %} is-disabled{% endif %}">
+                              {% for value, label in template_env_choices %}
+                              <label class="spec-template-env-chip{% if value in selected_template_envs %} is-checked{% endif %}">
+                                <input {% if loop.first %}id="templateEnvDev"{% endif %}
+                                       class="spec-template-env-checkbox"
+                                       type="checkbox"
+                                       name="template_env"
+                                       value="{{ value }}"
+                                       data-template-env-checkbox
+                                       data-template-env-label="{{ label }}"
+                                       {% if value in selected_template_envs %}checked{% endif %}
+                                       {% if not selected_template_key %}disabled{% endif %}>
+                                <span>{{ label }}</span>
+                              </label>
+                              {% endfor %}
+                            </div>
+                            <div class="spec-template-option__hint">Pick one or more target environments.</div>
+                          </div>
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templateDomain">Domain <span class="spec-field-tag spec-field-tag--required">Required</span></label>
+                            <select id="templateDomain"
+                                    class="form-select"
+                                    name="template_domain"
+                                    {% if not selected_template_key %}disabled{% endif %}>
+                              {% for value, label in template_domain_choices %}
+                              <option value="{{ value }}" {% if selected_template_domain == value %}selected{% endif %}>{{ label }}</option>
+                              {% endfor %}
+                            </select>
+                            <div class="spec-template-option__hint">Fills shared DNS and Rancher label values</div>
+                          </div>
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templateVpcProfile">VPC Profile <span class="spec-field-tag spec-field-tag--required">Required</span></label>
+                            <select id="templateVpcProfile"
+                                    class="form-select"
+                                    name="vpc_profile"
+                                    {% if not selected_template_key %}disabled{% endif %}>
+                              {% for value, label in template_vpc_profile_choices %}
+                              <option value="{{ value }}" {% if selected_template_vpc_profile == value %}selected{% endif %}>{{ label }}</option>
+                              {% endfor %}
+                            </select>
+                            <div class="spec-template-option__hint">Region, TGW, VPCE, AZs</div>
+                          </div>
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templateRancherCluster">Rancher Cluster <span class="spec-field-tag spec-field-tag--required">Required</span></label>
+                            <select id="templateRancherCluster"
+                                    class="form-select"
+                                    name="rancher_cluster"
+                                    {% if not selected_template_key %}disabled{% endif %}>
+                              {% for value, label in template_rancher_cluster_choices %}
+                              <option value="{{ value }}" {% if selected_template_rancher_cluster == value %}selected{% endif %}>{{ label }}</option>
+                              {% endfor %}
+                            </select>
+                            <div class="spec-template-option__hint">Cluster name, region, prefix</div>
+                          </div>
+                          <div class="spec-template-option">
+                            <label class="form-label mb-0" for="templateRancherContext">Rancher Context <span class="spec-field-tag spec-field-tag--required">Required</span></label>
+                            <select id="templateRancherContext"
+                                    class="form-select"
+                                    name="rancher_context"
+                                    {% if not selected_template_key %}disabled{% endif %}>
+                              {% for value, label in template_rancher_context_choices %}
+                              <option value="{{ value }}" {% if selected_template_rancher_context == value %}selected{% endif %}>{{ label }}</option>
+                              {% endfor %}
+                            </select>
+                            <div class="spec-template-option__hint">SSA context, cloud integration, worker pool</div>
+                          </div>
+                        </div>
+                      </section>
+
+                    </div>
+                  </div>
+                  <div class="col-12 alert alert-danger py-2 mb-0" role="alert" data-template-validation-alert hidden></div>
+                  <div class="col-12 d-flex flex-wrap align-items-center justify-content-between gap-2 spec-template-config__footer">
+                    <div class="spec-template-requirements" aria-live="polite">
+                      <div class="small fw-semibold" data-template-missing-heading>
+                        {% if template_options_ready %}Configuration complete{% else %}Required before preview{% endif %}
+                      </div>
+                      <ul class="small mb-0 ps-3" data-template-missing-list></ul>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                      <span class="spec-template-config__apply-state{% if template_options_ready %} is-ready{% endif %}"
+                            data-template-options-state
+                            aria-live="polite">
+                        {% if template_options_ready %}Ready to generate preview{% else %}Complete the required fields{% endif %}
+                      </span>
+                      {% if release_examine_available and template_release_customer and template_release_key %}
+                      <a class="btn btn-outline-info btn-sm"
+                         href="{{ url_for('praxisrelease.examine_release', customer=template_release_customer, release_key=template_release_key, wizard_slug=selected_template_key) }}">
+                        Examine Release
+                      </a>
+                      {% endif %}
+                      <button type="submit"
+                              class="btn btn-sm{% if template_options_ready %} btn-success{% else %} btn-outline-primary{% endif %}"
+                              data-template-options-apply>
+                        Generate Preview
+                      </button>
+                    </div>
+                  </div>
+                </form>
+                {% if template_release_error %}
+                <div class="alert alert-warning py-2 mt-3 mb-0">{{ template_release_error }}</div>
+                {% elif template_release_summary %}
+                <div class="alert alert-info py-2 mt-3 mb-0">
+                  Merged deployment versions from <code>{{ template_release_key }}</code>
+                  {% if template_release_summary.bundle %} for bundle <code>{{ template_release_summary.bundle }}</code>{% endif %}
+                  {% if template_release_summary.version %} at version <code>{{ template_release_summary.version }}</code>{% endif %}.
+                </div>
+                {% endif %}
+              </div>
+
+              <section class="spec-template-step spec-template-review" aria-labelledby="templateStepThree">
+              <div class="spec-template-step__header">
+                <span class="spec-template-step__number">3</span>
+                <div>
+                  <div id="templateStepThree" class="fw-semibold">Review and Create</div>
+                  <div class="small text-muted">Review the generated YAML. You can make final edits before creating the draft.</div>
+                </div>
+              </div>
+              <form action="{{ url_for('spec_validator.create_draft_route') }}" method="post"
+                enctype="multipart/form-data" class="row g-3">
+                {% if csrf_token is defined %}
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {% endif %}
+                <input type="hidden" name="source_template_key" value="{{ selected_template_key }}">
+                <div class="col-md-5">
+                  <label class="form-label mb-1" for="templateDraftMode">Workbench Mode</label>
+                  <select id="templateDraftMode" class="form-select" name="mode">
+                    <option value="playground">Playground / learning</option>
+                    <option value="prerequisite">Environment prerequisite</option>
+                  </select>
+                  <div class="form-text">Prerequisite mode requires architecture metadata before publishing.</div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label mb-1" for="draftTitle">Draft Title <span class="spec-field-tag spec-field-tag--optional">Optional</span></label>
+                  <input id="draftTitle" class="form-control" type="text" name="title" value="{{ form_data.title }}"
+                    placeholder="Optional. If blank, title is derived from the YAML or file name.">
+                </div>
+                <div class="col-12">
+                  <label class="form-label mb-1" for="draftSpecYaml">Generated Spec YAML</label>
+                  <textarea id="draftSpecYaml" class="form-control spec-workbench-editor" name="spec_yaml" rows="18" data-generated-preview
+                    placeholder="Select a template above to generate YAML">{{ form_data.spec_yaml }}</textarea>
+                </div>
+                <div class="col-12 d-flex justify-content-end">
+                  <button type="submit" class="btn btn-primary align-self-end"{% if not selected_template_key %} disabled{% endif %}>
+                    Create Draft
+                  </button>
+                </div>
+              </form>
+              </section>
+              </div>
+
+              <div id="importDraftPanel" role="tabpanel" aria-labelledby="importExistingYamlTab" data-create-panel="import"{% if selected_template_key or not error %} hidden{% endif %}>
+                <div class="mb-3">
+                  <div class="fw-semibold">Import Existing YAML</div>
+                  <div class="small text-muted">Paste YAML below or select a file. If both are supplied, the uploaded file is used.</div>
+                </div>
+                <form action="{{ url_for('spec_validator.create_draft_route') }}" method="post"
+                  enctype="multipart/form-data" class="row g-3">
+                  {% if csrf_token is defined %}
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  {% endif %}
+                  <div class="col-md-5">
+                    <label class="form-label mb-1" for="importDraftMode">Workbench Mode</label>
+                    <select id="importDraftMode" class="form-select" name="mode">
+                      <option value="playground">Playground / verification</option>
+                      <option value="prerequisite">Environment prerequisite</option>
+                    </select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label mb-1" for="importDraftTitle">Draft Title</label>
+                    <input id="importDraftTitle" class="form-control" type="text" name="title" value="{{ form_data.title if error and not selected_template_key else '' }}"
+                      placeholder="Optional. If blank, title is derived from the YAML or file name.">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label mb-1" for="importSpecYaml">Paste YAML</label>
+                    <textarea id="importSpecYaml" class="form-control spec-workbench-editor" name="spec_yaml" rows="14"
+                      placeholder="Paste an existing spec.yaml here">{{ form_data.spec_yaml if error and not selected_template_key else '' }}</textarea>
+                  </div>
+                  <div class="col-md-7">
+                    <label class="form-label mb-1" for="importSpecFile">Or Upload YAML File</label>
+                    <input id="importSpecFile" class="form-control" type="file" name="spec_file"
+                      accept=".yaml,.yml,text/yaml,text/x-yaml,application/x-yaml">
+                  </div>
+                  <div class="col-md-5 d-grid">
+                    <button type="submit" class="btn btn-primary align-self-end">Import and Open Draft</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-xxl-4 col-xl-5">
+          <div class="card shadow-sm border-0 h-100 spec-workbench-status-card">
+            <div class="card-body p-3 p-md-4">
+              <div class="fw-semibold mb-3">Workflow Status</div>
+              <div class="small text-muted mb-3">
+                Validation uses Praxis Core dryrun jobs. Publishing creates one parent page per spec and one child
+                page per published revision.
+              </div>
+
+              <div class="spec-status-grid">
+                <div class="spec-status-item">
+                  <div class="text-muted small">Default Harbor Project</div>
+                  <div class="fw-semibold"><code>{{ defaults.harbor_registry_project or "-" }}</code></div>
+                </div>
+                <div class="spec-status-item">
+                  <div class="text-muted small">Default Core Version</div>
+                  <div class="fw-semibold"><code>{{ defaults.pc_version or "-" }}</code></div>
+                </div>
+                <div class="spec-status-item">
+                  <div class="text-muted small">Registry</div>
+                  <div class="fw-semibold"><code>{{ core_validate.registry_address or "-" }}</code></div>
+                </div>
+                <div class="spec-status-item">
+                  <div class="text-muted small">Namespace</div>
+                  <div class="fw-semibold"><code>{{ core_validate.namespace or "-" }}</code></div>
+                </div>
+              </div>
+
+              {% if not confluence.enabled %}
+              <div class="alert alert-secondary py-2 mt-3 mb-0">
+                {{ confluence.reason }}
+              </div>
+              {% else %}
+              <div class="alert alert-success py-2 mt-3 mb-0">
+                Publishing target: <code>{{ confluence.space_key }}</code>{% if confluence.root_page_id %} under page
+                <code>{{ confluence.root_page_id }}</code>{% else %} using the space homepage as the root{% endif %}.
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      </section>
+
+      </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const optionsForm = document.getElementById("specTemplateOptionsForm");
+  const selectedTemplateInput = optionsForm?.querySelector('input[name="template"]');
+  const pcVersionInput = document.getElementById("templatePcVersion");
+  const prefixInput = document.getElementById("templatePrefix");
+  const domainSelect = document.getElementById("templateDomain");
+  const vpcProfileSelect = document.getElementById("templateVpcProfile");
+  const rancherClusterSelect = document.getElementById("templateRancherCluster");
+  const rancherContextSelect = document.getElementById("templateRancherContext");
+  const customerSelect = document.getElementById("templateReleaseCustomer");
+  const releaseSelect = document.getElementById("templateReleaseKey");
+  const envCheckboxes = Array.from(document.querySelectorAll("[data-template-env-checkbox]"));
+  const envSummary = document.querySelector("[data-template-env-summary]");
+  const applyButton = document.querySelector("[data-template-options-apply]");
+  const applyState = document.querySelector("[data-template-options-state]");
+  const missingHeading = document.querySelector("[data-template-missing-heading]");
+  const missingList = document.querySelector("[data-template-missing-list]");
+  const validationAlert = document.querySelector("[data-template-validation-alert]");
+  const generatedPreview = document.querySelector("[data-generated-preview]");
+  const templateChoiceLinks = Array.from(document.querySelectorAll("[data-template-choice]"));
+  const createModeButtons = Array.from(document.querySelectorAll("[data-create-mode]"));
+  const createModePanels = Array.from(document.querySelectorAll("[data-create-panel]"));
+  const initialGeneratedPreview = generatedPreview?.value || "";
+  let previewWasEdited = false;
+  let revealRequiredErrors = false;
+  let refreshingReleaseChoices = false;
+
+  generatedPreview?.addEventListener("input", () => {
+    previewWasEdited = generatedPreview.value !== initialGeneratedPreview;
+  });
+
+  const confirmPreviewReplacement = () => {
+    if (!previewWasEdited) return true;
+    return window.confirm("Generating a new preview will replace your manual YAML edits. Continue?");
+  };
+
+  templateChoiceLinks.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      if (!confirmPreviewReplacement()) event.preventDefault();
+    });
+  });
+
+  const selectCreateMode = (mode) => {
+    createModeButtons.forEach((button) => {
+      const active = button.dataset.createMode === mode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    createModePanels.forEach((panel) => {
+      panel.hidden = panel.dataset.createPanel !== mode;
+    });
+  };
+
+  createModeButtons.forEach((button) => {
+    button.addEventListener("click", () => selectCreateMode(button.dataset.createMode));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const currentIndex = createModeButtons.indexOf(button);
+      const nextIndex = event.key === "Home"
+        ? 0
+        : (event.key === "End"
+          ? createModeButtons.length - 1
+          : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + createModeButtons.length) % createModeButtons.length);
+      const nextButton = createModeButtons[nextIndex];
+      selectCreateMode(nextButton.dataset.createMode);
+      nextButton.focus();
+    });
+  });
+
+  const hasSelectedTemplate = () => Boolean(selectedTemplateInput && String(selectedTemplateInput.value || "").trim());
+  const hasControlValue = (control) => Boolean(control && !control.disabled && String(control.value || "").trim());
+  const normalizeTemplatePrefixValue = (value) => {
+    const suffix = String(prefixInput?.dataset.templatePrefixSuffix || "").trim().toLowerCase();
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!normalized || !suffix) return normalized;
+
+    const parts = normalized.split("-").filter(Boolean);
+    if (!parts.length) return "";
+
+    const knownSuffixes = new Set(["rgs", "ctlst", "playon"]);
+    if (knownSuffixes.has(parts[parts.length - 1])) {
+      parts.pop();
+    }
+    if (!parts.length) {
+      return "";
+    }
+    return [...parts, suffix].join("-");
+  };
+
+  const syncTemplatePrefix = () => {
+    if (!prefixInput || prefixInput.disabled) return;
+    const normalized = normalizeTemplatePrefixValue(prefixInput.value);
+    if (normalized && prefixInput.value !== normalized) {
+      prefixInput.value = normalized;
+    }
+  };
+
+  const refreshEnvSelection = () => {
+    if (!envCheckboxes.length || !envSummary) return;
+
+    const selectedLabels = [];
+    envCheckboxes.forEach((checkbox) => {
+      const chip = checkbox.closest(".spec-template-env-chip");
+      if (chip) {
+        chip.classList.toggle("is-checked", checkbox.checked);
+      }
+      if (checkbox.checked) {
+        selectedLabels.push(checkbox.dataset.templateEnvLabel || checkbox.value);
+      }
+    });
+
+    envSummary.textContent = selectedLabels.length ? selectedLabels.join(", ") : "Template default";
+  };
+
+  const refreshApplyState = () => {
+    const hasEnvSelection = envCheckboxes.some((checkbox) => !checkbox.disabled && checkbox.checked);
+    const prefixValue = String(prefixInput?.value || "").trim().toLowerCase();
+    const prefixReady = Boolean(prefixValue) && prefixValue === normalizeTemplatePrefixValue(prefixValue);
+    const coreReady = hasSelectedTemplate()
+      && hasControlValue(pcVersionInput)
+      && prefixReady
+      && hasEnvSelection
+      && hasControlValue(domainSelect)
+      && hasControlValue(vpcProfileSelect)
+      && hasControlValue(rancherClusterSelect)
+      && hasControlValue(rancherContextSelect);
+    const releaseCustomer = String(customerSelect?.value || "").trim();
+    const releaseKey = String(releaseSelect?.value || "").trim();
+    const releaseReady = (!releaseCustomer && !releaseKey) || (Boolean(releaseCustomer) && Boolean(releaseKey));
+    const ready = coreReady && releaseReady;
+    const envPicker = envCheckboxes[0]?.closest(".spec-template-env-picker");
+    const missing = [];
+    const addMissing = (label, control, container = control?.closest(".spec-template-option")) => {
+      missing.push({ label, control, container });
+    };
+    if (!hasSelectedTemplate()) addMissing("Template", templateChoiceLinks[0], templateChoiceLinks[0]?.closest(".spec-template-choice"));
+    if (!hasControlValue(pcVersionInput)) addMissing("Praxis Core Version", pcVersionInput);
+    if (!prefixReady) addMissing("Base Prefix", prefixInput);
+    if (!hasEnvSelection) addMissing("Environment", envCheckboxes[0], envPicker);
+    if (!hasControlValue(domainSelect)) addMissing("Domain", domainSelect);
+    if (!hasControlValue(vpcProfileSelect)) addMissing("VPC Profile", vpcProfileSelect);
+    if (!hasControlValue(rancherClusterSelect)) addMissing("Rancher Cluster", rancherClusterSelect);
+    if (!hasControlValue(rancherContextSelect)) addMissing("Rancher Context", rancherContextSelect);
+    if (!releaseReady) addMissing(
+      releaseCustomer ? "Release Archive" : "Release Customer",
+      releaseCustomer ? releaseSelect : customerSelect
+    );
+
+    const missingControls = new Set(missing.map((item) => item.control).filter(Boolean));
+    const missingContainers = new Set(missing.map((item) => item.container).filter(Boolean));
+    [pcVersionInput, prefixInput, domainSelect, vpcProfileSelect, rancherClusterSelect, rancherContextSelect,
+      customerSelect, releaseSelect, ...envCheckboxes].filter(Boolean).forEach((control) => {
+      const invalid = revealRequiredErrors && missingControls.has(control);
+      control.classList.toggle("is-invalid", invalid);
+      if (invalid) control.setAttribute("aria-invalid", "true");
+      else control.removeAttribute("aria-invalid");
+    });
+    document.querySelectorAll(".spec-template-option, .spec-template-env-picker").forEach((container) => {
+      container.classList.toggle("has-error", revealRequiredErrors && missingContainers.has(container));
+    });
+
+    if (applyButton) {
+      applyButton.classList.toggle("btn-success", ready);
+      applyButton.classList.toggle("btn-outline-primary", !ready && !revealRequiredErrors);
+      applyButton.classList.toggle("btn-outline-danger", !ready && revealRequiredErrors);
+      applyButton.dataset.ready = String(ready);
+    }
+
+    if (missingHeading) {
+      missingHeading.textContent = ready ? "Configuration complete" : `Required before preview (${missing.length})`;
+    }
+    if (missingList) {
+      missingList.replaceChildren(...missing.map(({ label }) => {
+        const item = document.createElement("li");
+        item.textContent = label;
+        return item;
+      }));
+      missingList.hidden = ready;
+    }
+
+    if (applyState) {
+      applyState.classList.toggle("is-ready", ready);
+      applyState.classList.toggle("is-error", revealRequiredErrors && !ready);
+      if (!hasSelectedTemplate()) {
+        applyState.textContent = "Select a template to start";
+      } else if (ready) {
+        applyState.textContent = "Ready to generate preview";
+      } else if (!releaseReady) {
+        applyState.textContent = "Finish the release merge selection";
+      } else {
+        applyState.textContent = "Complete the required fields";
+      }
+    }
+    if (validationAlert) {
+      validationAlert.hidden = !revealRequiredErrors || ready;
+      validationAlert.textContent = ready
+        ? ""
+        : `Cannot generate preview yet. Complete: ${missing.map(({ label }) => label).join(", ")}.`;
+    }
+    return { ready, missing };
+  };
+
+  const revealAndFocusRequiredErrors = () => {
+    revealRequiredErrors = true;
+    const result = refreshApplyState();
+    if (result.ready) return true;
+    const firstProblem = result.missing[0];
+    const focusTarget = firstProblem?.control;
+    (firstProblem?.container || focusTarget)?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    focusTarget?.focus?.({ preventScroll: true });
+    return false;
+  };
+
+  refreshEnvSelection();
+  refreshApplyState();
+  envCheckboxes.forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      refreshEnvSelection();
+      refreshApplyState();
+    });
+  });
+
+  [pcVersionInput, prefixInput].forEach((input) => {
+    if (!input) return;
+    input.addEventListener("input", refreshApplyState);
+    input.addEventListener("change", refreshApplyState);
+  });
+  if (prefixInput) {
+    prefixInput.addEventListener("blur", () => {
+      syncTemplatePrefix();
+      refreshApplyState();
+    });
+    prefixInput.addEventListener("change", () => {
+      syncTemplatePrefix();
+      refreshApplyState();
+    });
+  }
+  [domainSelect, vpcProfileSelect, rancherClusterSelect, rancherContextSelect, releaseSelect].forEach((control) => {
+    if (!control) return;
+    control.addEventListener("change", refreshApplyState);
+  });
+
+  optionsForm?.addEventListener("submit", (event) => {
+    if (refreshingReleaseChoices) {
+      if (!confirmPreviewReplacement()) event.preventDefault();
+      return;
+    }
+    if (!revealAndFocusRequiredErrors()) {
+      event.preventDefault();
+      return;
+    }
+    if (!confirmPreviewReplacement()) event.preventDefault();
+  });
+
+  customerSelect?.addEventListener("change", () => {
+    if (releaseSelect) {
+      releaseSelect.value = "";
+    }
+    refreshApplyState();
+    refreshingReleaseChoices = true;
+    optionsForm.requestSubmit();
+  });
+});
+</script>
+
+<style>
+.spec-workbench-card {
+  margin: 0 auto;
+}
+
+.spec-workbench-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.spec-workbench-drafts {
+  order: 1;
+}
+
+.spec-workbench-create {
+  order: 2;
+  scroll-margin-top: 1rem;
+}
+
+.spec-create-mode-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.spec-create-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid var(--border-default);
+  border-radius: 0.85rem;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  text-align: left;
+}
+
+.spec-create-mode:hover,
+.spec-create-mode:focus-visible {
+  border-color: var(--accent-blue-border);
+}
+
+.spec-create-mode.is-active {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue-bg);
+  box-shadow: 0 8px 22px var(--accent-blue-border);
+}
+
+.spec-create-mode > i {
+  color: var(--accent-blue);
+  font-size: 1.15rem;
+}
+
+.spec-create-mode span,
+.spec-create-mode small {
+  display: block;
+}
+
+.spec-create-mode small {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+}
+
+.spec-template-step__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.spec-template-step__number {
+  width: 1.85rem;
+  height: 1.85rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent-blue);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.spec-template-review {
+  padding-top: 0.25rem;
+}
+
+.spec-field-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.3rem;
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.spec-field-tag--required {
+  color: var(--bs-danger-text-emphasis, #842029);
+  background: var(--bs-danger-bg-subtle, #f8d7da);
+}
+
+.spec-field-tag--optional {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+}
+
+.spec-template-release-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.spec-template-release-summary::-webkit-details-marker {
+  display: none;
+}
+
+.spec-template-config__group--release[open] .spec-template-release-summary {
+  margin-bottom: 0.8rem;
+}
+
+.spec-template-requirements {
+  color: var(--text-secondary);
+}
+
+.spec-template-requirements ul:empty {
+  display: none;
+}
+
+.spec-workbench-card > .card-body {
+  overflow: hidden;
+}
+
+.spec-workbench-panel {
+  max-width: none;
+  width: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  }
+
+  .spec-workbench-status-card {
+    max-width: none;
+    width: 100%;
+  }
+
+  .spec-workbench-panel-bar {
+    height: 4px;
+    background: var(--hero-gradient);
+    border-top-left-radius: 0.45rem;
+    border-top-right-radius: 0.45rem;
+  }
+
+  .spec-workbench-icon {
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-blue-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-blue-border);
+  }
+
+  .spec-workbench-editor {
+    min-height: 22rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.92rem;
+  }
+
+  .spec-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.85rem;
+  }
+
+  .spec-template-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.85rem;
+  }
+
+  .spec-template-card {
+    display: block;
+    border: 1px solid var(--border-default);
+    border-radius: 0.85rem;
+    padding: 0.85rem 0.95rem;
+    text-decoration: none;
+    color: inherit;
+    background: var(--bg-surface);
+    box-shadow: 0 8px 22px var(--border-subtle);
+    transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  }
+
+  .spec-template-card:hover {
+    border-color: var(--accent-blue-border);
+    box-shadow: 0 12px 26px var(--border-subtle);
+    transform: translateY(-1px);
+  }
+
+  .spec-template-card.is-selected {
+    border-color: var(--accent-blue);
+    background: var(--accent-blue-bg);
+    box-shadow: 0 12px 28px var(--accent-blue-border);
+  }
+
+  .spec-template-config {
+    padding: 1rem 1.05rem 1.1rem;
+    border: 1px solid var(--border-default);
+    border-radius: 0.9rem;
+    background: var(--bg-surface);
+  }
+
+  .spec-template-config__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .spec-template-config__groups {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
+  }
+
+  .spec-template-config__group {
+    padding: 0.9rem 0.95rem;
+    border: 1px solid var(--border-default);
+    border-radius: 0.82rem;
+    background: var(--bg-elevated);
+  }
+
+  .spec-template-config__group--release {
+    background: var(--bg-elevated);
+  }
+
+  .spec-template-config__group-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-bottom: 0.8rem;
+  }
+
+  .spec-template-config__group-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .spec-template-config__group-title {
+    font-size: 0.97rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .spec-template-config__controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.8rem 0.9rem;
+  }
+
+  .spec-template-config__controls--stacked {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .spec-template-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.42rem;
+    min-width: 0;
+  }
+
+  .spec-template-option.has-error .form-label {
+    color: var(--bs-danger, #dc3545);
+  }
+
+  .spec-template-env-picker.has-error {
+    padding: 0.45rem;
+    border: 1px solid var(--bs-danger, #dc3545);
+    border-radius: 0.85rem;
+    background: rgba(220, 53, 69, 0.08);
+  }
+
+  .spec-template-option--wide {
+    grid-column: 1 / -1;
+  }
+
+  .spec-template-option__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .spec-template-option .form-label {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .spec-template-env-summary {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+    background: var(--accent-blue-bg);
+    border: 1px solid var(--accent-blue-border);
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .spec-template-env-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 0.55rem;
+  }
+
+  .spec-template-env-picker.is-disabled {
+    opacity: 0.68;
+  }
+
+  .spec-template-env-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.7rem;
+    padding: 0.58rem 0.72rem;
+    border: 1px solid var(--border-default);
+    border-radius: 0.85rem;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  }
+
+  .spec-template-env-chip.is-checked {
+    border-color: var(--accent-blue-border);
+    background: var(--accent-blue-bg);
+    box-shadow: inset 0 0 0 1px var(--accent-blue-border);
+  }
+
+  .spec-template-env-checkbox {
+    margin: 0;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--accent-blue);
+    flex: 0 0 auto;
+  }
+
+  .spec-template-option__hint {
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--text-muted);
+    min-height: 2.05rem;
+  }
+
+  .spec-template-config__source {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem 0.55rem;
+    margin-top: 0.8rem;
+    padding-top: 0.75rem;
+    border-top: 1px dashed var(--border-default);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .spec-template-config__source-label {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.5rem;
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    font-size: 0.71rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .spec-template-config__footer {
+    margin-top: 0.95rem;
+    padding-top: 0.95rem;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .spec-template-config__meta {
+    max-width: 42rem;
+  }
+
+  .spec-template-config__apply-state {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.38rem 0.68rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-default);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .spec-template-config__apply-state.is-ready {
+    border-color: var(--accent-green-border);
+    background: var(--accent-green-bg);
+    color: var(--accent-green);
+  }
+
+  .spec-template-config code {
+    font-size: 0.78rem;
+  }
+
+  .spec-status-item {
+    border: 1px solid var(--border-default);
+    border-radius: 0.75rem;
+    padding: 0.85rem 0.95rem;
+    background: var(--bg-surface);
+  }
+
+  .spec-draft-card {
+    padding: 0.9rem 1rem !important;
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface);
+  }
+
+.spec-draft-breakout {
+  margin-right: -1rem;
+  margin-left: -1rem;
+  padding-right: 1rem;
+  padding-left: 1rem;
+}
+
+  .spec-draft-card-bar {
+    height: 4px;
+    background: var(--hero-gradient);
+    border-top-left-radius: 0.45rem;
+    border-top-right-radius: 0.45rem;
+  }
+
+  .spec-draft-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .spec-draft-meta-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.35rem;
+    /* was 0.55rem */
+    padding: 0.6rem 0.7rem;
+    /* was 0.8rem 0.9rem */
+    border: 1px solid var(--border-default);
+    border-radius: 0.8rem;
+    background: var(--bg-elevated);
+    min-height: 5rem;
+    /* was 6.2rem */
+  }
+
+  .spec-draft-meta-value {
+    display: block;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.35;
+  }
+
+  .spec-draft-meta-value--muted {
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  .spec-draft-hash {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .spec-draft-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
+    /* was 0.45rem */
+  }
+
+  .spec-draft-summary-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.4rem;
+    padding: 0.5rem 0.6rem;
+    /* was 0.65rem 0.7rem */
+    border-radius: 0.8rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    min-height: 4rem;
+    /* was 4.5rem */
+  }
+
+  .spec-draft-summary-chip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 2.2rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 0.7rem;
+    font-size: 0.92rem;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
+  }
+
+  .spec-draft-summary-chip--success {
+    background: var(--accent-green);
+    color: var(--hero-text);
+  }
+
+  .spec-draft-summary-chip--danger {
+    background: var(--accent-red);
+    color: var(--hero-text);
+  }
+
+  .spec-draft-summary-chip--muted {
+    background: var(--text-muted);
+    color: var(--bg-surface);
+  }
+
+  .spec-draft-summary-chip--empty {
+    background: var(--bg-overlay);
+    color: var(--text-secondary);
+  }
+
+  .spec-draft-summary-chip--neutral {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-default);
+  }
+
+@media (min-width: 768px) {
+  .spec-draft-breakout {
+    margin-right: -1rem;
+    margin-left: -1rem;
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+}
+
+  @media (max-width: 991.98px) {
+    .spec-template-config__groups {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .spec-create-mode-picker {
+      grid-template-columns: 1fr;
+    }
+
+    .spec-template-config__controls {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .spec-template-option__hint {
+      min-height: 0;
+    }
+
+    .spec-draft-summary {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .spec-draft-meta {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+{% endblock %}

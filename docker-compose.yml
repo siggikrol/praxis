@@ -1,0 +1,138 @@
+services:
+  cache-init:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    user: "0:0"
+    entrypoint:
+      - sh
+      - -lc
+    command:
+      - "mkdir -p /tmp/praxis-cache /tmp/praxis-cache/flask_sessions /var/lib/praxis-environment-readiness && rm -f /tmp/praxis-cache/flask_sessions/active_sessions.registry.json.lock && chown -R 65532:65532 /tmp/praxis-cache /var/lib/praxis-environment-readiness && chmod -R ug+rwX /tmp/praxis-cache /var/lib/praxis-environment-readiness"
+    volumes:
+      - praxis_cache:/tmp/praxis-cache
+      - praxis_environment_readiness_data:/var/lib/praxis-environment-readiness
+
+  web:
+    depends_on:
+      cache-init:
+        condition: service_completed_successfully
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    environment:
+      FLASK_SECRET: ${FLASK_SECRET:?set a strong secret}
+      FLASK_SECURE_COOKIES: ${FLASK_SECURE_COOKIES:-0}
+      FLASK_SAMESITE: "Lax"
+      PS_RUNTIME_ENV: ${PS_RUNTIME_ENV:-dev}
+      # Local startup does not refresh external infrastructure caches.
+      PS_VALIDATE_CACHES_ON_STARTUP: "0"
+      PS_AWS_CATALOG_REFRESHER_ENABLED: "0"
+      AWS_EC2_METADATA_DISABLED: "true"
+
+      AUTH_ENABLED: "1"
+      BASIC_USER: ${BASIC_USER:-admin}
+      BASIC_PASSWORD: ${BASIC_PASSWORD:-change-me}
+
+      # Optional ServiceNow Service Catalog integration for Foundation Readiness.
+      SERVICENOW_INSTANCE_URL: ${SERVICENOW_INSTANCE_URL:-}
+      SERVICENOW_PORTAL_URL: ${SERVICENOW_PORTAL_URL:-}
+      SERVICENOW_CLIENT_ID: ${SERVICENOW_CLIENT_ID:-}
+      SERVICENOW_CLIENT_SECRET: ${SERVICENOW_CLIENT_SECRET:-}
+      SERVICENOW_TOKEN_URL: ${SERVICENOW_TOKEN_URL:-}
+      SERVICENOW_AWS_CATALOG_ITEM_ID: ${SERVICENOW_AWS_CATALOG_ITEM_ID:-}
+      SERVICENOW_NCR_CATALOG_ITEM_ID: ${SERVICENOW_NCR_CATALOG_ITEM_ID:-}
+      SERVICENOW_AWS_VARIABLE_MAP: ${SERVICENOW_AWS_VARIABLE_MAP:-}
+      SERVICENOW_NCR_VARIABLE_MAP: ${SERVICENOW_NCR_VARIABLE_MAP:-}
+      # Networking content may be supplied by a read-only directory mount; see modules/ncr/content/README.md.
+      PS_NETWORKING_CONTENT_DIR: ${PS_NETWORKING_CONTENT_DIR:-/app/modules/ncr/content}
+      SERVICENOW_NCR_CONTENT_MODE: ${SERVICENOW_NCR_CONTENT_MODE:-complete}
+      SERVICENOW_NCR_FIELD_LIMITS: ${SERVICENOW_NCR_FIELD_LIMITS:-}
+      SERVICENOW_AWS_FIELD_LIMITS: ${SERVICENOW_AWS_FIELD_LIMITS:-}
+
+      # GitHub App
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
+      GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY:-}
+      PS_GITHUB_OWNER: ${PS_GITHUB_OWNER:-}
+      PS_GITHUB_REPO: devops-praxis-core
+      PS_GIT_REF: ${PS_GIT_BRANCH:-main}
+      PS_CORE_GIT_URL: ${PS_CORE_GIT_URL:-}
+
+      PS_IAC_SUBDIR: ${PS_IAC_SUBDIR:-SSA/iac}
+      PS_BUCKETS_PY: /app/modules/iac/constants.py
+      PS_BUCKETS_VAR: IAC_WHITELIST_BUCKETS
+
+      PS_RELEASES_PROVIDER: disabled
+      PS_RELEASES_S3_BUCKET: ${PS_RELEASES_S3_BUCKET:-}
+      PS_IAC_ARCHIVE_S3_BUCKET: ${PS_IAC_ARCHIVE_S3_BUCKET:-}
+      PS_IAC_ARCHIVE_S3_PREFIX: terraform-module-archive
+      AWS_DEFAULT_REGION: eu-central-1
+      PS_ARTIAC_STATUS_URL: ${PS_ARTIAC_STATUS_URL:-http://host.docker.internal:18081/status}
+      ARTIAC_STATUS_API_BASE: ${ARTIAC_STATUS_API_BASE:-http://host.docker.internal:18081}
+      ARTIAC_RUN_HISTORY_URL: ${ARTIAC_RUN_HISTORY_URL:-}
+      PS_CORE_VALIDATE_REGISTRY_ADDRESS: ${PS_CORE_VALIDATE_REGISTRY_ADDRESS:-}
+      PS_CORE_VALIDATE_NAMESPACE: ${PS_CORE_VALIDATE_NAMESPACE:-praxis}
+      PS_CORE_VALIDATE_IMAGE_PULL_SECRETS: ${PS_CORE_VALIDATE_IMAGE_PULL_SECRETS:-}
+      HOME: /app
+      PS_SPEC_WORKBENCH_DB_PATH: ${PS_SPEC_WORKBENCH_DB_PATH:-/tmp/praxis-cache/spec-workbench.sqlite3}
+      PS_WIZARD_WORKSPACES_DB_PATH: ${PS_WIZARD_WORKSPACES_DB_PATH:-/tmp/praxis-cache/wizard-workspaces.sqlite3}
+      PS_ENVIRONMENT_READINESS_DB: ${PS_ENVIRONMENT_READINESS_DB:-/var/lib/praxis-environment-readiness/environment-readiness.sqlite3}
+      SESSION_FILE_DIR: ${SESSION_FILE_DIR:-/tmp/praxis-cache/flask_sessions}
+      PS_ACTIVE_SESSIONS_REGISTRY: ${PS_ACTIVE_SESSIONS_REGISTRY:-/tmp/praxis-cache/active_sessions.registry.json}
+      PS_SPEC_WORKBENCH_CONFLUENCE_BASE_URL: ${PS_SPEC_WORKBENCH_CONFLUENCE_BASE_URL:-}
+      PS_SPEC_WORKBENCH_CONFLUENCE_SPACE_KEY: ${PS_SPEC_WORKBENCH_CONFLUENCE_SPACE_KEY:-}
+      PS_SPEC_WORKBENCH_CONFLUENCE_ROOT_PAGE_ID: ${PS_SPEC_WORKBENCH_CONFLUENCE_ROOT_PAGE_ID:-}
+      PS_SPEC_WORKBENCH_CONFLUENCE_USER_EMAIL: ${PS_SPEC_WORKBENCH_CONFLUENCE_USER_EMAIL:-}
+      PS_SPEC_WORKBENCH_CONFLUENCE_API_TOKEN: ${PS_SPEC_WORKBENCH_CONFLUENCE_API_TOKEN:-}
+
+      GIT_TERMINAL_PROMPT: "0"
+      GCM_INTERACTIVE: "Never"
+      PS_PC_SOURCE_BRANCH_SWITCH: "true"
+      # Disable background refresh threads (PC Source cache refresh is manual via the wizard step).
+      PS_PC_SOURCE_REFRESHER_ENABLED: "0"
+      # Spacelift API (optional)
+      SPACELIFT_ACCOUNT_NAME: ${SPACELIFT_ACCOUNT_NAME:-}
+      SPACELIFT_API_KEY: ${SPACELIFT_API_KEY:-}
+      SPACELIFT_CONFIG: ${SPACELIFT_CONFIG:-}
+      SPACELIFT_API_URL: ${SPACELIFT_API_URL:-}
+      PS_SPACELIFT_STATUS_TTL_SECONDS: ${PS_SPACELIFT_STATUS_TTL_SECONDS:-1800}
+      PS_CORE_VALIDATE_TF_TOKEN_SECRET_NAME: ${PS_CORE_VALIDATE_TF_TOKEN_SECRET_NAME:-}
+      PS_CORE_VALIDATE_TF_TOKEN_SECRET_KEY: ${PS_CORE_VALIDATE_TF_TOKEN_SECRET_KEY:-TF_TOKEN_spacelift_io}
+
+      #ENABLED_MODULES: wizard_multi_vpc,wizard_single_vpc,wizard_loyalty,wizard_rgs,wizard_unified,pc_source,status,praxisrelease,releases_explorer
+      ENABLED_MODULES: ncr,environment_readiness,spec_validator,wizard_multi_vpc,wizard_single_vpc,wizard_loyalty,wizard_rgs,wizard_unified,wizard_ext,status,praxisrelease,releases_explorer,artiac_control
+
+    expose:
+      - "5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=2).read()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # For local testing only, you can mount a Spacelift config file:
+    # volumes:
+    #   - ./api-key-praxis-read.config:/app/spacelift.config:ro
+    # environment:
+    #   SPACELIFT_CONFIG: /app/spacelift.config
+    volumes:
+      - praxis_cache:/tmp/praxis-cache
+      - praxis_environment_readiness_data:/var/lib/praxis-environment-readiness
+
+  nginx:
+    image: nginx:stable-alpine
+    depends_on:
+      web:
+        condition: service_healthy
+    ports: [ "80:80" ]
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  praxis_cache:
+  praxis_environment_readiness_data:

@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}{{ category }} · Praxis{% endblock %}
+{% macro workspace_origin(workspace) %}
+  {% if workspace.origin_label == 'Readiness Gate' %}
+    {% if workspace.origin_setup %}
+      <a class="badge text-bg-secondary text-decoration-none" href="{{ url_for('environment_readiness.setup_detail', setup_id=workspace.origin_setup.id) }}" title="Open readiness setup {{ workspace.origin_setup.environment_name }}, revision {{ workspace.origin_setup.revision }}"><i class="fa-solid fa-shield-halved me-1" aria-hidden="true"></i>Readiness Gate <i class="fa-solid fa-arrow-up-right-from-square ms-1" aria-hidden="true"></i></a>
+    {% else %}
+      <span class="badge text-bg-secondary" title="Created through the Readiness Gate; the source record is no longer available"><i class="fa-solid fa-shield-halved me-1" aria-hidden="true"></i>Readiness Gate · source unavailable</span>
+    {% endif %}
+  {% elif workspace.origin_label == 'Origin unknown' %}
+    <span class="badge text-bg-light border" title="Older workspace without recorded origin or a surviving readiness link">Origin unknown</span>
+  {% else %}
+    <span class="badge text-bg-light border" title="Started directly in a wizard"><i class="fa-solid fa-pen me-1" aria-hidden="true"></i>Created directly</span>
+  {% endif %}
+{% endmacro %}
+{% block content %}
+<div class="page-shell">
+
+  {% set hero_title = category %}
+  {% set hero_subtitle = subtitle %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('index') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Home
+  </a>
+
+  {% set items = category_items if category_items is defined else (home_links | selectattr("category", "equalto", category) | list) %}
+
+  {% if category == "Wizards" and (owned_workspaces or shared_workspaces) %}
+    <section class="mb-4">
+      <div class="d-flex justify-content-between align-items-end mb-2">
+        <div>
+          <h2 class="h6 mb-1">My wizard workspaces</h2>
+          <div class="text-muted small">Continue a saved provisioning session or revisit its generated spec and validation runs. Origin labels distinguish Readiness Gate handoffs from setups started directly in a wizard.</div>
+        </div>
+      </div>
+      <div class="row-list">
+        {% for workspace in owned_workspaces %}
+          {% set validation = workspace.validation or {} %}
+          <div class="row-item">
+            <div class="row-item__icon row-item__icon--blue">
+              <i class="fa-solid fa-layer-group"></i>
+            </div>
+            <div class="row-item__body">
+              <div class="row-item__title d-flex flex-wrap align-items-center gap-2">
+                <span>{{ workspace.title }}</span>
+                {{ workspace_origin(workspace) }}
+                {% for environment_name in workspace.environment_names %}
+                  <span class="badge text-bg-primary">{{ environment_name|upper }}</span>
+                {% endfor %}
+              </div>
+              <div class="row-item__sub">
+                {{ workspace.env_slug|replace('-', ' ')|title }} · Updated {{ workspace.updated_label }}
+                {% if workspace.release.name %}
+                  · Release: {{ workspace.release.name }}
+                  {% if workspace.release.customer and workspace.release.customer != 'all' %} ({{ workspace.release.customer }}){% endif %}
+                {% endif %}
+                {% if validation.label %} · {{ validation.label }}{% endif %}
+              </div>
+            </div>
+            <div class="d-flex gap-2 flex-wrap justify-content-end">
+              <a class="btn btn-outline-primary btn-sm" href="{{ url_for('resume_wizard_workspace', workspace_id=workspace.id) }}">Continue</a>
+              <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('change_wizard_workspace_release', workspace_id=workspace.id) }}">Change Release</a>
+              {% if workspace.spec_yaml %}
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('open_wizard_workspace_finish', workspace_id=workspace.id) }}">View Spec</a>
+              {% endif %}
+              {% if workspace.latest_job_id %}
+                <a class="btn btn-outline-{{ validation.level or 'secondary' }} btn-sm"
+                   href="{{ url_for(workspace.env_slug ~ '_wizard.wizard_core_validate_job_page', job_id=workspace.latest_job_id) }}">Validation</a>
+              {% endif %}
+              <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('wizard_workspace_sharing', workspace_id=workspace.id) }}">Share</a>
+              <form method="post"
+                    action="{{ url_for('delete_wizard_workspace', workspace_id=workspace.id) }}"
+                    onsubmit="return confirm('Delete this setup? Its saved wizard progress and sharing settings will be removed.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    {% if shared_workspaces %}
+      <section class="mb-4">
+        <h2 class="h6 mb-2">Shared with me</h2>
+        <div class="row-list">
+          {% for workspace in shared_workspaces %}
+            {% set validation = workspace.validation or {} %}
+            <div class="row-item">
+              <div class="row-item__icon row-item__icon--green"><i class="fa-solid fa-user-group"></i></div>
+              <div class="row-item__body">
+                <div class="row-item__title d-flex flex-wrap align-items-center gap-2">
+                  <span>{{ workspace.title }}</span>
+                {{ workspace_origin(workspace) }}
+                  {% for environment_name in workspace.environment_names %}
+                    <span class="badge text-bg-primary">{{ environment_name|upper }}</span>
+                  {% endfor %}
+                </div>
+                <div class="row-item__sub">
+                  Owned by {{ workspace.owner }} · {{ workspace.access|title }}
+                  {% if workspace.release.name %}
+                    · Release: {{ workspace.release.name }}
+                    {% if workspace.release.customer and workspace.release.customer != 'all' %} ({{ workspace.release.customer }}){% endif %}
+                  {% endif %}
+                  {% if validation.label %} · {{ validation.label }}{% endif %}
+                </div>
+              </div>
+              <div class="d-flex gap-2 flex-wrap justify-content-end">
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('resume_wizard_workspace', workspace_id=workspace.id) }}">
+                  {{ 'Continue' if workspace.access == 'editor' else 'Open' }}
+                </a>
+                {% if workspace.access == 'editor' %}
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('change_wizard_workspace_release', workspace_id=workspace.id) }}">Change Release</a>
+                {% endif %}
+                {% if workspace.spec_yaml %}
+                  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('open_wizard_workspace_finish', workspace_id=workspace.id) }}">View Spec</a>
+                {% endif %}
+                {% if workspace.latest_job_id %}
+                  <a class="btn btn-outline-{{ validation.level or 'secondary' }} btn-sm"
+                     href="{{ url_for(workspace.env_slug ~ '_wizard.wizard_core_validate_job_page', job_id=workspace.latest_job_id) }}">Validation</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </section>
+    {% endif %}
+
+    <h2 class="h6 mb-2">Start a new setup</h2>
+  {% endif %}
+
+  {% if category == "Tools" and items %}
+    {% set groups = [] %}
+    {% for m in items %}
+      {% set g = m.group if m.group is defined and m.group else "General" %}
+      {% if g not in groups %}{% set _ = groups.append(g) %}{% endif %}
+    {% endfor %}
+    {% if groups | length > 1 %}
+      <div class="filter-tabs mb-3" id="toolFilterTabs">
+        <button class="filter-tab active" type="button" data-filter="all">All</button>
+        {% for g in groups %}
+          <button class="filter-tab" type="button" data-filter="{{ g }}">{{ g }}</button>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {% if items %}
+    <div class="row-list">
+      {% for m in items %}
+        {% if has_endpoint(m.home_endpoint) %}
+          {% set g = m.group if m.group is defined and m.group else "General" %}
+          {% if category == "Wizards" %}
+            {% set icon_cls = "row-item__icon--blue" %}
+          {% elif category == "Tools" %}
+            {% set icon_cls = "row-item__icon--green" %}
+          {% else %}
+            {% set icon_cls = "row-item__icon--amber" %}
+          {% endif %}
+          <a href="{{ url_for(m.home_endpoint) }}"
+             class="row-item tool-card"
+             data-group="{{ g }}">
+            <div class="row-item__icon {{ icon_cls }}">
+              <i class="{{ m.icon }}"></i>
+            </div>
+            <div class="row-item__body">
+              <div class="row-item__title">{{ m.title }}</div>
+              <div class="row-item__sub">{{ m.description }}</div>
+            </div>
+            <span class="row-item__arrow">&rarr;</span>
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-center py-5" style="color: var(--text-muted); font-size: 13px;">
+      No {{ category.lower() }} available yet.
+    </div>
+  {% endif %}
+
+</div>
+
+{% if category == "Tools" %}
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const tabs  = document.querySelectorAll(".filter-tab");
+      const cards = document.querySelectorAll(".tool-card");
+      if (!tabs.length || !cards.length) return;
+      tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          tabs.forEach(t => t.classList.remove("active"));
+          tab.classList.add("active");
+          const filter = tab.dataset.filter;
+          cards.forEach(card => {
+            card.style.display = (filter === "all" || card.dataset.group === filter) ? "" : "none";
+          });
+        });
+      });
+    });
+  </script>
+{% endif %}
+{% endblock %}

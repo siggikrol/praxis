@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-shell">
+
+  {% set hero_title = "Network Change Request – Egress" %}
+  {% set hero_subtitle = "Select outbound access requirements" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+
+  {% set current_ncr_step = 2 %}
+  {% include "_ncr_progress.html" %}
+
+  <form method="POST">
+    {{ form.hidden_tag() }}
+    <div class="wizard-panel">
+
+      {# ── Platform Egress ── #}
+      <div class="wizard-panel__section">
+        <div class="wizard-panel__label">Platform Egress</div>
+        <div class="ncr-checkbox-group">
+          <label class="ncr-checkbox-item">{{ form.eks_to_aws() }} {{ form.eks_to_aws.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.eks_to_registries() }} {{ form.eks_to_registries.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.eks_to_cicd() }} {{ form.eks_to_cicd.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.sumologic() }} {{ form.sumologic.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.grafana() }} {{ form.grafana.label.text }}</label>
+        </div>
+      </div>
+
+      {# ── 3rd-party partners ── #}
+      <div class="wizard-panel__section">
+        <div class="wizard-panel__label">3rd-party Partners</div>
+        <div class="ncr-checkbox-group">
+          {% for value, label in form.partners.choices %}
+          <label class="ncr-checkbox-item">
+            <input type="checkbox" name="partners" value="{{ value }}"
+              {% if value in (form.partners.data or []) %}checked{% endif %}>
+            {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Inter-VPC flows ── #}
+      <div class="wizard-panel__section">
+        <div class="wizard-panel__label">Inter-VPC Flows</div>
+        <div class="ncr-checkbox-group">
+          {% for value, label in form.east_west.choices %}
+          <label class="ncr-checkbox-item">
+            <input type="checkbox" name="east_west" value="{{ value }}"
+              {% if value in (form.east_west.data or []) %}checked{% endif %}>
+            {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Windows & Identity ── #}
+      <div class="wizard-panel__section">
+        <div class="wizard-panel__label">Windows &amp; Identity</div>
+        <div class="ncr-checkbox-group">
+          <label class="ncr-checkbox-item">{{ form.win_to_ad() }} {{ form.win_to_ad.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.win_to_sccm() }} {{ form.win_to_sccm.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.kcm_ldaps_ad() }} {{ form.kcm_ldaps_ad.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.win_to_duo() }} {{ form.win_to_duo.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.vpn_to_jumphosts() }} {{ form.vpn_to_jumphosts.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.nessus_scans() }} {{ form.nessus_scans.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.jmeter_access() }} {{ form.jmeter_access.label.text }}</label>
+          <label class="ncr-checkbox-item">{{ form.adfs_to_apps() }} {{ form.adfs_to_apps.label.text }}</label>
+        </div>
+      </div>
+
+      {# ── Notes ── #}
+      <div class="wizard-panel__section">
+        <label class="form-label">Egress notes</label>
+        {{ form.notes(class="form-control") }}
+      </div>
+
+      <div class="wizard-footer">
+        <div class="wizard-footer__left">
+          <a class="btn-secondary" href="{{ url_for('ncr.ingress') }}">&larr; Previous</a>
+        </div>
+        <div class="wizard-footer__right">
+          <button class="btn-primary" type="submit">Generate &rarr; Finish</button>
+        </div>
+      </div>
+    </div>
+  </form>
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-shell">
+  {% set wizard_titles = {
+    'multi-vpc': 'Catalyst Multi-VPC',
+    'single-vpc': 'Catalyst Single-VPC',
+    'rgs': 'Catalyst RGS',
+    'loyalty': 'Loyalty',
+    'unified': 'Unified Deployment'
+  } %}
+  {% set current_wizard_slug = wizard_slug if wizard_slug is defined and wizard_slug else form.wizard_slug %}
+  {% set wizard_name = wizard_titles.get(current_wizard_slug, current_wizard_slug|replace('-', ' ')|title if current_wizard_slug else 'Wizard') %}
+
+  <div class="home-hero">
+    <div class="home-hero__inner">
+      <div class="home-hero__eyebrow">
+        <span class="eyebrow-dot"></span>
+        {{ wizard_name }}
+      </div>
+      <h1 class="home-hero__title">Select a Release</h1>
+      <p class="home-hero__sub">
+        {% if request.values.get('edit') == '1' %}
+          Choose a different release. Your wizard setup will be kept.
+        {% else %}
+          Choose a customer &amp; release archive to begin
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <a class="back-btn" href="/wizards">&larr; Back to Wizards</a>
+
+  <!-- Release form -->
+  <form method="POST" action="{{ form_action if form_action is defined and form_action else request.path }}">
+    {{ form.hidden_tag() }}
+
+    <input type="hidden" name="wizard_slug" value="{{ current_wizard_slug }}">
+    <input type="hidden" name="edit" value="{{ request.values.get('edit', '') }}">
+    <input type="hidden" name="return_step" value="{{ request.values.get('return_step', '') }}">
+    <input type="hidden" name="release_page" id="release_page" value="{{ form.release_page or 1 }}">
+
+    <div class="wizard-panel">
+      <div class="wizard-panel__section">
+        <label for="{{ form.customer.id }}" class="form-label fw-semibold">Customer</label>
+        {{ form.customer(class="form-select") }}
+        {% if release_source and release_source.bucket %}
+          <div class="text-muted small mt-1">
+            Source: s3://{{ release_source.bucket }}{% if release_source.prefix %}/{{ release_source.prefix }}{% endif %}/
+          </div>
+        {% endif %}
+        {% if form.customer.errors %}
+          <div class="text-danger small mt-1">{{ form.customer.errors[0] }}</div>
+        {% endif %}
+      </div>
+
+      <div class="wizard-panel__section">
+        <label for="{{ form.release_key.id }}" class="form-label fw-semibold">Release Archive (.tar.gz)</label>
+        {{ form.release_key(class="form-select") }}
+        {% if form.customer.data == "all" %}
+          <div class="text-muted small mt-1">
+            Listing all releases may take a moment.
+          </div>
+          {% if form.release_pages and form.release_pages > 1 %}
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <button type="submit"
+                      name="reload"
+                      value="1"
+                      data-page="{{ form.release_page - 1 }}"
+                      class="btn btn-sm btn-outline-secondary release-page-btn"
+                      {% if form.release_page <= 1 %}disabled{% endif %}>
+                Prev
+              </button>
+              <span class="text-muted small">
+                Page {{ form.release_page }} of {{ form.release_pages }}
+              </span>
+              <button type="submit"
+                      name="reload"
+                      value="1"
+                      data-page="{{ form.release_page + 1 }}"
+                      class="btn btn-sm btn-outline-secondary release-page-btn"
+                      {% if form.release_page >= form.release_pages %}disabled{% endif %}>
+                Next
+              </button>
+            </div>
+          {% endif %}
+          {% if form.release_total and form.release_total > 0 and form.release_page_size %}
+            {% set start_index = ((form.release_page - 1) * form.release_page_size) + 1 %}
+            {% set end_index = form.release_page * form.release_page_size %}
+            {% if end_index > form.release_total %}{% set end_index = form.release_total %}{% endif %}
+            <div class="text-muted small mt-1">
+              Showing {{ start_index }}–{{ end_index }} of {{ form.release_total }} releases
+            </div>
+          {% endif %}
+        {% endif %}
+        <div id="release-loading" class="text-muted small mt-1 d-none">Loading releases...</div>
+        {% if form.release_key.errors %}
+          <div class="text-danger small mt-1">{{ form.release_key.errors[0] }}</div>
+        {% endif %}
+      </div>
+
+      <div class="wizard-footer">
+        <div class="wizard-footer__left">
+          <button type="submit" name="reload" value="1" class="btn-secondary">Reload</button>
+          <a href="{{ url_for('praxisrelease.examine_release',
+                              customer=form.customer.data,
+                              release_key=form.release_key.data,
+                              wizard_slug=current_wizard_slug) }}"
+             class="btn-secondary"
+             id="examine-btn">Examine</a>
+        </div>
+        <div class="wizard-footer__right">
+          <button type="submit" class="btn-primary">Use This Release</button>
+        </div>
+      </div>
+    </div>
+
+  </form>
+
+</div>
+
+<!-- JS logic unchanged -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const customerSel = document.getElementById("customer");
+  const releaseSel  = document.getElementById("release_key");
+  const examineBtn = document.getElementById("examine-btn");
+  const releasePage = document.getElementById("release_page");
+  const loadingHint = document.getElementById("release-loading");
+  const releaseForm = customerSel ? customerSel.closest("form") : null;
+  const pageButtons = document.querySelectorAll(".release-page-btn");
+
+  // Auto-refresh on customer change using reload button
+  if (customerSel) {
+    customerSel.addEventListener("change", () => {
+      // Set reload mode and submit the main form
+      if (releasePage) releasePage.value = "1";
+      const form = customerSel.closest("form");
+      const reloadInput = document.createElement("input");
+      reloadInput.type = "hidden";
+      reloadInput.name = "reload";
+      reloadInput.value = "1";
+      form.appendChild(reloadInput);
+      if (loadingHint && customerSel.value === "all") {
+        loadingHint.classList.remove("d-none");
+      }
+      form.submit();
+    });
+  }
+
+  if (pageButtons.length && releaseForm) {
+    pageButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (releasePage) releasePage.value = btn.dataset.page || "1";
+        if (loadingHint && customerSel && customerSel.value === "all") {
+          loadingHint.classList.remove("d-none");
+        }
+      });
+    });
+  }
+
+  if (releaseForm && customerSel) {
+    releaseForm.addEventListener("submit", (event) => {
+      const submitter = event.submitter;
+      if (submitter && submitter.name === "reload" && customerSel.value === "all") {
+        if (loadingHint) loadingHint.classList.remove("d-none");
+      }
+    });
+  }
+
+  // Live update examine link
+  if (releaseSel && examineBtn && customerSel) {
+    const baseUrl = "{{ url_for('praxisrelease.examine_release') }}";
+    const wizardSlug = "{{ current_wizard_slug or '' }}";
+    const updateLink = () => {
+      const customer = customerSel.value || "";
+      const release  = releaseSel.value || "";
+      const params = new URLSearchParams();
+      if (wizardSlug) params.set("wizard_slug", wizardSlug);
+      params.set("customer", customer);
+      params.set("release_key", release);
+      if (releasePage) params.set("release_page", releasePage.value || "1");
+      examineBtn.href = `${baseUrl}?${params.toString()}`;
+    };
+    releaseSel.addEventListener("change", updateLink);
+    customerSel.addEventListener("change", updateLink);
+    updateLink(); // ensure initial link matches the current dropdown values
+  }
+});
+</script>
+
+{% endblock %}

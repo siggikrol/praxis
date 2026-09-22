@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+.nt-shell{max-width:1540px;margin:24px auto;padding:0 24px}.nt-top{display:flex;justify-content:space-between;align-items:center;gap:20px}.nt-eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-secondary)}.nt-tabs{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}.nt-tabs a{padding:12px 22px;border:1px solid var(--border-default);border-radius:10px;text-decoration:none}.nt-tabs .active{background:var(--accent-blue-bg);color:var(--accent-blue);border-color:var(--accent-blue-border)}.nt-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px}.nt-panel{border:1px solid var(--border-default);border-radius:12px;padding:22px;margin-bottom:16px;background:var(--bg-surface)}.nt-panel summary{cursor:pointer;font-size:17px;font-weight:600}.nt-panel small{display:block;color:var(--text-secondary);margin:8px 0 14px}.nt-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.nt-panel label{display:block;font-size:13px;margin:12px 0 4px}.nt-panel input,.nt-panel textarea{width:100%;padding:9px;border:1px solid var(--border-default);border-radius:6px;background:var(--bg-surface);color:inherit}.nt-panel textarea{min-height:86px;font-family:monospace;font-size:12px}.nt-preview{position:sticky;top:16px;align-self:start}.nt-preview pre{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.65;max-height:76vh;overflow:auto;margin-top:18px}.nt-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}.nt-status{padding:6px 12px;background:var(--accent-green-bg);color:var(--accent-green);border-radius:20px;font-size:13px}.nt-rule{border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:12px}@media(max-width:1000px){.nt-grid{grid-template-columns:1fr}.nt-preview{position:static}.nt-top{align-items:start;flex-direction:column}}
+.nt-shell{color:var(--text-primary)}
+.nt-shell a{color:var(--accent-blue)}
+.nt-tabs a:hover{background:var(--bg-elevated)}
+.nt-panel input,.nt-panel textarea{background:var(--bg-base);color:var(--text-primary)}
+.nt-panel input::placeholder,.nt-panel textarea::placeholder{color:var(--text-secondary);opacity:1}
+.nt-panel input:disabled{background:var(--bg-elevated);color:var(--text-secondary)}
+.nt-panel input:focus-visible,.nt-panel textarea:focus-visible,.nt-panel summary:focus-visible,.nt-tabs a:focus-visible{outline:2px solid var(--accent-blue);outline-offset:2px}
+.nt-preview pre{color:var(--text-primary);scrollbar-color:var(--border-strong) var(--bg-surface)}
+</style>
+<div class="nt-shell">
+{% if config.get('NCR_TEMPLATE_DEMO') %}<div class="alert alert-info">Sandbox preview — save and publish affect this demo only.</div>{% endif %}
+<div class="nt-top"><div><div class="nt-eyebrow">NCR · Template administration</div><h1>Networking templates</h1><p>Maintain the requirements and ticket wording used by Readiness Gate.</p></div><a href="{{ url_for('ncr.ingress') }}">Open existing NCR builder →</a></div>
+<nav class="nt-tabs">{% for key,label in architectures.items() %}<a class="{{ 'active' if key == architecture else '' }}" href="{{ url_for('ncr.template_admin', architecture=key) }}">{{ label }}</a>{% endfor %}</nav>
+{% for category,message in get_flashed_messages(with_categories=true) %}<div class="alert alert-{{ category }}">{{ message }}</div>{% endfor %}
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="architecture" value="{{ architecture }}"><input type="hidden" name="draft_version" value="{{ head.draft or '' }}"><input type="hidden" name="published_version" value="{{ head.published or '' }}">
+<div class="nt-actions" style="margin:0 0 16px" role="group" aria-label="Section visibility">
+<button type="button" class="btn btn-sm btn-outline-secondary" id="nt-collapse-all"><i class="fa-solid fa-compress" aria-hidden="true"></i> Collapse all</button>
+<button type="button" class="btn btn-sm btn-outline-secondary" id="nt-expand-all"><i class="fa-solid fa-expand" aria-hidden="true"></i> Expand all</button>
+<span id="nt-sections-status" role="status" class="nt-eyebrow" style="align-self:center"></span>
+</div>
+<div class="nt-grid"><div>
+<div class="nt-panel"><div class="nt-top"><strong>{{ architectures[architecture] }}</strong><span class="nt-status">{{ 'Published v' ~ head.published if head.published else 'Using bundled template' }}</span></div><small>{{ 'Editing draft v' ~ head.draft if head.draft else 'Start a draft from the current template.' }} Changes reach Readiness Gate only when published.</small>
+<div class="nt-actions"><button class="btn btn-outline-primary" name="_action" value="preview">Update preview</button><button class="btn btn-primary" name="_action" value="save">Save draft</button><button class="btn btn-success" name="_action" value="publish" {{ 'disabled' if not head.draft else '' }}>Publish saved version</button></div></div>
+<details class="nt-panel" open><summary>VPC allocations</summary><small>Requested CIDR prefixes. Environment addresses are supplied in Readiness Gate.</small><div class="nt-row">{% for key,item in profile.vpcs.items() %}<div><label>{{ key|upper }} prefix</label><input name="vpcs.{{ key }}.requested_prefix" value="{{ '/' ~ item.requested_prefix if item.requested_prefix is defined else '' }}" placeholder="From environment selection" {{ 'disabled' if item.requested_prefix is not defined else '' }}></div>{% endfor %}</div></details>
+<details class="nt-panel" open id="nt-endpoints"><summary>Application endpoints <span class="nt-eyebrow" id="nt-endpoint-count">{{ profile.endpoints|length }} hosts</span></summary>
+<small>Use {ENV} for the subdomain and {DOMAIN} for the root domain. Changes take effect after saving and publishing.</small>
+<input type="hidden" name="endpoint_editor" value="1">
+<div id="nt-endpoint-rows">
+{% for key,item in profile.endpoints.items() %}
+<div class="nt-rule" data-endpoint-row>
+<input type="hidden" name="endpoint_key" value="{{ key }}">
+<div class="nt-top"><strong>{{ item.name }}</strong><button type="button" class="btn btn-sm btn-outline-danger" data-remove-endpoint>Remove<span class="visually-hidden"> {{ item.name }}</span></button></div>
+<div class="nt-row"><label>Name<input name="endpoints.{{ key }}.name" value="{{ item.name }}" required maxlength="100"></label><label>Category<input name="endpoints.{{ key }}.category" value="{{ item.get('category', item.namespace|upper) }}" list="nt-endpoint-categories" required maxlength="100"></label></div>
+<label>Hostname<input name="endpoints.{{ key }}.host" value="{{ item.host }}" required maxlength="300"></label>
+<label>Protocol / port<input name="endpoints.{{ key }}.protocol" value="{{ item.protocol }}" required placeholder="HTTPS/TCP 443"></label>
+</div>{% endfor %}</div>
+<datalist id="nt-endpoint-categories">{% for item in profile.endpoints.values() %}<option value="{{ item.get('category', item.namespace|upper) }}">{% endfor %}</datalist>
+<button class="btn btn-outline-primary" type="button" id="nt-add-endpoint"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add endpoint</button>
+<span id="nt-endpoint-message" role="status" class="ms-2"></span>
+<button type="button" id="nt-undo-endpoint" class="btn btn-sm btn-link" hidden>Undo removal</button>
+<template id="nt-endpoint-template"><div class="nt-rule" data-endpoint-row>
+<input type="hidden" name="endpoint_key">
+<div class="nt-top"><strong>New endpoint</strong><button type="button" class="btn btn-sm btn-outline-danger" data-remove-endpoint>Remove</button></div>
+<div class="nt-row"><label>Name<input data-prop="name" required maxlength="100" placeholder="Application name"></label><label>Category<input data-prop="category" list="nt-endpoint-categories" required maxlength="100" placeholder="Public or internal application group"></label></div>
+<label>Hostname<input data-prop="host" required maxlength="300" placeholder="app.{ENV}.{DOMAIN}"></label>
+<label>Protocol / port<input data-prop="protocol" required placeholder="HTTPS/TCP 443"></label>
+</div></template></details>
+{% if profile.platform == 'catalyst' %}<details class="nt-panel" open><summary>Access group and Harbor</summary><label>AD group requiring application endpoint access</label><input name="defaults.ad_access_group" value="{{ profile.defaults.get('ad_access_group', '') }}" placeholder="e.g. AWS-Developers" maxlength="128"><small>AWS-Developers was used for the MVP. Set the actual group for this template or fill it in on the request.</small><label>Harbor registry hostname</label><input name="defaults.harbor_host" value="{{ profile.defaults.harbor_host }}" required></details>{% endif %}
+{% if profile.defaults.get('bde_cidr') %}<details class="nt-panel" open><summary>BDE connectivity</summary><small>BDE hosts access EKS API endpoints on port 443. Environment VPCs require egress to the BDE network and services.</small>{% for key,label in [('bde_cidr','BDE network CIDR'),('bde_vault_host','Shared Vault URL')] %}<label>{{ label }}</label><input name="defaults.{{ key }}" value="{{ profile.defaults[key] }}" required>{% endfor %}<small>Rancher access in both directions uses the URL of the Rancher target selected for the environment. Choose a target under Preview environment to see its URL.</small></details>{% endif %}
+{% if profile.get('services') or profile.defaults.get('registry_destinations') or profile.defaults.get('directory_destinations') %}<details class="nt-panel"><summary>Egress destinations</summary>{% if 'registry_destinations' in profile.defaults %}<label>Container registries · DNS names, optional leading *. wildcard</label><textarea rows="11" name="defaults.registry_destinations">{{ profile.defaults.registry_destinations|join('\n') }}</textarea>{% endif %}{% if 'directory_destinations' in profile.defaults %}<label>Active Directory destinations · one IPv4 or IPv6 address per line</label><textarea name="defaults.directory_destinations">{{ profile.defaults.directory_destinations|join('\n') }}</textarea>{% endif %}{% for key,item in profile.get('services', {}).items() %}<div class="nt-rule"><label>{{ item.purpose }} · destination</label><input name="services.{{ key }}.destination" value="{{ item.destination }}"><label>Protocol / port</label><input name="services.{{ key }}.protocol" value="{{ item.protocol }}"></div>{% endfor %}</details>{% endif %}
+{% if profile.cross_vpc is defined %}<details class="nt-panel" open><summary>Cross-VPC connectivity</summary><p>Internal HTTPS / TCP {{ profile.cross_vpc.port }}</p><label>Additional TCP ports</label><input name="cross_vpc.tcp_ports" value="{{ profile.cross_vpc.tcp_ports|join(', ') }}">{% if profile.cross_vpc.ilp_egress is defined %}<p>Egress: {{ profile.cross_vpc.ilp_egress.source }} → {{ profile.cross_vpc.ilp_egress.destination }}</p><label for="ilp-egress-ports">ILP egress {{ profile.cross_vpc.ilp_egress.protocol }} ports</label><input id="ilp-egress-ports" name="cross_vpc.ilp_egress.ports" value="{{ profile.cross_vpc.ilp_egress.ports|join(', ') if profile.cross_vpc.ilp_egress.ports is defined else profile.cross_vpc.ilp_egress.port }}" required><small>Comma-separated ports from 1 to 65535. Applies only from ILP to the other environment VPCs.</small>{% endif %}</details>{% endif %}
+{% if profile.egress %}<details class="nt-panel"><summary>Shared services</summary>{% for key,item in profile.egress.items() %}<div class="nt-rule"><label>{{ key|title }} destination</label><input name="egress.{{ key }}.destination" value="{{ item.destination }}"><div class="nt-row"><div><label>Protocol / port</label><input name="egress.{{ key }}.protocol" value="{{ item.protocol }}"></div><div><label>Purpose</label><input name="egress.{{ key }}.purpose" value="{{ item.purpose }}"></div></div></div>{% endfor %}</details>
+{% endif %}{% if profile.routing %}<details class="nt-panel"><summary>Routing and Transit Gateway</summary>{% for key,item in profile.routing.items() %}<label>{{ key|title }}</label><textarea name="routing.{{ key }}.requirement">{{ item.requirement }}</textarea>{% endfor %}</details>
+{% endif %}<details class="nt-panel"><summary>Ticket wording · advanced</summary><small>Edit the existing Jinja sections. Preview validates both normal and details output before saving.</small>{% for key,value in presentation.sections.items() %}<label>{{ key|replace('_',' ')|title }}</label><textarea rows="6" name="section.{{ key }}">{{ value }}</textarea>{% endfor %}</details>
+<details class="nt-panel"><summary>Version history</summary><small>Restore a version as a new draft, preview it, then publish to roll back.</small>{% for item in head.history %}<div class="nt-rule">v{{ item.id }} · {{ item.actor }}<small>{{ item.created_at }}</small><button class="btn btn-sm btn-outline-secondary" name="revision" value="{{ item.id }}" type="submit" formaction="{{ url_for('ncr.template_admin', architecture=architecture, _action='restore') }}">Restore as draft</button></div>{% else %}<p>No saved versions yet.</p>{% endfor %}</details>
+</div><aside class="nt-panel nt-preview"><div class="nt-top"><h2 style="font-size:21px;margin:0">ServiceNow preview</h2><span class="nt-eyebrow">Normal ticket</span></div>
+<div class="nt-actions">
+<button type="button" class="btn btn-sm btn-outline-primary" id="nt-copy-ticket" {{ 'disabled' if not preview else '' }}><i class="fa-regular fa-copy" aria-hidden="true"></i> Copy ticket</button>
+<button type="button" class="btn btn-sm btn-outline-secondary" id="nt-download-ticket" {{ 'disabled' if not preview else '' }}><i class="fa-solid fa-download" aria-hidden="true"></i> Download Markdown</button>
+</div><small id="nt-export-status" role="status">Exports the displayed preview. After editing, use Update preview first.</small>
+<details><summary style="margin-top:16px;font-size:14px">Preview environment · example values</summary><small>These values are only for this preview; they do not change an environment draft.</small><div class="nt-row">{% for key in ['customer','environment_name','dns_domain','aws_region','target_date','rancher_target'] %}<div><label>{{ key|replace('_',' ')|title }}</label>{% if key == 'rancher_target' %}<select class="form-select" name="preview.rancher_target"><option value="">Select Rancher target</option>{% for value,label in rancher_targets %}<option value="{{ value }}" {{ 'selected' if preview_data[key] == value else '' }}>{{ label }} — {{ rancher_urls.get(value, '') }}</option>{% endfor %}</select>{% else %}<input name="preview.{{ key }}" value="{{ preview_data[key] }}" {{ 'type=date' if key == 'target_date' else '' }}>{% endif %}</div>{% endfor %}</div></details><pre id="nt-ticket-text" data-environment="{{ preview_data.environment_name }}" data-architecture="{{ architecture }}">{{ preview }}</pre></aside></div>
+</form></div>
+<script>
+(() => {
+  const form = document.getElementById('nt-collapse-all').closest('form');
+  for (const [id, open] of [['nt-collapse-all', false], ['nt-expand-all', true]]) {
+    document.getElementById(id).addEventListener('click', () => {
+      form.querySelectorAll('details').forEach(section => { section.open = open; });
+      document.getElementById('nt-sections-status').textContent = open ? 'All sections expanded.' : 'All sections collapsed.';
+    });
+  }
+  form.addEventListener('invalid', event => {
+    let section = event.target.closest('details');
+    while (section) { section.open = true; section = section.parentElement.closest('details'); }
+  }, true);
+  const ticket = document.getElementById('nt-ticket-text');
+  const status = document.getElementById('nt-export-status');
+  document.getElementById('nt-copy-ticket').addEventListener('click', async () => {
+    const text = ticket.textContent;
+    try {
+      if (!navigator.clipboard || !window.isSecureContext) throw new Error('Use fallback');
+      await navigator.clipboard.writeText(text);
+      status.textContent = 'Ticket copied.';
+    } catch (_) {
+      const field = document.createElement('textarea');
+      field.value = text;
+      field.style.position = 'fixed'; field.style.opacity = '0';
+      document.body.appendChild(field); field.select();
+      let copied = false;
+      try { copied = document.execCommand('copy'); } catch (_) {}
+      field.remove();
+      if (copied) { status.textContent = 'Ticket copied.'; }
+      else {
+        const range = document.createRange(); range.selectNodeContents(ticket);
+        const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+        status.textContent = 'Clipboard access unavailable. Ticket selected; press Ctrl+C or ⌘C to copy.';
+      }
+    }
+  });
+  document.getElementById('nt-download-ticket').addEventListener('click', () => {
+    const text = ticket.textContent;
+    // A longer fence preserves any backticks present in user-authored ticket wording.
+    const longest = Math.max(2, ...(text.match(/`+/g) || []).map(run => run.length));
+    const fence = '`'.repeat(longest + 1);
+    const markdown = '# Networking request\n\n' + fence + 'text\n' + text + (text.endsWith('\n') ? '' : '\n') + fence + '\n';
+    const blob = new Blob([markdown], {type: 'text/markdown;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a'); link.href = url;
+    const filenamePart = (value) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 100);
+    const environment = filenamePart(ticket.dataset.environment) || 'environment';
+    const architecture = filenamePart(ticket.dataset.architecture).replace(/^catalyst-/, '') || 'network';
+    link.download = `${environment}-${architecture}-networking-request.md`;
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = 'Markdown download started.';
+  });
+})();
+(() => {
+  const rows = document.getElementById('nt-endpoint-rows');
+  const count = document.getElementById('nt-endpoint-count');
+  const message = document.getElementById('nt-endpoint-message');
+  const undo = document.getElementById('nt-undo-endpoint');
+  let removed = null;
+  const recount = () => { count.textContent = rows.children.length + ' hosts'; };
+  document.getElementById('nt-add-endpoint').addEventListener('click', () => {
+    const row = document.getElementById('nt-endpoint-template').content.firstElementChild.cloneNode(true);
+    const key = 'new-' + crypto.randomUUID();
+    row.querySelector('[name="endpoint_key"]').value = key;
+    row.querySelectorAll('[data-prop]').forEach(input => { input.name = 'endpoints.' + key + '.' + input.dataset.prop; });
+    rows.prepend(row); recount(); row.querySelector('[data-prop="name"]').focus();
+    message.textContent = 'Endpoint added. Fill in its details, then update the preview.';
+  });
+  rows.addEventListener('click', event => {
+    const button = event.target.closest('[data-remove-endpoint]');
+    if (!button) return;
+    const row = button.closest('[data-endpoint-row]');
+    removed = {row, next: row.nextElementSibling}; row.remove(); recount();
+    undo.hidden = false; message.textContent = 'Endpoint removed from this edit.'; undo.focus();
+  });
+  undo.addEventListener('click', () => {
+    if (!removed) return;
+    rows.insertBefore(removed.row, removed.next && removed.next.parentNode === rows ? removed.next : null);
+    removed = null; undo.hidden = true; recount(); message.textContent = 'Endpoint restored.';
+  });
+})();
+</script>
+{% endblock %}

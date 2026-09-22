@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-shell">
+
+  {% set hero_title = "Network Change Request" %}
+  {% set hero_subtitle = "Generated output" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+
+  {% set current_ncr_step = 3 %}
+  {% include "_ncr_progress.html" %}
+
+  {# ── Flash messages ── #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }} py-2">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {# ── Success header ── #}
+  <div class="tool-panel tool-panel--compact text-center">
+    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+    <h2 class="mt-2">Network Change Request – Generated</h2>
+    <p class="text-muted mb-0">Review the output below, then copy, print, or save as a draft.</p>
+  </div>
+
+  {# ── Action toolbar ── #}
+  <div class="tool-panel tool-panel--compact">
+    <div class="tool-toolbar mb-0">
+      <div>
+        <div class="tool-panel__title">Output Actions</div>
+        <div class="tool-panel__subtitle">Copy the generated text, print, or save this NCR as a draft to reload later.</div>
+      </div>
+      <div class="tool-toolbar__group">
+        <button id="copyTxtBtn" class="btn btn-outline-primary btn-sm" type="button">
+          <i class="fas fa-copy me-1"></i> Copy Text
+        </button>
+        <button id="copyMdBtn" class="btn btn-outline-primary btn-sm" type="button">
+          <i class="fas fa-copy me-1"></i> Copy Markdown
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" type="button" onclick="window.print()">
+          <i class="fas fa-print me-1"></i> Print
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# ── Save as draft ── #}
+  <div class="tool-panel tool-panel--compact">
+    <form method="POST" action="{{ url_for('ncr.save_draft') }}" class="d-flex align-items-center gap-3 flex-wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="tool-panel__title mb-0" style="flex-shrink:0;">Save as Draft</div>
+      <input type="text" name="draft_name" class="form-control form-control-sm" style="max-width:280px;"
+             placeholder="Draft name (e.g. ak-ctlst-staging)" required>
+      <button type="submit" class="btn btn-sm btn-primary flex-shrink-0">
+        <i class="fa-solid fa-floppy-disk me-1"></i> Save Draft
+      </button>
+    </form>
+  </div>
+
+  {# ── Tabbed output ── #}
+  <div class="card tool-panel tool-panel--flush mb-4">
+    <div class="ncr-output-tabs">
+      <button class="ncr-output-tab is-active" data-tab="plain">Plain Text</button>
+      <button class="ncr-output-tab" data-tab="markdown">Markdown Source</button>
+      <button class="ncr-output-tab" data-tab="rendered">Rendered Preview</button>
+    </div>
+
+    <div class="ncr-output-panel is-active" id="tab-plain">
+      <pre class="ncr-pre mb-0" id="ncrOutputTxt">{{ txt }}</pre>
+    </div>
+
+    <div class="ncr-output-panel" id="tab-markdown">
+      <pre class="ncr-pre mb-0" id="ncrOutputMd">{{ md }}</pre>
+    </div>
+
+    <div class="ncr-output-panel" id="tab-rendered">
+      <div class="ncr-rendered" id="ncrRendered"></div>
+    </div>
+  </div>
+
+  <div class="wizard-footer">
+    <div class="wizard-footer__left">
+      <a href="{{ url_for('ncr.ingress') }}" class="btn-secondary">
+        <i class="fas fa-redo me-1"></i> Start Over
+      </a>
+      <a href="{{ url_for('ncr.egress') }}" class="btn-secondary">
+        &larr; Back to Egress
+      </a>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
+<script>
+  // ── Tabs ────────────────────────────────────────────────────────────────────
+  const tabs   = document.querySelectorAll('.ncr-output-tab');
+  const panels = document.querySelectorAll('.ncr-output-panel');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('is-active'));
+      panels.forEach(p => p.classList.remove('is-active'));
+      tab.classList.add('is-active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('is-active');
+    });
+  });
+
+  // ── Render markdown ─────────────────────────────────────────────────────────
+  const mdSource  = document.getElementById('ncrOutputMd')?.textContent || '';
+  const rendered  = document.getElementById('ncrRendered');
+  if (rendered && window.marked && window.DOMPurify) {
+    const renderedHtml = marked.parse(mdSource);
+    rendered.innerHTML = DOMPurify.sanitize(renderedHtml);
+  }
+
+  // ── Copy helpers ────────────────────────────────────────────────────────────
+  function flash(btn, text = 'Copied!') {
+    const old = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check me-1"></i>' + text;
+    setTimeout(() => btn.innerHTML = old, 1400);
+  }
+
+  async function copyFrom(id, btnId) {
+    const el  = document.getElementById(id);
+    const btn = document.getElementById(btnId);
+    try {
+      await navigator.clipboard.writeText(el.innerText);
+      flash(btn);
+    } catch (e) {
+      alert('Copy failed: ' + (e?.message ?? e));
+    }
+  }
+
+  document.getElementById('copyTxtBtn')?.addEventListener('click', () => copyFrom('ncrOutputTxt', 'copyTxtBtn'));
+  document.getElementById('copyMdBtn')?.addEventListener('click',  () => copyFrom('ncrOutputMd',  'copyMdBtn'));
+</script>
+
+{% endblock %}

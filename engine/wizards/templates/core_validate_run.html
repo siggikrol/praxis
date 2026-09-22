@@ -1,0 +1,1090 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="wizard-wrapper">
+  <div class="card shadow-sm card--wide">
+    <div class="card-header">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <div class="fw-semibold">Praxis Core Validation Run</div>
+          <div class="small text-white-50">Env: {{ env_slug }} | Job: {{ job.job_id }}</div>
+        </div>
+        <div class="d-flex gap-2">
+          {% if job.can_rerun %}
+            <form method="post" action="{{ job.rerun_url }}" class="m-0">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="harbor_registry_project" value="{{ job.harbor_registry_project }}">
+              <input type="hidden" name="pc_version" value="{{ job.pc_version }}">
+              {% if job.validation_mode == 'offline' %}
+                <input type="hidden" name="skip_s3_download" value="1">
+              {% endif %}
+              {% if job.run_iac_test %}
+                <input type="hidden" name="run_iac_test" value="1">
+              {% endif %}
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-rotate-right me-1"></i>{{ job.rerun_label }}
+              </button>
+            </form>
+          {% endif %}
+          <a id="continueGithubBtn"
+             class="btn btn-success btn-sm{% if not job.can_continue_github %} d-none{% endif %}"
+             href="{{ job.continue_github_url or '#' }}">
+            Continue to Github Repo Creation
+          </a>
+          <a class="btn btn-outline-light btn-sm" href="{{ finish_url }}">Back To Finish</a>
+          <a class="btn btn-outline-light btn-sm" href="{{ url_for('wizards') }}">Wizards</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <div class="fw-semibold">Run Status</div>
+        <div id="runState" class="small text-muted">{{ job.state }}</div>
+      </div>
+      <div class="progress mt-2" style="height: 0.6rem;">
+        <div id="runProgress"
+             class="progress-bar progress-bar-striped progress-bar-animated"
+             role="progressbar"
+             aria-valuemin="0"
+             aria-valuemax="100"
+             aria-valuenow="0"
+             style="width:0%;"></div>
+      </div>
+
+      <div id="runMeta" class="small text-muted mt-2"></div>
+      <div id="runError" class="alert alert-danger py-2 mt-2 d-none mb-0"></div>
+
+      <div class="mt-3">
+        <div class="fw-semibold mb-1">Events</div>
+        <div id="runEvents" class="small"></div>
+      </div>
+
+      <div class="mt-3">
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+          <div class="fw-semibold">Core Validation Report</div>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Validation report view">
+            <button id="formattedViewBtn" type="button" class="btn btn-primary">Formatted</button>
+            <button id="rawViewBtn" type="button" class="btn btn-outline-secondary">Raw logs</button>
+          </div>
+        </div>
+        <div id="formattedReport" class="validation-report"></div>
+        <pre id="runLog" class="spec-pre run-log-pre mb-0 d-none"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.spec-pre {
+  white-space: pre;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.3rem;
+}
+
+.run-log-pre {
+  max-height: 420px;
+}
+
+.validation-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 0.75rem;
+}
+
+.validation-summary-chip,
+.module-status {
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.28rem 0.58rem;
+}
+
+.validation-summary-chip.pass,
+.module-status.pass {
+  color: #75e6a4;
+  background: rgba(25, 135, 84, 0.18);
+}
+
+.validation-summary-chip.warn,
+.module-status.warn {
+  color: #ffe08a;
+  background: rgba(255, 193, 7, 0.16);
+}
+
+.validation-summary-chip.fail,
+.module-status.fail {
+  color: #ff9da8;
+  background: rgba(220, 53, 69, 0.17);
+}
+
+.validation-summary-chip.running,
+.module-status.running {
+  color: #9ecbff;
+  background: rgba(13, 110, 253, 0.16);
+}
+
+.validation-summary-chip.info,
+.module-status.info {
+  color: #b8c7d9;
+  background: rgba(108, 117, 125, 0.18);
+}
+
+.validation-report-heading {
+  color: #aab8c8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 1rem 0 0.55rem;
+  text-transform: uppercase;
+}
+
+.validation-stage-compact {
+  align-items: center;
+  border-left: 2px solid rgba(143, 161, 181, 0.45);
+  color: #b8c7d9;
+  display: flex;
+  gap: 0.65rem;
+  margin: 0 0 0.5rem 0.75rem;
+  min-height: 1.8rem;
+  padding: 0.15rem 0.75rem;
+}
+
+.validation-stage-compact::before {
+  background: #718096;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(113, 128, 150, 0.14);
+  content: "";
+  flex: 0 0 auto;
+  height: 0.42rem;
+  width: 0.42rem;
+}
+
+.validation-stage-compact-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.validation-phase-heading {
+  align-items: center;
+  color: #8fa1b5;
+  display: flex;
+  font-size: 0.72rem;
+  font-weight: 750;
+  gap: 0.55rem;
+  letter-spacing: 0.07em;
+  margin: 0.95rem 0 0.45rem;
+  text-transform: uppercase;
+}
+
+.validation-phase-heading::after {
+  background: rgba(128, 144, 160, 0.2);
+  content: "";
+  flex: 1;
+  height: 1px;
+}
+
+.validation-overview,
+.validation-outcome {
+  border: 1px solid rgba(90, 167, 255, 0.32);
+  border-left: 4px solid #5aa7ff;
+  border-radius: 0.45rem;
+  margin-bottom: 0.65rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.validation-overview-title,
+.validation-outcome-title {
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.validation-overview pre,
+.validation-outcome pre {
+  color: inherit;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.validation-outcome.pass { border-color: rgba(32, 199, 122, 0.45); border-left-color: #20c77a; }
+.validation-outcome.warn { border-color: rgba(255, 193, 7, 0.42); border-left-color: #ffc107; }
+.validation-outcome.fail { border-color: rgba(220, 53, 69, 0.48); border-left-color: #dc3545; }
+
+.validation-report-metrics {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+  margin: 0.85rem 0;
+}
+
+.validation-report-metric {
+  background: rgba(5, 10, 18, 0.32);
+  border: 1px solid rgba(128, 144, 160, 0.24);
+  border-radius: 0.4rem;
+  padding: 0.65rem 0.75rem;
+}
+
+.validation-report-metric-value {
+  font-size: 1.15rem;
+  font-weight: 750;
+}
+
+.validation-report-metric-label {
+  color: #8997a8;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.validation-report-subtitle {
+  color: #c5d1df;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin: 1rem 0 0.45rem;
+  text-transform: uppercase;
+}
+
+.validation-folder-table {
+  border: 1px solid rgba(128, 144, 160, 0.24);
+  border-radius: 0.4rem;
+  overflow-x: auto;
+}
+
+.validation-folder-table table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin: 0;
+  width: 100%;
+}
+
+.validation-folder-table th,
+.validation-folder-table td {
+  border-bottom: 1px solid rgba(128, 144, 160, 0.18);
+  padding: 0.55rem 0.65rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.validation-folder-table th {
+  color: #8997a8;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.validation-folder-table th:first-child,
+.validation-folder-table td:first-child { text-align: left; width: 100%; }
+.validation-folder-table tbody tr:last-child td { border-bottom: 0; }
+
+.validation-warning-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.validation-warning-item {
+  background: rgba(255, 193, 7, 0.06);
+  border-left: 3px solid #ffc107;
+  border-radius: 0.25rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.validation-warning-scope {
+  color: #ffe08a;
+  font-size: 0.73rem;
+  font-weight: 700;
+  margin-bottom: 0.16rem;
+}
+
+.validation-warning-message {
+  overflow-wrap: anywhere;
+}
+
+.validation-supporting-details {
+  border: 1px solid rgba(128, 144, 160, 0.24);
+  border-radius: 0.4rem;
+  margin-top: 0.8rem;
+}
+
+.validation-supporting-details > summary {
+  cursor: pointer;
+  font-weight: 650;
+  padding: 0.65rem 0.75rem;
+}
+
+.validation-supporting-content {
+  border-top: 1px solid rgba(128, 144, 160, 0.18);
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.75rem;
+}
+
+.validation-supporting-group-title {
+  color: #9ecbff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+}
+
+.validation-supporting-group pre {
+  background: rgba(5, 10, 18, 0.28);
+  border-radius: 0.3rem;
+  margin: 0;
+  max-height: 300px;
+  overflow: auto;
+  padding: 0.6rem;
+  white-space: pre-wrap;
+}
+
+.validation-module {
+  border: 1px solid rgba(128, 144, 160, 0.28);
+  border-left: 4px solid #6c757d;
+  border-radius: 0.45rem;
+  margin-bottom: 0.65rem;
+  overflow: hidden;
+}
+
+.validation-module.pass { border-left-color: #20c77a; }
+.validation-module.warn { border-left-color: #ffc107; }
+.validation-module.fail { border-left-color: #dc3545; }
+.validation-module.running { border-left-color: #5aa7ff; }
+.validation-module.info { border-left-color: #6c757d; }
+
+.validation-module summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 0.65rem;
+  list-style: none;
+  padding: 0.7rem 0.8rem;
+}
+
+.validation-module summary::-webkit-details-marker { display: none; }
+.validation-module summary::before {
+  content: "›";
+  color: #8fa1b5;
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.validation-module[open] summary::before { transform: rotate(90deg); }
+.validation-module-name { flex: 1; font-weight: 650; }
+.validation-module-duration { color: #8997a8; font-size: 0.8rem; }
+
+.validation-module-log {
+  background: rgba(5, 10, 18, 0.45);
+  border-top: 1px solid rgba(128, 144, 160, 0.2);
+  margin: 0;
+  max-height: 440px;
+  overflow: auto;
+  padding: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.validation-report-empty {
+  border: 1px dashed rgba(128, 144, 160, 0.35);
+  border-radius: 0.45rem;
+  color: #8997a8;
+  padding: 1rem;
+}
+</style>
+{% endblock %}
+
+{% block step_scripts %}
+<script>
+(() => {
+  const initialJob = {{ job|tojson }};
+  const statusUrl = {{ status_url|tojson }};
+
+  const runState = document.getElementById("runState");
+  const runProgress = document.getElementById("runProgress");
+  const runMeta = document.getElementById("runMeta");
+  const runError = document.getElementById("runError");
+  const runEvents = document.getElementById("runEvents");
+  const runLog = document.getElementById("runLog");
+  const formattedReport = document.getElementById("formattedReport");
+  const formattedViewBtn = document.getElementById("formattedViewBtn");
+  const rawViewBtn = document.getElementById("rawViewBtn");
+  const continueGithubBtn = document.getElementById("continueGithubBtn");
+  let rawView = false;
+  const disclosureState = new Map();
+
+  function escapeHtml(s) {
+    return (s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function pct(job) {
+    const total = Number(job.total_steps || 0);
+    const done = Number(job.completed_steps || 0);
+    if (!total) {
+      if ((job.state || "") === "running") return 45;
+      if ((job.state || "") === "done" || (job.state || "") === "error") return 100;
+      return 0;
+    }
+    return Math.max(0, Math.min(100, Math.round((done * 100) / total)));
+  }
+
+  function cleanLog(text) {
+    return String(text || "")
+      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+      .split("\n")
+      .map((line) => {
+        const updates = line.split("\r");
+        return updates[updates.length - 1].replace(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})[ \t]/,
+          ""
+        );
+      })
+      .join("\n");
+  }
+
+  function moduleStatus(lines) {
+    const text = lines.join("\n");
+    if (/\[\s*FAIL\s*\]|\[❌\]|Failure!\s+\d+\s+passed,\s*[1-9]\d*\s+failed|^Error:/m.test(text)) {
+      return "fail";
+    }
+    if (/\[\s*PASS WITH WARNINGS\s*\]|^Warning:|│ Warning:/m.test(text)) {
+      return "warn";
+    }
+    if (/\[\s*PASS\s*\]|Success!\s+\d+\s+passed,\s*0\s+failed/m.test(text)) {
+      return "pass";
+    }
+    return "running";
+  }
+
+  function trimBlankLines(lines) {
+    let start = 0;
+    let end = lines.length;
+    while (start < end && !lines[start].trim()) start += 1;
+    while (end > start && !lines[end - 1].trim()) end -= 1;
+    return lines.slice(start, end);
+  }
+
+  function sectionStatus(lines) {
+    const text = lines.join("\n");
+    if (/\[\s*FAIL\s*\]|\[❌\]|(?:^|\s)(?:Error|Failure):|❌/m.test(text)) return "fail";
+    if (/\[\s*PASS WITH WARNINGS\s*\]|(?:^|\s)Warning:|⚠/m.test(text)) return "warn";
+    if (/\[\s*PASS\s*\]|\[✔\]|✅|successfully|complete(?:d)?/im.test(text)) return "pass";
+    return "info";
+  }
+
+  function parseCoreRunReport(section) {
+    if (!section || !/^report$/i.test(section.title)) return null;
+    const lines = section.lines[0] && /^\s*🟩\s*\[/.test(section.lines[0])
+      ? section.lines.slice(1)
+      : section.lines;
+    const groups = [];
+    let current = null;
+    const headingIndents = lines
+      .map((line) => line.match(/^( +)([^-\s].*):\s*$/))
+      .filter(Boolean)
+      .map((match) => match[1].length);
+    const sectionIndent = headingIndents.length ? Math.min(...headingIndents) : 0;
+
+    lines.forEach((line) => {
+      const heading = line.match(/^( +)([^-\s].*):\s*$/);
+      if (heading && heading[1].length === sectionIndent) {
+        current = {title: heading[2], lines: []};
+        groups.push(current);
+      } else if (current) {
+        current.lines.push(line);
+      }
+    });
+    if (!groups.length) return null;
+
+    const group = (pattern) => groups.find((item) => pattern.test(item.title));
+    const folders = [];
+    const folderGroup = group(/^Folder Execution$/i);
+    (folderGroup ? folderGroup.lines : []).forEach((line) => {
+      const match = line.match(
+        /^\s*-\s+(.+?):\s+status=(\S+)\s+duration=(\S+)\s+phases=(\d+)\s+commands=(\d+)\s+warnings=(\d+)\s+errors=(\d+)\s*$/
+      );
+      if (match) {
+        folders.push({
+          name: match[1],
+          status: match[2],
+          duration: match[3],
+          phases: Number(match[4]),
+          commands: Number(match[5]),
+          warnings: Number(match[6]),
+          errors: Number(match[7]),
+        });
+      }
+    });
+
+    function valueFrom(groupPattern, key) {
+      const source = group(groupPattern);
+      if (!source) return "";
+      const match = source.lines.find((line) =>
+        new RegExp(`^\\s*-\\s+${key}:`, "i").test(line)
+      );
+      return match ? match.replace(new RegExp(`^\\s*-\\s+${key}:\\s*`, "i"), "").trim() : "";
+    }
+
+    const warningGroup = group(/^Warnings\s*\((\d+)\)$/i);
+    const warnings = [];
+    let inWarningDetails = false;
+    (warningGroup ? warningGroup.lines : []).forEach((line) => {
+      if (/^\s*Details:\s*$/.test(line)) {
+        inWarningDetails = true;
+        return;
+      }
+      if (!inWarningDetails) return;
+      const match = line.match(/^\s*-\s+\[([^\]]+)\]\s*(?:⚠️?\s*)?(.*)$/);
+      if (match) warnings.push({scope: match[1], message: match[2]});
+    });
+
+    const warningCountMatch = warningGroup
+      ? warningGroup.title.match(/\((\d+)\)/)
+      : null;
+    const warningCount = warningCountMatch ? Number(warningCountMatch[1]) : warnings.length;
+    const errorGroup = group(/^Errors\s*\((\d+)\)$/i);
+    const errorCountMatch = errorGroup ? errorGroup.title.match(/\((\d+)\)/) : null;
+    const errorCount = errorCountMatch
+      ? Number(errorCountMatch[1])
+      : folders.reduce((total, folder) => total + folder.errors, 0);
+
+    return {
+      folders,
+      groups,
+      warnings,
+      warningCount,
+      errorCount,
+      phases: valueFrom(/^Phase Summary$/i, "total"),
+      runtime: valueFrom(/^Phase Summary$/i, "total_runtime"),
+      commands: valueFrom(/^Command Summary$/i, "total"),
+      status: errorCount > 0 ? "fail" : warningCount > 0 ? "warn" : "pass",
+    };
+  }
+
+  function parseReport(text) {
+    const lines = cleanLog(text).split("\n");
+    const modules = [];
+    const sections = [];
+    let currentSection = {title: "Run overview", lines: []};
+
+    function saveSection() {
+      const sectionLines = trimBlankLines(currentSection.lines);
+      if (sectionLines.length) {
+        sections.push({
+          title: currentSection.title,
+          lines: sectionLines,
+          status: sectionStatus(sectionLines),
+        });
+      }
+    }
+
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const moduleMatch = line.match(/^\s*MODULE:\s*(.+?)\s*$/);
+      if (moduleMatch) {
+        const moduleLines = [line];
+        while (i + 1 < lines.length) {
+          i += 1;
+          moduleLines.push(lines[i]);
+          if (/^\s*\[\s*(?:PASS(?: WITH WARNINGS)?|FAIL)\s*\]/.test(lines[i])) break;
+        }
+        modules.push({name: moduleMatch[1], lines: trimBlankLines(moduleLines)});
+        continue;
+      }
+
+      const stageMatch = line.match(/^\s*🟩\s*\[\s*(.+?)\s*\]\s*$/);
+      const namedMatch = line.match(/^\s*===\s*(.+?)\s*===\s*$/);
+      const heading = stageMatch || namedMatch;
+      if (heading) {
+        saveSection();
+        currentSection = {title: heading[1], lines: [line]};
+      } else {
+        currentSection.lines.push(line);
+      }
+    }
+    saveSection();
+
+    const normalizedModules = modules.map((module) => {
+      const status = moduleStatus(module.lines);
+      const statusLine = [...module.lines].reverse().find((line) =>
+        /\[\s*(?:PASS(?: WITH WARNINGS)?|FAIL)\s*\]/.test(line)
+      ) || "";
+      const duration = (statusLine.match(/\(([^()]+)\)\s*$/) || [])[1] || "";
+      return {...module, status, duration};
+    });
+
+    const coreRunReport = parseCoreRunReport(
+      sections.find((section) => /^report$/i.test(section.title))
+    );
+    const meaningfulLines = lines.filter((line) => line.trim());
+    const outcomeLine = [...meaningfulLines].reverse().find((line) =>
+      /(?:✅|❌|⚠|Success!|Failure!|checks (?:passed|failed)|validation (?:passed|failed))/i.test(line)
+    ) || "";
+
+    return {
+      modules: normalizedModules,
+      sections,
+      coreRunReport,
+      outcome: outcomeLine
+        ? {line: outcomeLine, status: sectionStatus([outcomeLine])}
+        : null,
+    };
+  }
+
+  function rememberDisclosureState() {
+    if (!formattedReport) return;
+    formattedReport.querySelectorAll("details[data-report-key]").forEach((details) => {
+      const log = details.querySelector(".validation-module-log");
+      disclosureState.set(details.dataset.reportKey, {
+        open: details.open,
+        scrollTop: log ? log.scrollTop : 0,
+        scrollLeft: log ? log.scrollLeft : 0,
+      });
+    });
+  }
+
+  function disclosureAttributes(key, defaultOpen = false) {
+    const saved = disclosureState.get(key);
+    const open = saved ? saved.open : defaultOpen;
+    return ` data-report-key="${escapeHtml(key)}"${open ? " open" : ""}`;
+  }
+
+  function restoreDisclosureScroll() {
+    if (!formattedReport) return;
+    formattedReport.querySelectorAll("details[data-report-key]").forEach((details) => {
+      const saved = disclosureState.get(details.dataset.reportKey);
+      const log = details.querySelector(".validation-module-log");
+      if (saved && log) {
+        log.scrollTop = saved.scrollTop;
+        log.scrollLeft = saved.scrollLeft;
+      }
+    });
+  }
+
+  function replaceFormattedReport(html) {
+    formattedReport.innerHTML = html;
+    restoreDisclosureScroll();
+  }
+
+  function renderFormattedReport(text, state) {
+    if (!formattedReport) return;
+    rememberDisclosureState();
+    const report = parseReport(text);
+    const modules = report.modules;
+    if (!report.sections.length && !modules.length) {
+      const message = state === "running"
+        ? "Waiting for Core validation output…"
+        : "No Core validation output was captured.";
+      replaceFormattedReport(`<div class="validation-report-empty">${escapeHtml(message)}</div>`);
+      return;
+    }
+
+    const executionSections = report.coreRunReport
+      ? report.sections.filter((section) => !/^report$/i.test(section.title))
+      : report.sections;
+    let currentPhase = "Preparation";
+    const decoratedSections = executionSections.map((section, index) => {
+      const originalTitle = section.title;
+      let displayTitle = originalTitle;
+
+      if (/^run overview$/i.test(originalTitle)) {
+        currentPhase = "Preparation";
+        displayTitle = "Validation environment";
+      } else if (/^plan$/i.test(originalTitle)) {
+        currentPhase = "Preparation";
+        displayTitle = "Generation plan";
+      } else if (/^copy .*\/iac\b/i.test(originalTitle)) {
+        currentPhase = "Infrastructure code";
+        displayTitle = "Prepare infrastructure workspace";
+      } else if (/^iac:\s*sync modules/i.test(originalTitle)) {
+        currentPhase = "Infrastructure code";
+        displayTitle = "Download Terraform modules";
+      } else if (/^initialize .*spacelift/i.test(originalTitle)) {
+        currentPhase = "Spacelift configuration";
+        displayTitle = "Prepare Spacelift workspace";
+      } else if (/^spacelift:\s*context generator$/i.test(originalTitle)) {
+        currentPhase = "Spacelift configuration";
+        displayTitle = "Generate environment configuration";
+      } else if (/^spacelift:\s*restructure/i.test(originalTitle)) {
+        currentPhase = "Spacelift configuration";
+        displayTitle = "Organize environment layout";
+      } else if (/^spacelift:\s*generate stacks$/i.test(originalTitle)) {
+        currentPhase = "Spacelift configuration";
+        displayTitle = "Generate Spacelift stacks";
+      } else if (/^spacelift:/i.test(originalTitle)) {
+        currentPhase = "Spacelift configuration";
+      } else if (/^stacks skipped$/i.test(originalTitle)) {
+        currentPhase = "Spacelift configuration";
+        displayTitle = "Stacks excluded from generation";
+      } else if (/^copy .*\/helm\b/i.test(originalTitle)) {
+        currentPhase = "Kubernetes configuration";
+        displayTitle = "Prepare Kubernetes workspace";
+      } else if (/^copy .*\/bootstrap\b/i.test(originalTitle)) {
+        currentPhase = "Cluster bootstrap";
+        displayTitle = "Prepare cluster bootstrap workspace";
+      } else if (/^copy .*\/deployment\b/i.test(originalTitle)) {
+        currentPhase = "Application deployment";
+        displayTitle = "Prepare application deployment workspace";
+      } else if (/^iac:.*(?:preflight|validation)/i.test(originalTitle)) {
+        currentPhase = "Terraform validation";
+        displayTitle = "Validate Terraform modules";
+      } else if (/^jinja render$/i.test(originalTitle)) {
+        displayTitle = {
+          "Infrastructure code": "Render infrastructure templates",
+          "Spacelift configuration": "Render Spacelift configuration",
+          "Kubernetes configuration": "Render Kubernetes templates",
+          "Cluster bootstrap": "Render cluster bootstrap templates",
+          "Application deployment": "Render application deployment templates",
+        }[currentPhase] || "Render configuration templates";
+      }
+
+      const detailLines = section.lines[0] && (
+        /^\s*🟩\s*\[/.test(section.lines[0]) ||
+        /^\s*===\s*.+?\s*===\s*$/.test(section.lines[0])
+      )
+        ? trimBlankLines(section.lines.slice(1))
+        : section.lines;
+
+      return {
+        ...section,
+        originalTitle,
+        displayTitle,
+        phase: currentPhase,
+        detailLines,
+        isActive: state === "running" && index === executionSections.length - 1,
+      };
+    });
+
+    const visibleSections = [];
+    decoratedSections.forEach((section) => {
+      if (!section.detailLines.length && !section.isActive) return;
+      const previous = visibleSections[visibleSections.length - 1];
+      if (
+        previous &&
+        previous.phase === section.phase &&
+        previous.displayTitle === section.displayTitle &&
+        previous.status === section.status &&
+        !previous.isActive &&
+        !section.isActive
+      ) {
+        previous.detailLines = trimBlankLines(
+          previous.detailLines.concat([""], section.detailLines)
+        );
+        return;
+      }
+      visibleSections.push({...section});
+    });
+
+    const stageOccurrences = new Map();
+    let renderedPhase = "";
+    const stageCards = visibleSections.map((section) => {
+      const isActive = section.isActive;
+      const label = {
+        pass: "DONE",
+        warn: "WARNING",
+        fail: "FAILED",
+        info: isActive ? "RUNNING" : "INFO",
+      }[section.status];
+      const displayStatus = label === "RUNNING" ? "running" : section.status;
+      const occurrence = (stageOccurrences.get(section.title) || 0) + 1;
+      stageOccurrences.set(section.title, occurrence);
+      const disclosure = disclosureAttributes(`stage:${section.title}:${occurrence}`);
+      const detailLines = section.detailLines;
+      const phaseHeading = section.phase !== renderedPhase
+        ? `<div class="validation-phase-heading">${escapeHtml(section.phase)}</div>`
+        : "";
+      renderedPhase = section.phase;
+
+      const lineLabel = `${detailLines.length} ${detailLines.length === 1 ? "line" : "lines"}`;
+      return phaseHeading + (
+        `<details class="validation-module ${displayStatus}"${disclosure}>` +
+          `<summary>` +
+            `<span class="module-status ${displayStatus}">${label}</span>` +
+            `<span class="validation-module-name">${escapeHtml(section.displayTitle)}</span>` +
+            (detailLines.length
+              ? `<span class="validation-module-duration">${lineLabel}</span>`
+              : "") +
+          `</summary>` +
+          (detailLines.length
+            ? `<pre class="validation-module-log">${escapeHtml(detailLines.join("\n"))}</pre>`
+            : "") +
+        `</details>`
+      );
+    }).join("");
+
+    const execution = stageCards
+      ? `<div class="validation-report-heading">Core execution</div>${stageCards}`
+      : "";
+
+    if (!modules.length) {
+      replaceFormattedReport(execution);
+      return;
+    }
+
+    const counts = {pass: 0, warn: 0, fail: 0, running: 0};
+    modules.forEach((module) => { counts[module.status] += 1; });
+    const summary = [
+      `<span class="validation-summary-chip pass">PASS ${counts.pass}</span>`,
+      `<span class="validation-summary-chip warn">WARN ${counts.warn}</span>`,
+      `<span class="validation-summary-chip fail">FAIL ${counts.fail}</span>`,
+      counts.running
+        ? `<span class="validation-summary-chip running">RUNNING ${counts.running}</span>`
+        : "",
+    ].join("");
+
+    const cards = modules.map((module) => {
+      const label = {
+        pass: "PASS",
+        warn: "PASS WITH WARNINGS",
+        fail: "FAIL",
+        running: "RUNNING",
+      }[module.status];
+      const open = module.status === "fail" || module.status === "warn" || module.status === "running";
+      const disclosure = disclosureAttributes(`module:${module.name}`, open);
+      return (
+        `<details class="validation-module ${module.status}"${disclosure}>` +
+          `<summary>` +
+            `<span class="module-status ${module.status}">${label}</span>` +
+            `<span class="validation-module-name">${escapeHtml(module.name)}</span>` +
+            (module.duration
+              ? `<span class="validation-module-duration">${escapeHtml(module.duration)}</span>`
+              : "") +
+          `</summary>` +
+          `<pre class="validation-module-log">${escapeHtml(module.lines.join("\n").trim())}</pre>` +
+        `</details>`
+      );
+    }).join("");
+
+    const structuredOutcome = report.coreRunReport
+      ? (() => {
+        const runReport = report.coreRunReport;
+        const title = runReport.status === "pass"
+          ? "Validation passed"
+          : runReport.status === "warn"
+            ? "Validation passed with warnings"
+            : "Validation failed";
+        const metrics = [
+          [runReport.folders.length, "Folders"],
+          [runReport.phases || "—", "Phases"],
+          [runReport.commands || "—", "Commands"],
+          [modules.length, "Modules"],
+          [runReport.warningCount, "Warnings"],
+          [runReport.errorCount, "Errors"],
+          [runReport.runtime || "—", "Runtime"],
+        ].map(([value, label]) =>
+          `<div class="validation-report-metric">` +
+            `<div class="validation-report-metric-value">${escapeHtml(String(value))}</div>` +
+            `<div class="validation-report-metric-label">${escapeHtml(label)}</div>` +
+          `</div>`
+        ).join("");
+
+        const folderRows = runReport.folders.map((folder) =>
+          `<tr>` +
+            `<td>${escapeHtml(folder.name)}</td>` +
+            `<td><span class="module-status ${folder.errors ? "fail" : folder.warnings ? "warn" : "pass"}">` +
+              `${folder.errors ? "FAILED" : folder.warnings ? "WARN" : "OK"}` +
+            `</span></td>` +
+            `<td>${escapeHtml(folder.duration)}</td>` +
+            `<td>${folder.phases}</td>` +
+            `<td>${folder.commands}</td>` +
+            `<td>${folder.warnings}</td>` +
+            `<td>${folder.errors}</td>` +
+          `</tr>`
+        ).join("");
+        const folderTable = folderRows
+          ? (
+            `<div class="validation-report-subtitle">Folder execution</div>` +
+            `<div class="validation-folder-table"><table>` +
+              `<thead><tr><th>Folder</th><th>Status</th><th>Duration</th>` +
+                `<th>Phases</th><th>Commands</th><th>Warnings</th><th>Errors</th></tr></thead>` +
+              `<tbody>${folderRows}</tbody>` +
+            `</table></div>`
+          )
+          : "";
+
+        const warningItems = runReport.warnings.map((warning) =>
+          `<div class="validation-warning-item">` +
+            `<div class="validation-warning-scope">${escapeHtml(warning.scope)}</div>` +
+            `<div class="validation-warning-message">${escapeHtml(warning.message)}</div>` +
+          `</div>`
+        ).join("");
+        const warningList = warningItems
+          ? (
+            `<div class="validation-report-subtitle">Warnings (${runReport.warningCount})</div>` +
+            `<div class="validation-warning-list">${warningItems}</div>`
+          )
+          : "";
+
+        const primaryGroups = /^(?:Folder Execution|Warnings\s*\(\d+\)|Errors\s*\(\d+\))$/i;
+        const supportingGroups = runReport.groups
+          .filter((group) => !primaryGroups.test(group.title))
+          .map((group) => {
+            const content = trimBlankLines(group.lines).join("\n");
+            if (!content) return "";
+            return (
+              `<div class="validation-supporting-group">` +
+                `<div class="validation-supporting-group-title">${escapeHtml(group.title)}</div>` +
+                `<pre>${escapeHtml(content)}</pre>` +
+              `</div>`
+            );
+          }).join("");
+        const supporting = supportingGroups
+          ? (
+            `<details class="validation-supporting-details">` +
+              `<summary>Supporting report details</summary>` +
+              `<div class="validation-supporting-content">${supportingGroups}</div>` +
+            `</details>`
+          )
+          : "";
+
+        return (
+          `<div class="validation-report-heading">Final outcome</div>` +
+          `<div class="validation-outcome ${runReport.status}">` +
+            `<div class="validation-outcome-title">${title}</div>` +
+            `<div class="validation-report-metrics">${metrics}</div>` +
+            folderTable +
+            warningList +
+            supporting +
+          `</div>`
+        );
+      })()
+      : "";
+
+    const fallbackOutcome = !structuredOutcome && report.outcome
+      ? (
+        `<div class="validation-report-heading">Final outcome</div>` +
+        `<div class="validation-outcome ${report.outcome.status}">` +
+          `<div class="validation-outcome-title">${
+            report.outcome.status === "pass" ? "Validation passed" :
+            report.outcome.status === "warn" ? "Validation completed with warnings" :
+            report.outcome.status === "fail" ? "Validation failed" : "Validation result"
+          }</div>` +
+          `<pre>${escapeHtml(report.outcome.line)}</pre>` +
+        `</div>`
+      )
+      : "";
+
+    replaceFormattedReport(
+      execution +
+      `<div class="validation-report-heading">Terraform Module Validation</div>` +
+      `<div class="validation-summary">${summary}</div>` +
+      cards +
+      structuredOutcome +
+      fallbackOutcome
+    );
+  }
+
+  function setReportView(showRaw) {
+    rawView = showRaw;
+    if (runLog) runLog.classList.toggle("d-none", !showRaw);
+    if (formattedReport) formattedReport.classList.toggle("d-none", showRaw);
+    if (formattedViewBtn) {
+      formattedViewBtn.classList.toggle("btn-primary", !showRaw);
+      formattedViewBtn.classList.toggle("btn-outline-secondary", showRaw);
+    }
+    if (rawViewBtn) {
+      rawViewBtn.classList.toggle("btn-primary", showRaw);
+      rawViewBtn.classList.toggle("btn-outline-secondary", !showRaw);
+    }
+  }
+
+  function render(job) {
+    const state = job.state || "unknown";
+    const ok = job.ok;
+
+    if (runState) {
+      runState.textContent = `${state}${ok === true ? " (ok)" : ok === false ? " (failed)" : ""}`;
+    }
+    if (runProgress) {
+      const p = pct(job);
+      runProgress.style.width = `${p}%`;
+      runProgress.setAttribute("aria-valuenow", String(p));
+      runProgress.classList.remove("bg-danger", "bg-success");
+      if (state === "error" || (state === "done" && ok === false)) {
+        runProgress.classList.add("bg-danger");
+      } else if (state === "done" && ok === true) {
+        runProgress.classList.add("bg-success");
+      }
+    }
+    if (runMeta) {
+      const image = job.image || "-";
+      const mode = job.validation_mode || "offline";
+      const iacTest = job.run_iac_test ? "enabled" : "disabled";
+      const ns = (job.k8s || {}).namespace || "-";
+      const pod = (job.k8s || {}).pod_name || "-";
+      runMeta.textContent = `mode=${mode} iac_mock_preflight=${iacTest} image=${image} namespace=${ns} pod=${pod}`;
+    }
+    if (runError) {
+      const err = job.error || "";
+      runError.textContent = err;
+      runError.classList.toggle("d-none", !err);
+    }
+    if (runEvents) {
+      const evs = Array.isArray(job.events) ? job.events : [];
+      if (!evs.length) {
+        runEvents.innerHTML = '<div class="text-muted">No activity yet.</div>';
+      } else {
+        runEvents.innerHTML = evs.map((e) => {
+          const ts = e.ts_epoch ? new Date(e.ts_epoch * 1000).toISOString() : "";
+          const lvl = (e.level || "info").toLowerCase();
+          const badgeClass = lvl === "error"
+            ? "bg-danger"
+            : (lvl === "warning" ? "bg-warning text-dark" : "bg-secondary");
+          return (
+            `<div class="d-flex align-items-start gap-2 mb-1">` +
+              `<span class="badge ${badgeClass}">${escapeHtml(lvl)}</span>` +
+              `<code class="text-muted">${escapeHtml(ts)}</code>` +
+              `<span>${escapeHtml(e.message || "")}</span>` +
+            `</div>`
+          );
+        }).join("");
+      }
+    }
+    if (runLog) {
+      runLog.textContent = job.log_tail || "";
+    }
+    renderFormattedReport(job.log_tail || "", state);
+    if (continueGithubBtn) {
+      const canContinue = Boolean(job.can_continue_github && job.continue_github_url);
+      continueGithubBtn.classList.toggle("d-none", !canContinue);
+      if (canContinue) {
+        continueGithubBtn.setAttribute("href", job.continue_github_url);
+      }
+    }
+  }
+
+  if (formattedViewBtn) formattedViewBtn.addEventListener("click", () => setReportView(false));
+  if (rawViewBtn) rawViewBtn.addEventListener("click", () => setReportView(true));
+
+  async function poll() {
+    while (true) {
+      const resp = await fetch(statusUrl, {
+        headers: { "Accept": "application/json", "Cache-Control": "no-store" },
+      });
+      const job = await resp.json();
+      render(job);
+      if ((job.state === "done") || (job.state === "error")) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  render(initialJob || {});
+  if ((initialJob.state || "") !== "done" && (initialJob.state || "") !== "error") {
+    poll().catch((err) => {
+      if (runError) {
+        runError.textContent = String(err || "Polling failed");
+        runError.classList.remove("d-none");
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

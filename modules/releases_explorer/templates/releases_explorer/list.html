@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% macro sortable_header(key, label) %}
+  {% set next_order = 'desc' if sort_key == key and sort_order == 'asc' else 'asc' %}
+  <a class="release-sort-link{% if sort_key == key %} is-active{% endif %}"
+     href="{{ url_for('releases_explorer.list_view',
+                      sort=key,
+                      order=next_order,
+                      a=selected_a,
+                      b=selected_b,
+                      **filters) }}">
+    <span>{{ label }}</span>
+    <span class="release-sort-icon" aria-hidden="true">
+      {% if sort_key == key %}
+        <i class="fa-solid fa-arrow-{{ 'up' if sort_order == 'asc' else 'down' }}"></i>
+      {% else %}
+        <i class="fa-solid fa-sort"></i>
+      {% endif %}
+    </span>
+  </a>
+{% endmacro %}
+
+<div class="page-shell">
+
+  {% set hero_title = "Releases Explorer" %}
+  {% set hero_subtitle = "Choose two releases to compare, or inspect an individual archive" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+
+  <div class="tool-panel">
+    <div class="tool-panel__header">
+      <div>
+        <h2 class="tool-panel__title">Release Catalog</h2>
+        <div class="tool-panel__subtitle">Filter the archive list, view individual bundles, or stage two releases for comparison.</div>
+      </div>
+      <div class="text-end">
+        <div class="small text-muted">
+          Catalog refreshed:
+          <span class="release-cache-time" data-epoch="{{ cache_info.refreshed_at or '' }}">
+            {% if cache_info.refreshed_at %}loading…{% else %}not cached{% endif %}
+          </span>
+        </div>
+        <a class="btn btn-sm btn-outline-secondary mt-2"
+           href="{{ url_for('releases_explorer.list_view',
+                            refresh=1,
+                            sort=sort_key,
+                            order=sort_order,
+                            **filters) }}">
+          <i class="fa-solid fa-rotate me-1"></i> Refresh catalog
+        </a>
+      </div>
+    </div>
+
+    <form method="get">
+      <div class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label tool-toolbar__label" for="release-customer">Customer</label>
+          <select name="customer" id="release-customer" class="form-select">
+            <option value="">All Customers</option>
+            {% for c in customers %}
+            <option value="{{ c }}" {% if filters.customer == c %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label tool-toolbar__label" for="release-type">Release type</label>
+          <select name="release_type" id="release-type" class="form-select">
+            <option value="">All release types</option>
+            {% for release_type in release_types %}
+            <option value="{{ release_type }}" {% if filters.release_type == release_type %}selected{% endif %}>{{ release_type }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label tool-toolbar__label" for="release-version">Version contains</label>
+          <input name="version"
+                 id="release-version"
+                 class="form-control"
+                 placeholder="For example 1.2.3"
+                 value="{{ filters.version }}">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label tool-toolbar__label" for="release-query">Search</label>
+          <input name="query"
+                 id="release-query"
+                 class="form-control"
+                 placeholder="Search filename, customer, or key"
+                 value="{{ filters.query }}">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label tool-toolbar__label" for="release-state">Release state</label>
+          <select name="state" id="release-state" class="form-select">
+            <option value="">All releases</option>
+            <option value="latest" {% if filters.state == 'latest' %}selected{% endif %}>Latest upload per module</option>
+            <option value="historical" {% if filters.state == 'historical' %}selected{% endif %}>Historical uploads</option>
+          </select>
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label tool-toolbar__label" for="release-from">Published from</label>
+          <input name="published_from" id="release-from" type="date"
+                 class="form-control" value="{{ filters.published_from }}">
+        </div>
+
+        <div class="col-md-3">
+          <label class="form-label tool-toolbar__label" for="release-to">Published to</label>
+          <input name="published_to" id="release-to" type="date"
+                 class="form-control" value="{{ filters.published_to }}">
+        </div>
+
+        <div class="col-md-3 d-flex gap-2">
+          <button class="btn btn-primary flex-grow-1">
+            <i class="fa-solid fa-filter me-1"></i> Apply filters
+          </button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('releases_explorer.list_view') }}">Clear</a>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <div class="release-catalog-summary">
+    <div class="artiac-catalog-stat">
+      <strong>{{ summary.releases }}</strong>
+      <span>release archives</span>
+    </div>
+    <div class="artiac-catalog-stat">
+      <strong>{{ summary.customers }}</strong>
+      <span>customers</span>
+    </div>
+    <div class="artiac-catalog-stat">
+      <strong>{{ summary.types }}</strong>
+      <span>release types</span>
+    </div>
+    <div class="artiac-catalog-stat">
+      <strong>{{ summary.latest }}</strong>
+      <span>latest uploads</span>
+    </div>
+    <div class="artiac-catalog-stat">
+      <strong>{{ summary.visible }}</strong>
+      <span>matching filters</span>
+    </div>
+  </div>
+
+  <div class="card tool-panel tool-panel--flush">
+    <div class="card-header">
+      <div class="tool-panel__heading">
+        <i class="fa-solid fa-box-archive"></i>
+        <div>
+          <div class="tool-panel__title">Available Releases</div>
+          <div class="tool-panel__meta">{{ releases|length }} archive{{ '' if releases|length == 1 else 's' }} in view</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table release-table mb-0">
+          <thead>
+            <tr>
+              <th>{{ sortable_header('customer', 'Customer') }}</th>
+              <th>{{ sortable_header('type', 'Type') }}</th>
+              <th>{{ sortable_header('version', 'Version') }}</th>
+              <th>{{ sortable_header('published', 'Published') }}</th>
+              <th>{{ sortable_header('size', 'Size') }}</th>
+              <th>{{ sortable_header('state', 'State') }}</th>
+              <th class="text-nowrap text-center">Actions</th>
+              <th class="text-nowrap text-center">Compare</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in releases %}
+            <tr>
+              <td class="release-cell-nowrap"><span class="release-customer">{{ r.customer }}</span></td>
+              <td class="release-cell-nowrap">
+                <span class="release-type-badge" style="--release-type-hue: {{ r.release_type_color }}">
+                  {{ r.release_type or 'unknown' }}
+                </span>
+              </td>
+              <td class="release-cell-nowrap">
+                <span class="release-version-value" title="{{ r.filename }}">
+                  {{ r.version or '—' }}
+                </span>
+              </td>
+              <td class="release-published-time release-cell-nowrap" data-time="{{ r.modified.isoformat() if r.modified and r.modified.isoformat is defined else r.modified }}">{{ r.modified }}</td>
+              <td class="release-byte-size release-cell-nowrap" data-bytes="{{ r.size or 0 }}">{{ r.size }}</td>
+              <td class="release-cell-nowrap">
+                {% if r.is_latest_upload %}
+                  <span class="badge bg-primary">latest upload</span>
+                {% else %}
+                  <span class="badge bg-secondary">historical</span>
+                {% endif %}
+              </td>
+              <td class="text-center release-cell-nowrap">
+                <div class="release-row-actions">
+                  <a href="{{ url_for('releases_explorer.view_release', key=r.key) }}"
+                    class="btn btn-sm btn-secondary">
+                    View
+                  </a>
+                  <a href="{{ url_for('releases_explorer.download_release', key=r.key) }}"
+                    class="btn btn-sm btn-outline-primary">
+                    Download
+                  </a>
+                  {% set prev_key = prev_by_key.get(r.key) %}
+                  {% if prev_key %}
+                    <a href="{{ url_for('releases_explorer.compare_releases', a=prev_key, b=r.key) }}"
+                      class="btn btn-sm btn-outline-secondary">
+                      Compare Prev
+                    </a>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="text-center release-cell-nowrap">
+                <div class="release-row-actions">
+                  <a href="{{ url_for('releases_explorer.list_view',
+                                    customer=form.customer.data,
+                                    module=filters.module,
+                                    release_type=filters.release_type,
+                                    version=form.version.data,
+                                    query=filters.query,
+                                    state=filters.state,
+                                    published_from=filters.published_from,
+                                    published_to=filters.published_to,
+                                    sort=sort_key,
+                                    order=sort_order,
+                                    a=r.key,
+                                    b=selected_b) }}"
+                    class="btn btn-sm {% if selected_a == r.key %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    Set A
+                  </a>
+                  <a href="{{ url_for('releases_explorer.list_view',
+                                    customer=form.customer.data,
+                                    module=filters.module,
+                                    release_type=filters.release_type,
+                                    version=form.version.data,
+                                    query=filters.query,
+                                    state=filters.state,
+                                    published_from=filters.published_from,
+                                    published_to=filters.published_to,
+                                    sort=sort_key,
+                                    order=sort_order,
+                                    a=selected_a,
+                                    b=r.key) }}"
+                    class="btn btn-sm {% if selected_b == r.key %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                    Set B
+                  </a>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                No release archives match the selected filters.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {% if total_pages > 1 %}
+    <div class="d-flex justify-content-center gap-2 mt-3 flex-wrap">
+      {% for p in range(1, total_pages + 1) %}
+        <a class="btn btn-sm {% if p == page %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           href="{{ url_for('releases_explorer.list_view',
+                            page=p,
+                            a=selected_a,
+                            b=selected_b,
+                            sort=sort_key,
+                            order=sort_order,
+                            **filters) }}">{{ p }}</a>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+</div>
+
+<!-- Sticky Compare Bar -->
+{% if selected_a and selected_b %}
+<div class="tool-compare-bar">
+  <div class="tool-compare-bar__inner">
+    <div class="tool-compare-bar__summary">
+      Comparing: <strong>{{ selected_a }}</strong> vs <strong>{{ selected_b }}</strong>
+    </div>
+    <div class="tool-compare-bar__actions">
+      <a href="{{ url_for('releases_explorer.list_view',
+                         customer=form.customer.data,
+                         module=filters.module,
+                         release_type=filters.release_type,
+                         version=form.version.data,
+                         query=filters.query,
+                         state=filters.state,
+                         published_from=filters.published_from,
+                         published_to=filters.published_to,
+                         sort=sort_key,
+                         order=sort_order) }}"
+         class="btn btn-sm btn-outline-secondary me-3">Clear</a>
+      <a class="btn btn-primary"
+         href="{{ url_for('releases_explorer.compare_releases',
+                          a=selected_a, b=selected_b,
+                          customer=filters.customer,
+                          module=filters.module,
+                          release_type=filters.release_type,
+                          version=form.version.data,
+                          query=form.query.data,
+                          state=filters.state,
+                          published_from=filters.published_from,
+                          published_to=filters.published_to) }}">
+        Compare Releases
+      </a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  document.querySelectorAll(".release-cache-time[data-epoch]").forEach((element) => {
+    const epoch = Number(element.dataset.epoch);
+    if (Number.isFinite(epoch) && epoch > 0) {
+      element.textContent = new Date(epoch * 1000).toLocaleString();
+    }
+  });
+  document.querySelectorAll(".release-published-time[data-time]").forEach((element) => {
+    const value = new Date(element.dataset.time);
+    if (!Number.isNaN(value.valueOf())) {
+      element.textContent = value.toLocaleString();
+      element.title = element.dataset.time;
+    }
+  });
+  document.querySelectorAll(".release-byte-size[data-bytes]").forEach((element) => {
+    const bytes = Number(element.dataset.bytes);
+    if (!Number.isFinite(bytes)) return;
+    const units = ["B", "KB", "MB", "GB"];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    element.textContent = `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+    element.title = `${bytes.toLocaleString()} bytes`;
+  });
+})();
+</script>
+
+{% endblock %}

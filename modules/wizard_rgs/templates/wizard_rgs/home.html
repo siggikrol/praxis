@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-shell">
+
+  {% set hero_title = "Catalyst RGS Wizard" %}
+  {% set hero_subtitle = "Start the guided RGS environment flow." %}
+  {% set hero_brand_icon = "fa-solid fa-gamepad" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('wizards') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Wizards
+  </a>
+
+  <div class="studio-landing-panel">
+    <p class="text-muted mb-4">Use this landing page to enter the RGS wizard before moving into the engine flow.</p>
+    <a href="{{ url_for('rgs.release_selection') }}" class="btn btn-primary btn-lg">
+      Start RGS Wizard
+    </a>
+  </div>
+
+</div>
+{% endblock %}

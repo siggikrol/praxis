@@ -1,0 +1,1 @@
+"""Artiac control module."""

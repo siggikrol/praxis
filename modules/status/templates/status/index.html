@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell status-page">
+
+  {% set hero_title = "Status & Diagnostics" %}
+  {% set hero_subtitle = "Operational dashboards for runtime health, caches, and integrations" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+
+  <div class="row-list">
+
+    <a href="{{ url_for('status.app_status') }}" class="row-item">
+      <div class="row-item__icon row-item__icon--purple">
+        <i class="fa-solid fa-heart-pulse"></i>
+      </div>
+      <div class="row-item__body">
+        <div class="row-item__title">Praxis App Status</div>
+        <div class="row-item__sub">Lightweight runtime view: GitHub limits, session info, and app flags.</div>
+      </div>
+      <span class="row-item__arrow">&rarr;</span>
+    </a>
+
+    <a href="{{ url_for('status.aws_catalogs') }}" class="row-item">
+      <div class="row-item__icon row-item__icon--amber">
+        <i class="fa-solid fa-database"></i>
+      </div>
+      <div class="row-item__body">
+        <div class="row-item__title">AWS Catalog Cache</div>
+        <div class="row-item__sub">EKS/Aurora/Redis/Kafka/OpenSearch dropdown catalogs, disk cache + refresh jobs.</div>
+      </div>
+      <span class="row-item__arrow">&rarr;</span>
+    </a>
+
+    <a href="{{ url_for('status.spacelift_cache') }}" class="row-item">
+      <div class="row-item__icon row-item__icon--teal">
+        <i class="fa-solid fa-hard-drive"></i>
+      </div>
+      <div class="row-item__body">
+        <div class="row-item__title">Spacelift Cache</div>
+        <div class="row-item__sub">Spacelift status cache, freshness, and manual refresh.</div>
+      </div>
+      <span class="row-item__arrow">&rarr;</span>
+    </a>
+
+    <a href="{{ url_for('status.pc_source_cache') }}" class="row-item">
+      <div class="row-item__icon row-item__icon--green">
+        <i class="fa-solid fa-folder-tree"></i>
+      </div>
+      <div class="row-item__body">
+        <div class="row-item__title">PC Source Cache</div>
+        <div class="row-item__sub">pc_source whitelist discovery, disk cache + refresh jobs.</div>
+      </div>
+      <span class="row-item__arrow">&rarr;</span>
+    </a>
+
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,646 @@
+{% extends "wizard_step.html" %}
+
+{% block step_body %}
+  {# Jinja 3.x doesn't let assignments inside loops escape to the outer scope. #}
+  {% set ns = namespace(meta=none) %}
+  {% for f in form if f.type == 'FormField' %}
+    {% if ns.meta is none and f.form._aurora_instance_classes_meta is defined %}
+      {% set ns.meta = f.form._aurora_instance_classes_meta %}
+    {% endif %}
+  {% endfor %}
+  {% set _meta = ns.meta %}
+  {% set _ver_meta = form._aurora_engine_versions_meta if form._aurora_engine_versions_meta is defined else none %}
+
+  <div class="d-flex align-items-start flex-wrap gap-2 mb-3">
+    <div class="alert alert-info py-2 mb-0 flex-grow-1 wizard-inline-alert">
+      <div class="small">
+        <div>
+          Engine versions are fetched from the AWS RDS API and cached (24h by default).
+          {% if _ver_meta is not none %}
+            {% set _src_class = "bg-success" if _ver_meta.source == "aws_cache" else "bg-warning text-dark" %}
+            {% set _state_class = "bg-warning text-dark" if _ver_meta.stale else "bg-success" %}
+            <span class="badge {{ _src_class }} ms-2" title="{{ _ver_meta.cache_path }}">source={{ _ver_meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _ver_meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _ver_meta.count }}</span>
+            <span class="badge {{ _state_class }} ms-1">{{ "stale" if _ver_meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+        <div class="mt-1">
+          Instance classes are fetched from the AWS RDS API and cached (24h by default).
+          {% if _meta is not none %}
+            {% set _src_class = "bg-success" if _meta.source == "aws_cache" else "bg-warning text-dark" %}
+            {% set _state_class = "bg-warning text-dark" if _meta.stale else "bg-success" %}
+            <span class="badge {{ _src_class }} ms-2" title="{{ _meta.cache_path }}">source={{ _meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _meta.count }}</span>
+            <span class="badge {{ _state_class }} ms-1">{{ "stale" if _meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="ms-auto flex-shrink-0 d-flex gap-2">
+      <button type="submit"
+              class="btn btn-sm btn-outline-primary"
+              name="action"
+              value="apply_engine_defaults">
+        Apply engine defaults
+      </button>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, aurora_engine_versions_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh engine versions
+      </a>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, aurora_instance_classes_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh instance classes
+      </a>
+    </div>
+  </div>
+
+  {% set default_parameter_count = form._aurora_default_parameter_count if form._aurora_default_parameter_count is defined else 0 %}
+  {% for field in form if field.type != 'CSRFTokenField' %}
+    {% if field.name == 'db_cluster_parameter_group_parameters' %}
+      <section class="vault-params-panel mb-4"
+               id="auroraParametersPanel"
+               data-default-count="{{ default_parameter_count }}"
+               aria-labelledby="auroraParamsTitle">
+        <div class="vault-params-panel__header">
+          <div>
+            <div class="vault-params-panel__eyebrow">RDS configuration</div>
+            <h3 id="auroraParamsTitle" class="vault-params-panel__title">
+              Cluster parameters
+            </h3>
+            <p class="vault-params-panel__description">
+              Baseline parameters are kept in place. Add project-specific settings when needed;
+              only added parameters can be removed.
+            </p>
+          </div>
+          <span class="vault-params-panel__count">
+            <span id="auroraParameterCount">{{ field|length }}</span> parameters
+          </span>
+        </div>
+
+        <div class="vault-params-list" id="auroraParameterList">
+          <section class="vault-param-group" aria-labelledby="auroraDefaultParametersTitle">
+            <div class="vault-param-group__header">
+              <h4 id="auroraDefaultParametersTitle">Required defaults</h4>
+              <span>{{ default_parameter_count }} parameters</span>
+            </div>
+            <div class="vault-param-group__rows" data-aurora-default-parameters>
+          {% for entry in field %}
+            {% if loop.index0 < default_parameter_count %}
+            {% set parameter = entry.form %}
+            <div class="vault-param-card"
+                 data-aurora-parameter-card
+                 data-default="true">
+              <div class="vault-param-card__number" aria-hidden="true">
+                {{ "%02d"|format(loop.index) }}
+              </div>
+              <div class="vault-param-card__content">
+                <div class="vault-param-card__fields">
+                  <div>
+                    <label class="form-label" for="{{ parameter.name.id }}">Parameter name</label>
+                    {{ parameter.name(class="form-control") }}
+                    {% if parameter.name.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.name.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.value.id }}">Value</label>
+                    {{ parameter.value(class="form-control") }}
+                    {% if parameter.value.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.value.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.apply_method.id }}">Apply timing</label>
+                    {{ parameter.apply_method(class="form-select") }}
+                    {% if parameter.apply_method.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.apply_method.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                {% if parameter.csrf_token is defined %}{{ parameter.csrf_token }}{% endif %}
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+            </div>
+          </section>
+
+          <section class="vault-param-group{% if field|length == default_parameter_count %} d-none{% endif %}"
+                   data-aurora-custom-group
+                   aria-labelledby="auroraCustomParametersTitle">
+            <div class="vault-param-group__header">
+              <h4 id="auroraCustomParametersTitle">Custom parameters</h4>
+              <span data-aurora-custom-count>{{ (field|length) - default_parameter_count }} parameters</span>
+            </div>
+            <div class="vault-param-group__rows" data-aurora-custom-parameters>
+          {% for entry in field %}
+            {% if loop.index0 >= default_parameter_count %}
+            {% set parameter = entry.form %}
+            <div class="vault-param-card" data-aurora-parameter-card data-default="false">
+              <div class="vault-param-card__number" aria-hidden="true">{{ "%02d"|format(loop.index) }}</div>
+              <div class="vault-param-card__content">
+                <div class="vault-param-card__fields">
+                  <div>
+                    <label class="form-label" for="{{ parameter.name.id }}">Parameter name</label>
+                    {{ parameter.name(class="form-control") }}
+                    {% if parameter.name.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.name.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.value.id }}">Value</label>
+                    {{ parameter.value(class="form-control") }}
+                    {% if parameter.value.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.value.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div>
+                    <label class="form-label" for="{{ parameter.apply_method.id }}">Apply timing</label>
+                    {{ parameter.apply_method(class="form-select") }}
+                    {% if parameter.apply_method.errors %}
+                      <div class="text-danger small mt-1">{{ parameter.apply_method.errors[0] }}</div>
+                    {% endif %}
+                  </div>
+                  <div class="vault-param-card__action">
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-aurora-parameter>Remove</button>
+                  </div>
+                </div>
+                {% if parameter.csrf_token is defined %}{{ parameter.csrf_token }}{% endif %}
+              </div>
+            </div>
+            {% endif %}
+          {% endfor %}
+            </div>
+          </section>
+        </div>
+
+        <div class="vault-params-panel__footer">
+          <span class="small text-muted">
+            Default entries are protected; custom entries remain fully editable.
+          </span>
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  id="addAuroraParameter">
+            + Add parameter
+          </button>
+        </div>
+
+        {% if field.errors %}
+          <div class="text-danger small px-3 pb-3">{{ field.errors[0] }}</div>
+        {% endif %}
+      </section>
+
+      <template id="auroraParameterTemplate">
+        <div class="vault-param-card"
+             data-aurora-parameter-card
+             data-default="false">
+          <div class="vault-param-card__number" aria-hidden="true"></div>
+          <div class="vault-param-card__content">
+            <div class="vault-param-card__fields">
+              <div>
+                <label class="form-label" for="db_cluster_parameter_group_parameters-__index__-name">Parameter name</label>
+                <input class="form-control"
+                       id="db_cluster_parameter_group_parameters-__index__-name"
+                       name="db_cluster_parameter_group_parameters-__index__-name"
+                       type="text"
+                       value="">
+              </div>
+              <div>
+                <label class="form-label" for="db_cluster_parameter_group_parameters-__index__-value">Value</label>
+                <input class="form-control"
+                       id="db_cluster_parameter_group_parameters-__index__-value"
+                       name="db_cluster_parameter_group_parameters-__index__-value"
+                       type="text"
+                       value="">
+              </div>
+              <div>
+                <label class="form-label" for="db_cluster_parameter_group_parameters-__index__-apply_method">Apply timing</label>
+                <select class="form-select"
+                        id="db_cluster_parameter_group_parameters-__index__-apply_method"
+                        name="db_cluster_parameter_group_parameters-__index__-apply_method">
+                  <option value="pending-reboot">pending-reboot</option>
+                  <option value="immediate">immediate</option>
+                </select>
+              </div>
+              <div class="vault-param-card__action">
+                <button type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        data-remove-aurora-parameter>
+                  Remove
+                </button>
+              </div>
+            </div>
+            <input type="hidden"
+                   id="db_cluster_parameter_group_parameters-__index__-csrf_token"
+                   name="db_cluster_parameter_group_parameters-__index__-csrf_token"
+                   value="{{ csrf_token() }}">
+          </div>
+        </div>
+      </template>
+    {% elif field.type == 'FormField' %}
+      {% set env_key = field.name|lower %}
+      {% set env_base = env_key.split('_', 1)[0] %}
+      <div class="env-section mb-4" data-env="{{ env_base }}">
+        <div class="env-chip" data-env="{{ env_base }}">{{ env_key|upper }}</div>
+        <div class="env-section__body">
+          {% for subfield in field.form if subfield.type != 'CSRFTokenField' %}
+            {{ render_field(subfield, step) }}
+          {% endfor %}
+        </div>
+      </div>
+    {% else %}
+      {{ render_field(field, step) }}
+    {% endif %}
+  {% endfor %}
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    function setSelectHealth(selectEl, noteEl, level, message) {
+      if (!selectEl || !noteEl) return;
+      selectEl.classList.remove("ps-health-warning", "ps-health-danger");
+      noteEl.classList.remove("ps-health-note-warning", "ps-health-note-danger");
+      noteEl.textContent = "";
+      noteEl.style.display = "none";
+      selectEl.removeAttribute("title");
+
+      if (level === "warning") {
+        selectEl.classList.add("ps-health-warning");
+        noteEl.classList.add("ps-health-note-warning");
+        noteEl.textContent = message || "A newer option is available.";
+        noteEl.style.display = "block";
+        selectEl.title = noteEl.textContent;
+        return;
+      }
+      if (level === "danger") {
+        selectEl.classList.add("ps-health-danger");
+        noteEl.classList.add("ps-health-note-danger");
+        noteEl.textContent = message || "Selected option is deprecated.";
+        noteEl.style.display = "block";
+        selectEl.title = noteEl.textContent;
+      }
+    }
+
+    function deriveAuroraParamGroupFamily(engineValue, versionValue) {
+      const engine = String(engineValue || "").trim().toLowerCase();
+      const version = String(versionValue || "").trim().toLowerCase();
+
+      if (!engine) return "";
+
+      if (engine === "aurora-postgresql") {
+        const m = version.match(/^(\d+)/);
+        return m ? `aurora-postgresql${m[1]}` : "";
+      }
+
+      if (engine === "aurora-mysql") {
+        const m = version.match(/^(\d+)(?:\.(\d+))?/);
+        if (!m) return "";
+        const major = m[1];
+        const minor = m[2] || "0";
+        return `aurora-mysql${major}.${minor}`;
+      }
+
+      return "";
+    }
+
+    function attachParamGroupFamilySync() {
+      const engineEl = document.getElementById("engine");
+      const versionEl = document.getElementById("engine_version");
+      const familyEl = document.getElementById("db_cluster_parameter_group_family");
+      if (!engineEl || !versionEl || !familyEl) return;
+
+      const sync = () => {
+        const family = deriveAuroraParamGroupFamily(engineEl.value, versionEl.value);
+        if (!family) return;
+        familyEl.value = family;
+      };
+
+      versionEl.addEventListener("change", sync);
+      sync();
+    }
+
+    function attachAuroraEngineVersionHealth() {
+      const selectEl = document.getElementById("engine_version");
+      if (!selectEl) return;
+
+      const noteId = `${selectEl.id}-health-note`;
+      let noteEl = document.getElementById(noteId);
+      if (!noteEl) {
+        noteEl = document.createElement("div");
+        noteEl.id = noteId;
+        noteEl.className = "ps-health-note";
+        selectEl.insertAdjacentElement("afterend", noteEl);
+      }
+
+      const availableGroup = Array.from(selectEl.querySelectorAll("optgroup")).find((group) =>
+        String(group.label || "").toLowerCase().includes("available")
+      );
+      const latestAvailable = (
+        availableGroup && availableGroup.querySelector("option")
+          ? availableGroup.querySelector("option").value
+          : (selectEl.options[0] ? selectEl.options[0].value : "")
+      );
+
+      const evaluate = () => {
+        const selected = selectEl.selectedOptions[0];
+        if (!selected) {
+          setSelectHealth(selectEl, noteEl, "", "");
+          return;
+        }
+        const parent = selected.parentElement;
+        const groupLabel = String(
+          parent && parent.tagName === "OPTGROUP" ? parent.label : ""
+        ).toLowerCase();
+        const value = String(selected.value || "").trim();
+
+        if (groupLabel.includes("deprec")) {
+          setSelectHealth(
+            selectEl,
+            noteEl,
+            "danger",
+            "Deprecated engine version selected. Use an Available version."
+          );
+          return;
+        }
+
+        if (latestAvailable && value && value !== latestAvailable) {
+          setSelectHealth(
+            selectEl,
+            noteEl,
+            "warning",
+            `Newer engine version available: ${latestAvailable}.`
+          );
+          return;
+        }
+
+        setSelectHealth(selectEl, noteEl, "", "");
+      };
+
+      selectEl.addEventListener("change", evaluate);
+      evaluate();
+    }
+
+    const LEGACY_GENERATION_CUTOFF = {
+      t: 2,
+      m: 4,
+      c: 4,
+      r: 4,
+    };
+
+    function parseInstanceClass(value) {
+      const raw = String(value || "").trim().toLowerCase();
+      if (!raw) return { prefix: "db", family: "", size: "" };
+      const parts = raw.split(".");
+      if (parts.length >= 3 && (parts[0] === "db" || parts[0] === "cache")) {
+        return { prefix: parts[0], family: parts[1], size: parts.slice(2).join(".") };
+      }
+      if (parts.length >= 2) {
+        return { prefix: "db", family: parts[0], size: parts.slice(1).join(".") };
+      }
+      return { prefix: "db", family: raw, size: "" };
+    }
+
+    function parseFamilyToken(family) {
+      const raw = String(family || "").trim().toLowerCase();
+      const m = raw.match(/^([a-z]+)(\d+)([a-z0-9]*)$/);
+      if (!m) return null;
+      return {
+        family: raw,
+        root: m[1],
+        generation: Number(m[2]),
+        suffix: m[3] || "",
+      };
+    }
+
+    function archClassForSuffix(suffix) {
+      const s = String(suffix || "").toLowerCase();
+      return s.includes("g") ? "arm" : "x86";
+    }
+
+    function buildFamilyInventory(selectEl) {
+      const byRoot = new Map();
+      Array.from(selectEl.options).forEach((opt) => {
+        const parsed = parseInstanceClass(opt.value);
+        const token = parseFamilyToken(parsed.family);
+        if (!token) return;
+        if (!byRoot.has(token.root)) {
+          byRoot.set(token.root, { generations: new Set(), families: new Map() });
+        }
+        const entry = byRoot.get(token.root);
+        entry.generations.add(token.generation);
+        if (!entry.families.has(token.family)) {
+          entry.families.set(token.family, token);
+        }
+      });
+      return byRoot;
+    }
+
+    function compareCandidateFamilies(a, b, selectedToken) {
+      const da = a.generation - selectedToken.generation;
+      const db = b.generation - selectedToken.generation;
+      if (da !== db) return da - db;
+
+      const selectedArch = archClassForSuffix(selectedToken.suffix);
+      const archA = archClassForSuffix(a.suffix);
+      const archB = archClassForSuffix(b.suffix);
+      if (archA !== archB) {
+        if (archA === selectedArch) return -1;
+        if (archB === selectedArch) return 1;
+        return archA === "x86" ? -1 : 1;
+      }
+      return a.family.localeCompare(b.family);
+    }
+
+    function pickReplacementInstanceClass(parsed, selectedToken, rootEntry, availableValues) {
+      const families = Array.from(rootEntry.families.values())
+        .filter((token) => token.generation > selectedToken.generation)
+        .sort((a, b) => compareCandidateFamilies(a, b, selectedToken));
+
+      for (const candidate of families) {
+        const exact = `${parsed.prefix}.${candidate.family}.${parsed.size}`;
+        if (availableValues.has(exact)) return exact;
+      }
+      return "";
+    }
+
+    function analyzeInstanceClassHealth(value, familyInventory, availableValues) {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (!normalized) return null;
+
+      const parsed = parseInstanceClass(normalized);
+      const selectedToken = parseFamilyToken(parsed.family);
+      if (!selectedToken || !parsed.size) return null;
+
+      const rootEntry = familyInventory.get(selectedToken.root);
+      if (!rootEntry) return null;
+
+      const generations = Array.from(rootEntry.generations.values()).sort((a, b) => a - b);
+      const maxGeneration = generations.length ? generations[generations.length - 1] : selectedToken.generation;
+      if (maxGeneration <= selectedToken.generation) return null;
+
+      const cutoff = LEGACY_GENERATION_CUTOFF[selectedToken.root];
+      const isLegacy = Number.isInteger(cutoff) && selectedToken.generation <= cutoff;
+      const replacement = pickReplacementInstanceClass(parsed, selectedToken, rootEntry, availableValues);
+      return {
+        level: isLegacy ? "danger" : "warning",
+        replacement,
+      };
+    }
+
+    function attachAuroraInstanceClassHealth() {
+      const selects = Array.from(document.querySelectorAll('select[name$="aurora_instance_class"]'));
+      selects.forEach((selectEl) => {
+        const noteId = `${selectEl.id}-health-note`;
+        let noteEl = document.getElementById(noteId);
+        if (!noteEl) {
+          noteEl = document.createElement("div");
+          noteEl.id = noteId;
+          noteEl.className = "ps-health-note";
+          selectEl.insertAdjacentElement("afterend", noteEl);
+        }
+
+        const availableValues = new Set(
+          Array.from(selectEl.options)
+            .map((opt) => String(opt.value || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
+        const familyInventory = buildFamilyInventory(selectEl);
+
+        const evaluate = () => {
+          const value = String(selectEl.value || "").trim().toLowerCase();
+          if (!value) {
+            setSelectHealth(selectEl, noteEl, "", "");
+            return;
+          }
+
+          const finding = analyzeInstanceClassHealth(value, familyInventory, availableValues);
+          if (!finding) {
+            setSelectHealth(selectEl, noteEl, "", "");
+            return;
+          }
+
+          if (finding.level === "danger") {
+            setSelectHealth(
+              selectEl,
+              noteEl,
+              "danger",
+              finding.replacement
+                ? `Legacy instance class selected. Suggested replacement: ${finding.replacement}.`
+                : "Legacy instance class selected. Newer generation exists."
+            );
+            return;
+          }
+
+          setSelectHealth(
+            selectEl,
+            noteEl,
+            "warning",
+            finding.replacement
+              ? `Older instance class selected. Suggested replacement: ${finding.replacement}.`
+              : "Older instance class selected. Newer generation exists."
+          );
+        };
+
+        selectEl.addEventListener("change", evaluate);
+        evaluate();
+      });
+    }
+
+    function attachAuroraParameterEditor() {
+      const list = document.getElementById("auroraParameterList");
+      const template = document.getElementById("auroraParameterTemplate");
+      const addButton = document.getElementById("addAuroraParameter");
+      const count = document.getElementById("auroraParameterCount");
+      const customGroup = list?.querySelector("[data-aurora-custom-group]");
+      const customParameters = list?.querySelector("[data-aurora-custom-parameters]");
+      const customCount = list?.querySelector("[data-aurora-custom-count]");
+      if (!list || !template || !addButton) return;
+
+      const reindex = () => {
+        const cards = Array.from(list.querySelectorAll("[data-aurora-parameter-card]"));
+        cards.forEach((card, index) => {
+          const number = card.querySelector(".vault-param-card__number");
+          if (number) number.textContent = String(index + 1).padStart(2, "0");
+
+          card.querySelectorAll("[name]").forEach((el) => {
+            el.name = el.name.replace(
+              /db_cluster_parameter_group_parameters-\d+-/,
+              `db_cluster_parameter_group_parameters-${index}-`
+            );
+          });
+          card.querySelectorAll("[id]").forEach((el) => {
+            el.id = el.id.replace(
+              /db_cluster_parameter_group_parameters-\d+-/,
+              `db_cluster_parameter_group_parameters-${index}-`
+            );
+          });
+          card.querySelectorAll("label[for]").forEach((label) => {
+            label.htmlFor = label.htmlFor.replace(
+              /db_cluster_parameter_group_parameters-\d+-/,
+              `db_cluster_parameter_group_parameters-${index}-`
+            );
+          });
+        });
+        if (count) count.textContent = String(cards.length);
+        const customCards = cards.filter((card) => card.dataset.default !== "true");
+        if (customCount) {
+          customCount.textContent = `${customCards.length} ${customCards.length === 1 ? "parameter" : "parameters"}`;
+        }
+        if (customGroup) customGroup.classList.toggle("d-none", customCards.length === 0);
+      };
+
+      addButton.addEventListener("click", () => {
+        const index = list.querySelectorAll("[data-aurora-parameter-card]").length;
+        const fragment = template.content.cloneNode(true);
+        fragment.querySelectorAll("[name], [id], label[for]").forEach((el) => {
+          if (el.name) el.name = el.name.replaceAll("__index__", String(index));
+          if (el.id) el.id = el.id.replaceAll("__index__", String(index));
+          if (el.htmlFor) el.htmlFor = el.htmlFor.replaceAll("__index__", String(index));
+        });
+        (customParameters || list).appendChild(fragment);
+        reindex();
+        const added = (customParameters || list).lastElementChild;
+        const firstInput = added ? added.querySelector('input[type="text"]') : null;
+        if (firstInput) firstInput.focus();
+      });
+
+      list.addEventListener("click", (event) => {
+        const removeButton = event.target.closest("[data-remove-aurora-parameter]");
+        if (!removeButton) return;
+        const card = removeButton.closest("[data-aurora-parameter-card]");
+        if (!card || card.dataset.default === "true") return;
+        card.remove();
+        reindex();
+      });
+
+      reindex();
+    }
+
+    const engineField = document.getElementById("engine");
+    if (engineField) {
+      engineField.addEventListener("change", function () {
+        const form = engineField.closest("form");
+        if (!form) return;
+
+        let actionInput = form.querySelector('input[name="action"][data-aurora-defaults="1"]');
+        if (!actionInput) {
+          actionInput = document.createElement("input");
+          actionInput.type = "hidden";
+          actionInput.name = "action";
+          actionInput.setAttribute("data-aurora-defaults", "1");
+          form.appendChild(actionInput);
+        }
+
+        actionInput.value = "apply_engine_defaults";
+        form.submit();
+      });
+    }
+
+    attachParamGroupFamilySync();
+    attachAuroraEngineVersionHealth();
+    attachAuroraInstanceClassHealth();
+    attachAuroraParameterEditor();
+  });
+  </script>
+{% endblock %}

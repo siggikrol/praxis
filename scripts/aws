@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# Kubeconfig exec credential helper.
+#
+# Praxis also receives dedicated S3 credentials through the
+# standard AWS environment variables. Those variables take precedence over
+# the AWS_PROFILE selected by an EKS kubeconfig, so remove them for AWS CLI
+# calls and let the kubeconfig-selected profile provide the EKS identity.
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+unset AWS_SECURITY_TOKEN
+unset PYTHONPATH
+
+# A kubeconfig may contain an obsolete AWS_PROFILE in its exec environment.
+# Let the validation-specific Compose setting override that embedded value.
+if [ -n "${PS_CORE_VALIDATE_AWS_PROFILE:-}" ]; then
+    AWS_PROFILE=$PS_CORE_VALIDATE_AWS_PROFILE
+    export AWS_PROFILE
+fi
+
+exec /usr/bin/aws "$@"

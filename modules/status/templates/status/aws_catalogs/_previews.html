@@ -1,0 +1,85 @@
+<div class="card tool-panel w-100">
+  <div class="card-header d-flex align-items-center gap-2">
+    <i class="fa-solid fa-magnifying-glass"></i>
+    <strong>Previews</strong>
+    <span class="text-muted small">Group counts and sample values per cache</span>
+  </div>
+  <div class="card-body">
+    {% if data.entries %}
+      <div class="accordion" id="awsCatalogAccordion">
+        {% for e in (data.entries or []) %}
+          {% set cid = "c" ~ loop.index %}
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="heading-{{ cid }}">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ cid }}" aria-expanded="false" aria-controls="collapse-{{ cid }}">
+                {{ e.catalog_label }} • {{ e.region }}{% if e.engine %} • {{ e.engine }}{% endif %}
+                <span class="ms-2 badge {% if e.exists %}bg-success{% else %}bg-secondary{% endif %}">{% if e.exists %}Available{% else %}Missing{% endif %}</span>
+                <span class="ms-2 badge {% if e.stale %}bg-warning text-dark{% else %}bg-success{% endif %}">{% if e.stale %}Stale{% else %}Fresh{% endif %}</span>
+                {% if e.source == "aws_cache" %}
+                  <span class="ms-2 badge bg-success">source=aws_cache</span>
+                {% else %}
+                  <span class="ms-2 badge bg-warning text-dark">source={{ e.source }}</span>
+                {% endif %}
+                {% if e.count is not none %}<span class="ms-2 badge bg-light text-dark border">count={{ e.count }}</span>{% endif %}
+              </button>
+            </h2>
+            <div id="collapse-{{ cid }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ cid }}" data-bs-parent="#awsCatalogAccordion">
+              <div class="accordion-body">
+                <div class="row g-3">
+                  <div class="col-12 col-lg-5">
+                    <div class="small">
+                      <div><span class="text-muted">Generated (UTC):</span> <code>{{ e.generated_at_iso or "—" }}</code></div>
+                      <div class="mt-1"><span class="text-muted">TTL:</span> <code>{{ e.ttl_seconds }}s</code></div>
+                      <div class="mt-1"><span class="text-muted">Cache path:</span> <code>{{ e.cache_path }}</code></div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-lg-7">
+                    {% if e.group_summaries %}
+                      <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th>Group</th>
+                              <th class="text-end">Count</th>
+                              <th>Sample</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for g in e.group_summaries %}
+                              <tr>
+                                <td>{{ g.label }}</td>
+                                <td class="text-end"><code>{{ g.count }}</code></td>
+                                <td class="small">
+                                  {% if g.sample %}
+                                    <code>{{ g.sample|join(", ") }}</code>
+                                  {% else %}
+                                    <span class="text-muted">—</span>
+                                  {% endif %}
+                                </td>
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                    {% else %}
+                      <div class="text-muted small">No group data loaded (cache missing or unreadable).</div>
+                    {% endif %}
+                  </div>
+                </div>
+                <div class="mt-3">
+                  <a class="btn btn-sm btn-outline-secondary"
+                     href="{{ url_for('status.aws_catalogs_json', catalog=e.catalog, region=e.region, engine=(e.engine or '')) }}"
+                     target="_blank" rel="noopener">
+                    Open JSON
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted small">No cache entries available yet.</div>
+    {% endif %}
+  </div>
+</div>

@@ -1,0 +1,22 @@
+<nav class="foundation-page-nav" aria-label="Readiness Gate navigation">
+  <a class="{% if readiness_section == 'published' %}is-active{% endif %}"
+     href="{{ url_for('environment_readiness.published_setups') }}"
+     {% if readiness_section == 'published' %}aria-current="page"{% endif %}>
+    <i class="fa-solid fa-list-check" aria-hidden="true"></i> Published setups
+  </a>
+  <a class="{% if readiness_section == 'drafts' %}is-active{% endif %}"
+     href="{{ url_for('environment_readiness.drafts') }}"
+     {% if readiness_section == 'drafts' %}aria-current="page"{% endif %}>
+    <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Environment drafts
+  </a>
+  <a class="{% if readiness_section == 'insights' %}is-active{% endif %}"
+     href="{{ url_for('environment_readiness.insights') }}"
+     {% if readiness_section == 'insights' %}aria-current="page"{% endif %}>
+    <i class="fa-solid fa-chart-line" aria-hidden="true"></i> Insights
+  </a>
+  <a class="{% if readiness_section == 'information' %}is-active{% endif %}"
+     href="{{ url_for('environment_readiness.information') }}"
+     {% if readiness_section == 'information' %}aria-current="page"{% endif %}>
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i> About Readiness Gate
+  </a>
+</nav>

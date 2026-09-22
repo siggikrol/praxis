@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page-shell">
+
+  {% set hero_title = "Network Change Request – Ingress" %}
+  {% set hero_subtitle = "Configure ingress endpoints and network settings" %}
+  <div class="ncr-page-heading">
+    {% include "_page_hero.html" %}
+    <a class="ncr-template-action" href="{{ url_for('ncr.template_admin') }}">
+      <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+      Template administration
+    </a>
+  </div>
+
+  <a class="back-btn" href="{{ url_for('tools') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Tools
+  </a>
+
+  {% set current_ncr_step = 1 %}
+  {% include "_ncr_progress.html" %}
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }} py-2">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {# ── Saved drafts ── #}
+  {% set drafts = session.get('ncr:drafts', []) %}
+  {% if drafts %}
+  <div class="tool-panel tool-panel--compact mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div class="tool-panel__title">Saved Drafts</div>
+      <span class="text-muted small">{{ drafts|length }} saved</span>
+    </div>
+    <div class="ncr-draft-list">
+      {% for draft in drafts %}
+      <div class="ncr-draft-item">
+        <div>
+          <div class="ncr-draft-item__name">{{ draft.name }}</div>
+          <div class="ncr-draft-item__meta">{{ draft.env }} &middot; saved {{ draft.saved_at }}</div>
+        </div>
+        <div class="ncr-draft-item__actions">
+          <a href="{{ url_for('ncr.load_draft', idx=loop.index0) }}" class="btn btn-sm btn-outline-primary">Load</a>
+          <form method="POST" action="{{ url_for('ncr.delete_draft', idx=loop.index0) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Delete</button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <form method="POST" id="ncr-ingress-form">
+    {{ form.hidden_tag() }}
+    <div class="wizard-panel">
+
+      {# ── Core fields ── #}
+      <div class="wizard-panel__section">
+        {% include "_ingress_fields.html" %}
+      </div>
+
+      {# ── Endpoints ── #}
+      <div class="wizard-panel__section">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <div class="wizard-panel__label mb-0">Endpoints</div>
+          <div class="d-flex gap-2 flex-wrap justify-content-end">
+            <button
+              type="submit"
+              name="_action"
+              value="restore_default_endpoints"
+              formnovalidate
+              formaction="{{ url_for('ncr.restore_default_endpoints') }}"
+              class="btn btn-sm btn-outline-secondary">
+              <i class="fa-solid fa-rotate-left me-1"></i> Restore platform defaults
+            </button>
+            <button
+              type="submit"
+              name="_action"
+              value="remove_all_endpoints"
+              formnovalidate
+              formaction="{{ url_for('ncr.remove_all_endpoints') }}"
+              class="btn btn-sm btn-outline-danger">
+              <i class="fa-solid fa-trash-can me-1"></i> Remove all
+            </button>
+            <button
+              type="submit"
+              name="_action"
+              value="add_endpoint"
+              formnovalidate
+              formaction="{{ url_for('ncr.add_endpoint') }}"
+              class="btn btn-sm btn-outline-primary"
+              id="ncr-add-endpoint">
+              <i class="fa-solid fa-plus me-1"></i> Add endpoint
+            </button>
+          </div>
+        </div>
+        {% if form.errors.get('endpoints') %}
+          <div class="alert alert-danger py-2 px-3 mb-3">
+            Complete the highlighted endpoint fields before continuing to Egress.
+          </div>
+        {% endif %}
+        {% if ncr_notice %}
+          <div class="alert alert-info py-2 px-3 mb-3">{{ ncr_notice }}</div>
+        {% endif %}
+
+        <div id="ncr-endpoints-wrap">
+          {% for entry in form.endpoints %}
+          <div class="ncr-endpoint-row" data-index="{{ loop.index0 }}" id="ncr-endpoint-row-{{ loop.index0 }}">
+            {% set endpoint_has_errors = entry.form.namespace.errors or entry.form.name.errors or entry.form.gateways.errors or entry.form.hosts.errors %}
+            {% set show_examples = not entry.form.namespace.data and not entry.form.name.data and not entry.form.gateways.data and not entry.form.hosts.data and not entry.form.host_template.data %}
+            <div class="ncr-endpoint-header">
+              <button type="button" class="ncr-row-toggle" title="Enable / disable this endpoint">&#x25CF;</button>
+              <span class="ncr-endpoint-label">
+                {{ entry.form.namespace.data or 'ns' }} / {{ entry.form.name.data or 'endpoint' }}
+              </span>
+              <button
+                type="submit"
+                name="_action"
+                value="remove_endpoint:{{ loop.index0 }}"
+                formnovalidate
+                formaction="{{ url_for('ncr.remove_endpoint', idx=loop.index0) }}"
+                class="ncr-row-remove"
+                title="Remove endpoint">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            {% if endpoint_has_errors %}
+              <div class="alert alert-danger py-2 px-3 mb-3">
+                This endpoint is incomplete. Fill in the required fields below.
+              </div>
+            {% endif %}
+            <div class="ncr-row-fields">
+              <div class="row g-2">
+                <div class="col-md-2">
+                  <label class="form-label small">Namespace</label>
+                  {{ entry.form.namespace(class="form-control form-control-sm" ~ (" is-invalid" if entry.form.namespace.errors else "")) }}
+                  {% if entry.form.namespace.errors %}
+                    <div class="invalid-feedback d-block">{{ entry.form.namespace.errors[0] }}</div>
+                  {% elif show_examples %}
+                    <div class="text-muted small mt-1">Example: `cw`</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Name</label>
+                  {{ entry.form.name(class="form-control form-control-sm" ~ (" is-invalid" if entry.form.name.errors else "")) }}
+                  {% if entry.form.name.errors %}
+                    <div class="invalid-feedback d-block">{{ entry.form.name.errors[0] }}</div>
+                  {% elif show_examples %}
+                    <div class="text-muted small mt-1">Example: `camunda-webapp`</div>
+                  {% endif %}
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small">Gateways</label>
+                  {{ entry.form.gateways(class="form-control form-control-sm" ~ (" is-invalid" if entry.form.gateways.errors else ""), rows="1") }}
+                  {% if entry.form.gateways.errors %}
+                    <div class="invalid-feedback d-block">{{ entry.form.gateways.errors[0] }}</div>
+                  {% elif show_examples %}
+                    <div class="text-muted small mt-1">Example: `camunda-webapp`</div>
+                  {% endif %}
+                </div>
+                <div class="col-12 mt-1">
+                  <label class="form-label small">Hosts</label>
+                  {{ entry.form.hosts(class="form-control form-control-sm ncr-hosts" ~ (" is-invalid" if entry.form.hosts.errors else ""), rows="2") }}
+                  {% if entry.form.hosts.errors %}
+                    <div class="invalid-feedback d-block">{{ entry.form.hosts.errors[0] }}</div>
+                  {% elif show_examples %}
+                    <div class="text-muted small mt-1">
+                      Example: `camunda.int.{{ form.environment.data or 'ak-ctlst-staging' }}.{{ form.domain.data or 'example.com' }}`
+                    </div>
+                  {% endif %}
+                  <div class="ncr-host-hint"></div>
+                </div>
+                {{ entry.form.host_template }}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        {# Hidden template row for JS cloning #}
+        <template id="ncr-endpoint-template">
+          <div class="ncr-endpoint-row" data-index="__IDX__">
+            <div class="ncr-endpoint-header">
+              <button type="button" class="ncr-row-toggle" title="Enable / disable">&#x25CF;</button>
+              <span class="ncr-endpoint-label">new / endpoint</span>
+              <button type="button" class="ncr-row-remove" title="Remove">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+            <div class="ncr-row-fields">
+              <div class="row g-2">
+                <div class="col-md-2">
+                  <label class="form-label small">Namespace</label>
+                  <input type="text" name="endpoints-__IDX__-namespace" class="form-control form-control-sm" placeholder="cw">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label small">Name</label>
+                  <input type="text" name="endpoints-__IDX__-name" class="form-control form-control-sm" placeholder="camunda-webapp">
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label small">Gateways</label>
+                  <textarea name="endpoints-__IDX__-gateways" class="form-control form-control-sm" rows="1" placeholder="camunda-webapp"></textarea>
+                </div>
+                <div class="col-12 mt-1">
+                  <label class="form-label small">Hosts</label>
+                  <textarea name="endpoints-__IDX__-hosts" class="form-control form-control-sm ncr-hosts" rows="2" placeholder="camunda.int.{{ form.environment.data or 'ak-ctlst-staging' }}.{{ form.domain.data or 'example.com' }}"></textarea>
+                  <div class="ncr-host-hint"></div>
+                </div>
+                <input type="hidden" name="endpoints-__IDX__-host_template" value="">
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <div class="wizard-footer">
+        <div class="wizard-footer__left">
+          <button type="submit" name="_action" value="reset_hosts" formnovalidate class="btn-secondary">Reset hosts</button>
+        </div>
+        <div class="wizard-footer__right">
+          <button class="btn-primary" type="submit">Next &rarr; Egress</button>
+        </div>
+      </div>
+    </div>
+
+  </form>
+
+</div>
+
+<script>
+window.addEventListener("load", function () {
+  if (!window.location.hash || window.location.hash.indexOf("#ncr-endpoint-row-") !== 0) return;
+  var row = document.getElementById(window.location.hash.slice(1));
+  if (!row) return;
+  if (typeof row.scrollIntoView === "function") {
+    try {
+      row.scrollIntoView({ behavior: "auto", block: "center" });
+    } catch (err) {
+      row.scrollIntoView();
+    }
+  }
+  var target = row.querySelector('input, textarea');
+  if (target && typeof target.focus === "function") {
+    try {
+      target.focus({ preventScroll: true });
+    } catch (err) {
+      target.focus();
+    }
+  }
+});
+</script>
+
+<script>
+(function () {
+  const platformInput = document.getElementById("ncr-platform");
+  const envPrefixInput = document.getElementById("ncr-environment-prefix");
+  const envSuffixInput = document.getElementById("ncr-environment-suffix");
+  const envInput  = document.getElementById("ncr-environment");
+  const domInput  = document.getElementById("ncr-domain");
+  const wrap      = document.getElementById("ncr-endpoints-wrap");
+  const form      = document.getElementById("ncr-ingress-form");
+  let lastSubmitter = null;
+  const platformTokens = {
+    catalyst: "ctlst",
+    rgs: "rgs",
+    loyalty: "playon",
+  };
+
+  function buildEnvironmentSlug() {
+    const platform = platformInput ? (platformInput.value || "catalyst").trim().toLowerCase() : "catalyst";
+    const prefix = envPrefixInput ? (envPrefixInput.value || "").trim().toLowerCase() : "";
+    const suffix = envSuffixInput ? (envSuffixInput.value || "").trim().toLowerCase() : "";
+    const token = platformTokens[platform] || platformTokens.catalyst;
+
+    if (envPrefixInput) envPrefixInput.value = prefix;
+    if (envSuffixInput) envSuffixInput.value = suffix;
+    if (envInput) {
+      envInput.value = prefix && suffix ? `${prefix}-${token}-${suffix}` : "";
+    }
+  }
+
+  function replaceToken(value, token, replacement) {
+    return String(value || "").split(token).join(replacement);
+  }
+
+  function applyTemplateTokens(value, env, dom) {
+    return replaceToken(replaceToken(value, "{ENV}", env), "{DOMAIN}", dom);
+  }
+
+  // ── Host auto-fill ──────────────────────────────────────────────────────────
+  function applyHostTemplates() {
+    const env = envInput ? (envInput.value || "").trim() : "";
+    const dom = domInput ? (domInput.value || "").trim() : "";
+    wrap.querySelectorAll(".ncr-endpoint-row:not(.is-disabled)").forEach(row => {
+      const tplEl   = row.querySelector('[name$="host_template"]');
+      const hostsEl = row.querySelector('.ncr-hosts');
+      if (!tplEl || !hostsEl || !tplEl.value) return;
+      hostsEl.value = applyTemplateTokens(tplEl.value, env, dom);
+      validateHosts(hostsEl);
+    });
+  }
+
+  if (platformInput) platformInput.addEventListener("change", () => {
+    buildEnvironmentSlug();
+    applyHostTemplates();
+  });
+  if (envPrefixInput) envPrefixInput.addEventListener("input", () => {
+    buildEnvironmentSlug();
+    applyHostTemplates();
+  });
+  if (envSuffixInput) envSuffixInput.addEventListener("input", () => {
+    buildEnvironmentSlug();
+    applyHostTemplates();
+  });
+  if (domInput) domInput.addEventListener("input", applyHostTemplates);
+  buildEnvironmentSlug();
+  applyHostTemplates();
+
+  // ── Host validation ─────────────────────────────────────────────────────────
+  const HOST_RE = /^(?:\*\.)?(?!-)(?:[a-z0-9-]{1,63}\.)+[a-z]{2,}$/i;
+
+  function validateHosts(textarea) {
+    const hostCol = textarea.closest ? textarea.closest('.col-12') : null;
+    const hint = hostCol ? hostCol.querySelector('.ncr-host-hint') : null;
+    if (!hint) return;
+    const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+    const bad   = lines.filter(l => !HOST_RE.test(l));
+    if (bad.length) {
+      hint.textContent = `Invalid: ${bad.join(', ')}`;
+      hint.className = 'ncr-host-hint is-error';
+      textarea.classList.add('ncr-host-invalid');
+    } else {
+      hint.textContent = lines.length ? `${lines.length} host${lines.length > 1 ? 's' : ''}` : '';
+      hint.className = 'ncr-host-hint';
+      textarea.classList.remove('ncr-host-invalid');
+    }
+  }
+
+  wrap.addEventListener("input", e => {
+    if (e.target.classList.contains("ncr-hosts")) validateHosts(e.target);
+  });
+  wrap.querySelectorAll(".ncr-hosts").forEach(validateHosts);
+
+  form.addEventListener("click", e => {
+    const submitBtn = e.target.closest('button[type="submit"]');
+    if (submitBtn && form.contains(submitBtn)) {
+      lastSubmitter = submitBtn;
+    }
+  });
+
+  // ── Enable/disable toggle ───────────────────────────────────────────────────
+  wrap.addEventListener("click", e => {
+    const toggleBtn = e.target.closest(".ncr-row-toggle");
+    const row = e.target.closest(".ncr-endpoint-row");
+    if (!row) return;
+
+    if (toggleBtn) {
+      e.preventDefault();
+      const off = row.classList.toggle("is-disabled");
+      toggleBtn.classList.toggle("is-off", off);
+    }
+  });
+
+  // ── Re-index rows ───────────────────────────────────────────────────────────
+  // renumberOnly=true  → just fix indices (called after row removal)
+  // renumberOnly=false → also disable hidden rows for submit
+  function reindex(renumberOnly) {
+    let i = 0;
+    wrap.querySelectorAll(".ncr-endpoint-row").forEach(row => {
+      const disabled = row.classList.contains("is-disabled");
+      if (disabled && !renumberOnly) {
+        row.querySelectorAll("input, textarea").forEach(el => { el.disabled = true; });
+      }
+      if (!disabled) {
+        row.dataset.index = i;
+        row.querySelectorAll("input, textarea").forEach(el => {
+          el.name = el.name.replace(/endpoints-\d+-/, `endpoints-${i}-`);
+        });
+        i++;
+      }
+    });
+  }
+
+  form.addEventListener("submit", e => {
+    const submitter = e.submitter || lastSubmitter;
+    const action = submitter ? (submitter.value || "") : "";
+    const formAction = submitter ? (submitter.getAttribute("formaction") || "") : "";
+    const shouldNormalize =
+      !formAction &&
+      action !== "reset_hosts";
+
+    if (shouldNormalize) {
+      applyHostTemplates();
+      reindex(false);
+    }
+  });
+
+  // ── Update label as user types ──────────────────────────────────────────────
+  wrap.addEventListener("input", e => {
+    const row = e.target.closest(".ncr-endpoint-row");
+    if (!row) return;
+    const nsInput = row.querySelector('[name$="-namespace"]');
+    const nameInput = row.querySelector('[name$="-name"]');
+    const ns   = nsInput ? nsInput.value || 'ns' : 'ns';
+    const name = nameInput ? nameInput.value || 'endpoint' : 'endpoint';
+    const lbl  = row.querySelector('.ncr-endpoint-label');
+    if (lbl) lbl.textContent = `${ns} / ${name}`;
+  });
+})();
+</script>
+
+{% endblock %}

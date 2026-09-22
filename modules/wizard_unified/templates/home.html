@@ -1,0 +1,24 @@
+<!-- modules/wizard_unified/templates/wizard_unified/home.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-shell">
+
+  {% set hero_title = "Unified Deployment Wizard" %}
+  {% set hero_subtitle = "Combine the Multi-VPC, RGS, and Loyalty flows into one guided setup." %}
+  {% set hero_brand_icon = "fa-solid fa-puzzle-piece" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('wizards') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Wizards
+  </a>
+
+  <div class="studio-landing-panel">
+    <p class="text-muted mb-4">Use this landing page to enter the unified wizard before moving into the engine flow.</p>
+    <a href="{{ url_for('unified.release_selection') }}" class="btn btn-primary btn-lg">
+      Start Unified Wizard
+    </a>
+  </div>
+
+</div>
+{% endblock %}

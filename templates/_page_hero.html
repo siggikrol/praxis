@@ -1,0 +1,48 @@
+{#
+  Flat standardized page hero — use on every page.
+
+  Variables (set in the including template with {% set %}):
+    hero_title      (required) — h1 text
+    hero_subtitle   (optional) — subtitle paragraph
+    hero_eyebrow    (optional) — eyebrow label, defaults to "Praxis"
+    hero_icon       (optional) — FA class for eyebrow icon, defaults to "fa-solid fa-layer-group"
+    hero_title_media (optional) — image URL rendered beside the hero copy
+                              defaults to no image
+    hero_title_media_side (optional) — "left" or "right", defaults to "right"
+#}
+<div class="page-hero">
+  <div class="page-hero__inner">
+    {% set hero_media_side = hero_title_media_side if hero_title_media_side is defined else "right" %}
+    {% set hero_media = hero_title_media if hero_title_media is defined and hero_title_media else '' %}
+    <div class="page-hero__layout{% if hero_media %} page-hero__layout--with-media page-hero__layout--media-{{ hero_media_side }}{% endif %}">
+      {% if hero_media and hero_media_side == "left" %}
+        <div class="page-hero__media">
+          <img
+            class="page-hero__title-media"
+            src="{{ hero_media }}"
+            alt="{{ hero_title_media_alt if hero_title_media_alt is defined else '' }}"
+            aria-hidden="true">
+        </div>
+      {% endif %}
+      <div class="page-hero__copy">
+        <div class="page-hero__eyebrow">
+          <span class="page-hero__eyebrow-dot"></span>
+          {% if hero_eyebrow is defined and hero_eyebrow %}{{ hero_eyebrow }}{% else %}Praxis{% endif %}
+        </div>
+        <h1 class="page-hero__title">{{ hero_title }}</h1>
+        {% if hero_subtitle is defined and hero_subtitle %}
+          <p class="page-hero__sub">{{ hero_subtitle }}</p>
+        {% endif %}
+      </div>
+      {% if hero_media and hero_media_side != "left" %}
+        <div class="page-hero__media">
+          <img
+            class="page-hero__title-media"
+            src="{{ hero_media }}"
+            alt="{{ hero_title_media_alt if hero_title_media_alt is defined else '' }}"
+            aria-hidden="true">
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>

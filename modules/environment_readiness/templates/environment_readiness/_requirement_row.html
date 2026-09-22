@@ -1,0 +1,16 @@
+<div class="readiness-requirement readiness-check{% if values.get('status') == 'confirmed' %} is-confirmed{% elif values.get('status') == 'blocked' %} is-blocked{% endif %}" data-requirement-row>
+  <input type="hidden" name="req_{{ key }}_status" value="{{ values.get('status', '') }}" data-requirement-status>
+  <label class="readiness-check__label"><input type="checkbox" class="form-check-input" data-verified-check required{% if values.get('status') == 'confirmed' %} checked{% endif %}><strong>{{ label }}</strong></label>
+  <span class="readiness-check__state" data-check-state>{{ 'Verified' if values.get('status') == 'confirmed' else 'Blocked' if values.get('status') == 'blocked' else 'Not yet verified' }}</span>
+  <details class="readiness-check__details"{% if values.get('status') == 'blocked' %} open{% endif %}>
+    <summary>Details / report blocker{% if (values.get('owner') and not values.get('owner_inherited')) or (values.get('evidence') and not values.get('evidence_inherited')) %} · Custom owner/evidence{% endif %}</summary>
+    <div class="readiness-check__overrides">
+      <label>Owner override<input class="form-control form-control-sm" name="req_{{ key }}_owner" value="{{ '' if values.get('owner_inherited') else values.get('owner', '') }}" placeholder="Use section owner" title="Leave empty to inherit the section owner" data-row-owner></label>
+      <label>Evidence override<input class="form-control form-control-sm" name="req_{{ key }}_evidence" value="{{ '' if values.get('evidence_inherited') else values.get('evidence', '') }}" placeholder="Use section ticket/evidence" title="Reference to the work or supporting evidence; leave empty to inherit the section ticket" data-row-evidence></label>
+      <label>Notes<input class="form-control form-control-sm" name="req_{{ key }}_notes" value="{{ values.get('notes', '') }}" placeholder="Notes (optional)" data-requirement-notes></label>
+      <label><input type="checkbox" class="form-check-input" data-blocker-check{% if values.get('status') == 'blocked' %} checked{% endif %}> Blocked — needs attention</label>
+    </div>
+    <p class="small text-muted">{{ requirement_help.get(key, 'Confirm this prerequisite before provisioning.') }}</p>
+    <small data-verification-audit="{{ key }}"{% if not values.get('verified_at') %} hidden{% endif %}>Verified by {{ values.get('verified_by') or 'Not recorded' }} · {{ values.get('verified_at') or '' }}.</small>
+  </details>
+</div>

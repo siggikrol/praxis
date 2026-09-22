@@ -1,0 +1,431 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="wizard-wrapper">
+  <div class="card shadow-sm card--wide">
+
+    <!-- Hero header -->
+    <div class="hero bg-gradient-primary text-white">
+      <div class="p-4 p-md-5 text-center">
+        {% if validation_errors %}
+          <i class="fas fa-triangle-exclamation fa-3x mb-3"></i>
+          <h2 class="mb-1">Setup Incomplete</h2>
+          <p class="lead mb-0">Return to the wizard and complete the missing sections.</p>
+        {% else %}
+          <i class="fas fa-check-circle fa-3x mb-3"></i>
+          <h2 class="mb-1">All Done!</h2>
+          <p class="lead mb-0">Your spec has been generated with comments.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card-body">
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <a class="back-btn mb-0" href="{{ url_for('wizards') }}">&larr; Back to Wizards</a>
+        <div class="d-flex gap-2 align-items-center">
+          {% if wizard_workspace.access == 'viewer' %}
+            <span class="badge text-bg-secondary">Shared with you · Viewer</span>
+          {% elif wizard_workspace.owner == current_user or not current_user %}
+            <a class="btn btn-outline-secondary btn-sm"
+               href="{{ url_for('wizard_workspace_sharing', workspace_id=wizard_workspace.id) }}">
+              <i class="fa-solid fa-user-plus"></i> Share
+            </a>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if validation_errors %}
+        <section class="spec-validation-summary" aria-label="Setup issues">
+          <h3 class="h6">Complete these items to finish your setup</h3>
+          <ul class="list-unstyled mb-0">
+            {% for item in validation_items %}
+              <li class="spec-validation-item">
+                <strong>{{ item.label }}</strong>
+                <p>{{ item.message }}</p>
+                {% if item.step %}
+                  <a class="spec-validation-link" href="{{ url_for('.wizard_step', step=item.step) }}">Open {{ item.label }} <span aria-hidden="true">→</span></a>
+                {% elif item.deployment_versions_link and '# --- DEPLOYMENT VERSIONS ---' in spec_yaml %}
+                  <a href="#deployment-versions" class="spec-validation-link" data-deployment-versions-link>View Deployment Versions <span aria-hidden="true">↓</span></a>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+
+      <!-- Top buttons -->
+      {% if not validation_errors %}
+        <div class="text-center mb-4 d-flex justify-content-center gap-2 flex-wrap">
+          <a href="{{ download_url }}" class="btn btn-secondary btn-lg">
+            Download Spec YAML
+          </a>
+        </div>
+        <div class="text-center mb-3 small text-muted">
+          Continue to GitHub repo creation is available only after a successful full validation with IAC mock preflight.
+        </div>
+        {% if latest_validation %}
+          <div class="alert alert-{{ latest_validation.level }} py-2 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+              <strong>{{ latest_validation.label }}.</strong>
+              {% if latest_validation.is_current_spec %}
+                This is the latest validation for the current spec.
+              {% else %}
+                Run validation again before creating the repository.
+              {% endif %}
+            </div>
+            {% if latest_validation_url %}
+              <a href="{{ latest_validation_url }}"
+                 class="btn btn-sm btn-outline-{{ latest_validation.level }}">
+                View Latest Validation
+              </a>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="text-center mb-4 text-muted">
+          Resolve the errors above to enable download and GitHub export.
+        </div>
+      {% endif %}
+
+      {% if not validation_errors %}
+        <div class="card border-0 shadow-sm mb-4 finish-validation-card">
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+              <div>
+                <div class="fw-semibold">Validate With Praxis Core</div>
+                <div class="text-muted small">Runs full generation validation, including selected IAC module downloads from S3.</div>
+              </div>
+              {% if core_validate and core_validate.enabled %}
+                <span class="badge text-bg-success">Ready</span>
+              {% else %}
+                <span class="badge text-bg-warning">Unavailable</span>
+              {% endif %}
+            </div>
+
+            {% if core_validate and core_validate.enabled %}
+              {% if core_validate_error %}
+                <div class="alert alert-danger py-2 mb-3">
+                  {{ core_validate_error }}
+                </div>
+              {% endif %}
+              <form action="{{ core_validate_start_url }}" method="post" class="row g-2 align-items-end">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="col-md-4">
+                  <label class="form-label mb-1" for="coreValidateProject">Harbor Project</label>
+                  <input id="coreValidateProject"
+                         class="form-control form-control-sm"
+                         type="text"
+                         name="harbor_registry_project"
+                         value="{{ core_validate_harbor_project or core_validate.defaults.harbor_registry_project }}"
+                         {% if core_validate_pc_version_locked %}readonly{% endif %}>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label mb-1" for="coreValidateVersion">Praxis Core Version</label>
+                  <input id="coreValidateVersion"
+                         class="form-control form-control-sm"
+                         type="text"
+                         name="pc_version"
+                         value="{{ core_validate_pc_version or core_validate.defaults.pc_version }}"
+                         {% if core_validate_pc_version_locked %}readonly{% endif %}>
+                </div>
+                <div class="col-md-4 d-grid">
+                  <button id="coreValidateSubmit" type="submit" class="btn btn-primary btn-sm"
+                          {% if wizard_workspace.access == 'viewer' %}disabled{% endif %}>
+                    {% if wizard_workspace.access == 'viewer' %}View-only workspace{% else %}Start Full Validation{% endif %}
+                  </button>
+                </div>
+                <div class="col-12">
+                  <div class="form-check mb-2">
+                    <input class="form-check-input"
+                           type="checkbox"
+                           id="coreValidateIacTest"
+                           name="run_iac_test"
+                           value="1"
+                           checked>
+                    <label class="form-check-label" for="coreValidateIacTest">
+                      Run IAC mock preflight
+                    </label>
+                    <div class="form-text">
+                      Recommended and required for repository creation. Tests generated module contexts and dependency wiring with mocked providers.
+                    </div>
+                  </div>
+                  <div class="form-check mb-2">
+                    <input class="form-check-input"
+                           type="checkbox"
+                           id="coreValidateSkipS3"
+                           name="skip_s3_download"
+                           value="1">
+                    <label class="form-check-label" for="coreValidateSkipS3">
+                      Skip S3 module download (offline validation)
+                    </label>
+                    <div class="form-text">
+                      Offline validation disables IAC mock preflight and cannot unlock repository creation.
+                    </div>
+                  </div>
+                  {% if core_validate_pc_version_locked %}
+                    <div class="small text-muted">
+                      Harbor Project and Praxis Core Version are locked in production.
+                    </div>
+                  {% endif %}
+                  <div class="small text-muted">
+                    This opens a dedicated run page with live progress and logs.
+                  </div>
+                  <div class="small text-muted">
+                    Registry: <code>{{ core_validate.registry_address }}</code> |
+                    Namespace: <code>{{ core_validate.namespace }}</code>
+                  </div>
+                </div>
+              </form>
+              <script>
+                (() => {
+                  const skipS3 = document.getElementById("coreValidateSkipS3");
+                  const iacTest = document.getElementById("coreValidateIacTest");
+                  const submit = document.getElementById("coreValidateSubmit");
+                  if (!skipS3 || !iacTest || !submit) return;
+
+                  const updateSubmit = () => {
+                    submit.textContent = iacTest.checked
+                      ? "Start Full Validation"
+                      : "Start Core Validation";
+                  };
+                  skipS3.addEventListener("change", () => {
+                    if (skipS3.checked) {
+                      iacTest.checked = false;
+                      iacTest.disabled = true;
+                    } else {
+                      iacTest.disabled = false;
+                      iacTest.checked = true;
+                    }
+                    updateSubmit();
+                  });
+                  iacTest.addEventListener("change", updateSubmit);
+                  updateSubmit();
+                })();
+              </script>
+            {% else %}
+              <div class="alert alert-warning mb-0">
+                Core validation is unavailable: {{ core_validate.reason if core_validate else "feature state unavailable" }}.
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- View toggles -->
+      <div class="text-center mb-3">
+        <button id="singleViewBtn" class="btn btn-outline-primary btn-sm">Single View</button>
+        <button id="sideBySideBtn" class="btn btn-outline-primary btn-sm">Side-by-Side</button>
+        <button id="collapseAllBtn" class="btn btn-outline-secondary btn-sm ms-2">Collapse All</button>
+        <button id="expandAllBtn" class="btn btn-outline-secondary btn-sm ms-1">Expand All</button>
+        <button id="copyYamlBtn" class="btn btn-outline-secondary btn-sm ms-3">Copy YAML</button>
+      </div>
+
+      <!-- SINGLE VIEW WITH ACCORDION -->
+      <div id="singleView" class="mb-4">
+
+        <div class="accordion" id="yamlAccordion">
+
+          {% set cleaned = spec_yaml.lstrip() %}
+          {% set parts = cleaned.split('# --- ') %}
+          {% set preamble = parts[0].strip() %}
+          {% set sections = parts[1:] %}
+
+          {% if preamble %}
+            <div class="card mb-2">
+              <div class="card-header bg-light fw-semibold">Spec metadata</div>
+              <div class="card-body py-2">
+                <pre class="spec-pre mb-0">{{ preamble | e }}</pre>
+              </div>
+            </div>
+          {% endif %}
+
+          {% for block in sections %}
+            {% set block = block.strip() %}
+            {% if block %}
+
+              {% set header = block.split('---', 1)[0].strip() %}
+              {% set content = block.split('---', 1)[1] %}
+
+              <div class="accordion-item"{% if header == "DEPLOYMENT VERSIONS" %} id="deployment-versions" tabindex="-1" style="scroll-margin-top: 6rem;"{% endif %}>
+                <h2 class="accordion-header" id="heading{{ loop.index }}">
+                  <button class="accordion-button" type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#collapse{{ loop.index }}">
+                    {{ header }}
+                  </button>
+                </h2>
+
+                <div id="collapse{{ loop.index }}" class="accordion-collapse collapse show">
+                  <div class="accordion-body">
+                    <pre class="spec-pre"># --- {{ header }} ---{{ content | e }}</pre>
+                  </div>
+                </div>
+
+              </div>
+
+            {% endif %}
+          {% endfor %}
+
+        </div>
+      </div>
+
+      <!-- SIDE-BY-SIDE -->
+      <div id="sideBySide" class="row mb-4" style="display:none;">
+
+        <!-- RAW YAML (escaped) -->
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-light"><strong>Raw YAML</strong></div>
+            <div class="card-body">
+              <pre class="spec-pre">{{ spec_yaml | e }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- HIGHLIGHTED YAML -->
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-header bg-light"><strong>Highlighted YAML</strong></div>
+            <div class="card-body">
+              <pre class="spec-pre"><code class="language-yaml">{{ spec_yaml | e }}</code></pre>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom actions -->
+      <div class="text-center d-flex justify-content-center gap-3 flex-wrap mt-4">
+
+        {% set _last_step = WIZARD_STEPS[-1][0] if WIZARD_STEPS else None %}
+        <a class="btn btn-primary btn-lg"
+           href="{{ url_for(request.blueprint + '.wizard_step', step=_last_step) if _last_step else back_url }}">
+          Back
+        </a>
+
+        <form method="post"
+              action="{{ url_for(request.blueprint + '.wizard_reset') }}"
+              onsubmit="return confirm('This will erase all wizard data and start over. Continue?');"
+              class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-danger btn-lg">
+            Start Fresh
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Highlight.js CSS (GitHub theme) -->
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css"/>
+
+<style>
+.spec-pre {
+  white-space: pre;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.3rem;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+.accordion-button { font-weight: 600; }
+#singleView .accordion-item { margin-bottom: .5rem; }
+
+.hljs {
+  background: var(--code-bg) !important;
+  color: var(--text-primary);
+  border-radius: .25rem;
+}
+
+.hljs-attr {
+  color: var(--syntax-key);
+  font-weight: 600;
+}
+.hljs-string {
+  color: var(--syntax-string);
+}
+.hljs-number,
+.hljs-literal {
+  color: var(--syntax-number);
+}
+.hljs-comment,
+.hljs-meta {
+  color: var(--syntax-comment);
+}
+
+.finish-validation-card {
+  max-width: none;
+  width: 100%;
+}
+</style>
+
+<!-- Highlight.js core + YAML language -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+
+<script>
+// Helper: apply highlighting to YAML blocks
+function applyYamlHighlight() {
+  if (window.hljs) {
+    document.querySelectorAll('code.language-yaml').forEach(el => {
+      hljs.highlightElement(el);
+    });
+  }
+}
+
+// Toggle views
+singleViewBtn.onclick = () => {
+  singleView.style.display = "block";
+  sideBySide.style.display = "none";
+};
+
+sideBySideBtn.onclick = () => {
+  singleView.style.display = "none";
+  sideBySide.style.display = "flex";
+  // ensure highlight runs when switching to side-by-side
+  setTimeout(applyYamlHighlight, 0);
+};
+
+// Reveal the target even when the user switched views or collapsed all sections.
+document.querySelectorAll('[data-deployment-versions-link]').forEach(link => {
+  link.addEventListener('click', event => {
+    const target = document.getElementById('deployment-versions');
+    if (!target) return;
+    event.preventDefault();
+    singleViewBtn.click();
+    target.querySelector('.accordion-collapse')?.classList.add('show');
+    const button = target.querySelector('.accordion-button');
+    button?.classList.remove('collapsed');
+    button?.setAttribute('aria-expanded', 'true');
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    history.replaceState(null, '', '#deployment-versions');
+  });
+});
+
+// Collapse all
+collapseAllBtn.onclick = () => {
+  document.querySelectorAll('.accordion-collapse').forEach(c => c.classList.remove('show'));
+};
+
+// Expand all
+expandAllBtn.onclick = () => {
+  document.querySelectorAll('.accordion-collapse').forEach(c => c.classList.add('show'));
+};
+
+// Copy YAML
+copyYamlBtn.onclick = async () => {
+  await navigator.clipboard.writeText(`{{ spec_yaml | e }}`);
+  alert("YAML copied to clipboard!");
+};
+
+// If page loads directly in side-by-side mode for some reason, highlight once
+document.addEventListener('DOMContentLoaded', applyYamlHighlight);
+</script>
+{% endblock %}

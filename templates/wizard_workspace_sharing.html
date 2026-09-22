@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell">
+  {% set hero_title = "Share workspace" %}
+  {% set hero_subtitle = workspace.title ~ " · Private by default" %}
+  {% include "_page_hero.html" %}
+
+  <a class="back-btn" href="{{ url_for('wizards') }}">
+    <i class="fa-solid fa-arrow-left"></i> Back to Wizards
+  </a>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h2 class="h6 mb-2">Give a user access</h2>
+      <p class="text-muted small">Only the owner can manage access. Workspaces are never public.</p>
+      <form method="post" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-7">
+          <label class="form-label" for="sharedWith">Username or email</label>
+          <input id="sharedWith" class="form-control" name="shared_with" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="permission">Permission</label>
+          <select id="permission" class="form-select" name="permission">
+            <option value="viewer">Viewer</option>
+            <option value="editor">Editor</option>
+          </select>
+        </div>
+        <div class="col-md-2 d-grid">
+          <button class="btn btn-primary" type="submit">Share</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h2 class="h6 mb-3">People with access</h2>
+      <div class="row-list">
+        <div class="row-item">
+          <div class="row-item__body">
+            <div class="row-item__title">{{ workspace.owner }}</div>
+            <div class="row-item__sub">Owner</div>
+          </div>
+        </div>
+        {% for share in shares %}
+          <div class="row-item">
+            <div class="row-item__body">
+              <div class="row-item__title">{{ share.shared_with }}</div>
+              <div class="row-item__sub">{{ share.permission|title }}</div>
+            </div>
+            <form method="post" action="{{ url_for('remove_wizard_workspace_share', workspace_id=workspace.id, shared_with=share.shared_with) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-outline-danger btn-sm" type="submit">Remove</button>
+            </form>
+          </div>
+        {% else %}
+          <div class="text-muted small">This workspace has not been shared.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

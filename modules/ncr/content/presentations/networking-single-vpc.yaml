@@ -1,0 +1,146 @@
+schema_version: 1
+sections:
+  cidr: 'Requested VPC CIDR prefix: {{ requested_prefix }}'
+  dns: 'Root domain: {{ root_domain }}
+
+    Subdomain: {{ subdomain }}'
+  ingress: "ENDPOINTS FIREWALL RULES\n{% for group in endpoints | map(attribute='category') | unique %}\n{{ group\
+    \ }}\n{% for item in endpoints if item.category == group %}- {{ item.host }}{% if item.protocol != 'NEEDS_CONFIRMATION'\
+    \ %} | {{ item.protocol }}{% endif %}{% if include_details %} | {{ item.namespace }}/{{ item.name }}\n  Attribution:\
+    \ {{ item.attribution }}{% endif %}\n{% endfor %}{% endfor %}"
+  services: 'EGRESS FIREWALL RULES
+
+    {% for item in services %}
+
+    {{ item.source }} — {{ item.purpose }}
+
+    {{ item.destination }}{% if item.protocol != ''NEEDS_CONFIRMATION'' %} | {{ item.protocol }}{% endif %}{% if
+    include_details %}
+
+    Attribution: {{ item.attribution }}{% endif %}
+
+    {% endfor %}
+
+    '
+  cross_vpc: ''
+  egress: ''
+  routing: ''
+  shared_services: ''
+  manifest: '{{ sections.cidr }}
+
+
+    DNS / DOMAIN REQUIREMENTS
+
+    {{ sections.dns }}
+
+
+    {{ sections.ingress | trim }}
+
+
+    {{ sections.bde | trim }}
+
+
+    {{ sections.services | trim }}{% if sections.cross_vpc %}
+
+
+    {{ sections.cross_vpc | trim }}{% endif %}
+
+
+    {{ sections.firewall_details }}{% if include_details %}
+
+
+    PROVENANCE / REVIEW DETAILS
+
+    {% for note in profile.requires_confirmation %}- {{ note }}
+
+    {% endfor %}{% endif %}'
+  firewall_details: To finalize application and Active Directory firewall rules, the application owner must provide
+    the required protocols/ports and permitted application ingress sources.
+  bde: 'BDE CONNECTIVITY
+
+    BDE → {{ ''all environment VPCs'' if vpcs | length > 1 else ''environment VPC'' }} (EKS API endpoints, port
+    443):
+
+    - {{ defaults.bde_vault_host }}
+
+    - {{ rancher_url or ''Select a Rancher target with a configured URL.'' }}
+
+
+    {{ ''All environment VPCs'' if vpcs | length > 1 else ''Environment VPC'' }} → BDE network {{ defaults.bde_cidr
+    }}:
+
+    - {{ defaults.bde_vault_host }}
+
+    - {{ rancher_url or ''Select a Rancher target with a configured URL.'' }}
+
+
+    {% if include_details %}
+
+    Attribution: Catalyst deployment guide, PDF 2026-09-14 page 22, BDE and ALL VPC / BDE egress. Port 443 is specified
+    for EKS API access only; no CIDR-wide port allowance is implied.{% endif %}'
+title: Networking Service Request
+description: Configure the requested VPC allocations, DNS and firewall connectivity.
+fields:
+- key: short_description
+  label: Short description
+  value: Configure environment networking
+  type: text
+- key: requested_for
+  label: Requested for
+  value: '{{ data.get(''requester'', '''') }}'
+  type: text
+- key: customer
+  label: Customer
+  value: '{{ data.get(''customer'', '''') }}'
+  type: text
+- key: environment_name
+  label: Environment name
+  value: '{{ data.get(''environment_name'', '''') }}'
+  type: text
+- key: setup_type
+  label: Architecture
+  value: Catalyst Single-VPC
+  type: text
+- key: environment_type
+  label: Environment type
+  value: '{{ data.get(''environment_type'', '''') }}'
+  type: text
+- key: production_classification
+  label: Classification
+  value: '{{ data.get(''production_classification'', '''') }}'
+  type: text
+- key: aws_region
+  label: Requested AWS region
+  value: '{{ data.get(''aws_region'', '''') }}'
+  type: text
+- key: target_date
+  label: Required by
+  value: '{{ data.get(''target_date'', '''') }}'
+  type: date
+- key: jira_epic
+  label: Jira environment epic
+  value: '{{ data.get(''jira_epic'', '''') }}'
+  type: text
+- key: architect
+  label: Architect
+  value: '{{ data.get(''architect'', '''') }}'
+  type: text
+- key: devops_receiver
+  label: Receiving DevOps owner
+  value: '{{ data.get(''devops_receiver'', '''') }}'
+  type: text
+- key: ad_access_group
+  label: AD group requiring application endpoint access
+  value: '{{ data.get(''ad_access_group'') or defaults.ad_access_group }}'
+  type: text
+- key: connectivity_manifest
+  label: Networking requirements
+  value: '{{ manifest }}'
+  type: textarea
+- key: business_justification
+  label: Additional requirements / notes
+  value: '{{ data.get(''additional_notes'', '''') }}'
+  type: textarea
+  condition:
+    field: has_additional_notes
+    equals: true

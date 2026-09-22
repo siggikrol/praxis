@@ -1,0 +1,22 @@
+<nav class="tool-panel tool-panel--compact status-subnav" aria-label="Status sections">
+  <div class="tool-toolbar mb-0">
+    <div>
+      <div class="tool-panel__title">Status Navigation</div>
+      <div class="tool-panel__subtitle">Runtime health, integration checks, and cache diagnostics.</div>
+    </div>
+    <div class="tool-toolbar__group">
+      <a class="btn btn-sm {% if current_status_page == 'app' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('status.app_status') }}">
+        <i class="fa-solid fa-heart-pulse me-1"></i> App
+      </a>
+      <a class="btn btn-sm {% if current_status_page == 'aws_catalogs' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('status.aws_catalogs') }}">
+        <i class="fa-solid fa-database me-1"></i> AWS Catalog Cache
+      </a>
+      <a class="btn btn-sm {% if current_status_page == 'spacelift_cache' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('status.spacelift_cache') }}">
+        <i class="fa-solid fa-hard-drive me-1"></i> Spacelift Cache
+      </a>
+      <a class="btn btn-sm {% if current_status_page == 'pc_source_cache' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('status.pc_source_cache') }}">
+        <i class="fa-solid fa-folder-tree me-1"></i> PC Source Cache
+      </a>
+    </div>
+  </div>
+</nav>

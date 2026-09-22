@@ -1,0 +1,120 @@
+{% extends "wizard_step.html" %}
+
+{% block step_body %}
+  {% set _ver_meta = form._kafka_versions_meta if form._kafka_versions_meta is defined else none %}
+  {% set _type_meta = form._kafka_broker_node_types_meta if form._kafka_broker_node_types_meta is defined else none %}
+
+  <div class="d-flex align-items-start flex-wrap gap-2 mb-3">
+    <div class="alert alert-info py-2 mb-0 flex-grow-1 wizard-inline-alert">
+      <div class="small">
+        <div>
+          Kafka versions are fetched from AWS MSK and cached (24h by default).
+          {% if _ver_meta is not none %}
+            {% set _src_class = "bg-success" if _ver_meta.source == "aws_cache" else "bg-warning text-dark" %}
+            {% set _state_class = "bg-warning text-dark" if _ver_meta.stale else "bg-success" %}
+            <span class="badge {{ _src_class }} ms-2" title="{{ _ver_meta.cache_path }}">source={{ _ver_meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _ver_meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _ver_meta.count }}</span>
+            <span class="badge {{ _state_class }} ms-1">{{ "stale" if _ver_meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+        <div class="mt-1">
+          Broker node types use a curated list filtered by regional EC2 offerings (cached for 24h by default).
+          {% if _type_meta is not none %}
+            {% set _src_class = "bg-success" if _type_meta.source == "aws_cache" else "bg-warning text-dark" %}
+            {% set _state_class = "bg-warning text-dark" if _type_meta.stale else "bg-success" %}
+            <span class="badge {{ _src_class }} ms-2" title="{{ _type_meta.cache_path }}">source={{ _type_meta.source }}</span>
+            <span class="badge bg-secondary ms-1">region={{ _type_meta.region }}</span>
+            <span class="badge bg-secondary ms-1">count={{ _type_meta.count }}</span>
+            <span class="badge {{ _state_class }} ms-1">{{ "stale" if _type_meta.stale else "fresh" }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="ms-auto flex-shrink-0">
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for('.wizard_step', step=step, kafka_catalog_refresh=1) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+        Refresh Kafka catalogs
+      </a>
+    </div>
+  </div>
+  {{ super() }}
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const selectEl = document.getElementById("kafka_version");
+      if (!selectEl) return;
+
+      const noteId = `${selectEl.id}-health-note`;
+      let noteEl = document.getElementById(noteId);
+      if (!noteEl) {
+        noteEl = document.createElement("div");
+        noteEl.id = noteId;
+        noteEl.className = "ps-health-note";
+        selectEl.insertAdjacentElement("afterend", noteEl);
+      }
+
+      function setHealth(level, message) {
+        selectEl.classList.remove("ps-health-warning", "ps-health-danger");
+        noteEl.classList.remove("ps-health-note-warning", "ps-health-note-danger");
+        noteEl.textContent = "";
+        noteEl.style.display = "none";
+
+        if (level === "warning") {
+          selectEl.classList.add("ps-health-warning");
+          noteEl.classList.add("ps-health-note-warning");
+          noteEl.textContent = message || "A newer Kafka version is available.";
+          noteEl.style.display = "";
+          return;
+        }
+        if (level === "danger") {
+          selectEl.classList.add("ps-health-danger");
+          noteEl.classList.add("ps-health-note-danger");
+          noteEl.textContent = message || "Selected Kafka version is deprecated.";
+          noteEl.style.display = "";
+        }
+      }
+
+      const activeGroup = Array.from(selectEl.querySelectorAll("optgroup")).find((group) =>
+        String(group.label || "").toLowerCase().includes("active")
+      );
+      const latestActive = (
+        activeGroup && activeGroup.querySelector("option")
+          ? activeGroup.querySelector("option").value
+          : ""
+      );
+
+      function evaluate() {
+        const selected = selectEl.selectedOptions[0];
+        if (!selected) {
+          setHealth("", "");
+          return;
+        }
+
+        const parent = selected.parentElement;
+        const groupLabel = String(
+          parent && parent.tagName === "OPTGROUP" ? parent.label : ""
+        ).toLowerCase();
+        const value = String(selected.value || "").trim();
+
+        if (groupLabel.includes("deprec")) {
+          setHealth("danger", "Deprecated Kafka version selected. Upgrade to an Active version.");
+          return;
+        }
+        if (groupLabel.includes("other")) {
+          setHealth("warning", "Version status is unknown for this region/account.");
+          return;
+        }
+        if (groupLabel.includes("active") && latestActive && value && value !== latestActive) {
+          setHealth("warning", `Newer Active version available: ${latestActive}.`);
+          return;
+        }
+
+        setHealth("", "");
+      }
+
+      selectEl.addEventListener("change", evaluate);
+      evaluate();
+    });
+  </script>
+{% endblock %}

@@ -1,0 +1,28 @@
+schema_version: 1
+extends: networking-single-vpc
+sections:
+  cidr: 'VPC CIDR ALLOCATIONS
+
+    {% for vpc in vpcs %}- {{ vpc.name }}: /{{ vpc.requested_prefix }}{{ '' (used only from jump hosts)'' if vpc.name
+    == ''CR'' else '''' }}
+
+    {% endfor %}'
+  cross_vpc: 'CROSS VPC ACCESS — MULTI-VPC ONLY
+
+    Allow all internal HTTPS ({{ cross_vpc.port }}) endpoints: {{ cross_vpc.host }}
+
+    Additional TCP ports: {{ cross_vpc.tcp_ports | join('', '') }}.
+
+    {% if cross_vpc.ilp_egress is defined %}
+
+    Egress: {{ cross_vpc.ilp_egress.source }} → {{ cross_vpc.ilp_egress.destination }} | {{ cross_vpc.ilp_egress.protocol }} {{ cross_vpc.ilp_egress.ports | join('', '') if cross_vpc.ilp_egress.ports is defined else cross_vpc.ilp_egress.port }}{% if include_details %}
+
+    Attribution: {{ cross_vpc.ilp_egress.attribution }}{% endif %}{% endif %}'
+  firewall_details: To finalize public application and Active Directory firewall rules, the application owner must
+    provide the required protocols/ports. Internal cross-VPC access is specified above.
+field_overrides:
+  setup_type:
+    label: Architecture
+    value: Catalyst Multi-VPC
+title: Networking Service Request
+description: Configure the requested VPC allocations, DNS and firewall connectivity.

@@ -1,0 +1,49 @@
+<div id="readinessSummary" class="readiness-overview">
+  {% set reviews = namespace(count=0, acknowledged=0) %}
+  {% for kind, template in data.get('servicenow_templates', {}).items() if template.get('needs_review') %}{% if template.get('review_acknowledged_at') %}{% set reviews.acknowledged = reviews.acknowledged + 1 %}{% else %}{% set reviews.count = reviews.count + 1 %}{% endif %}{% endfor %}
+  <details data-readiness-overview>
+    <summary class="readiness-overview__summary">
+      <strong><i class="fa-solid {{ 'fa-circle-check' if readiness_summary.ready_for_devops else 'fa-list-check' }}" aria-hidden="true"></i> {{ 'Ready for handoff' if readiness_summary.ready_for_devops else 'Readiness overview' }}</strong>
+      <span>{{ 'Request inputs complete' if readiness_summary.ready_for_requests else (readiness_summary.request_errors|length|string) ~ ' request checks remaining' }}</span>
+      <span>{{ 'Ready to provision' if readiness_summary.ready_for_devops else (readiness_summary.provision_errors|length|string) ~ ' checks before handoff' }}</span>
+      {% if reviews.count %}<span class="readiness-overview__review">{{ reviews.count }} request template{{ 's' if reviews.count != 1 else '' }} to review · reminder only</span>{% endif %}
+      {% if reviews.acknowledged %}<span class="text-success">{{ reviews.acknowledged }} request review{{ 's' if reviews.acknowledged != 1 else '' }} acknowledged</span>{% endif %}
+      <span class="readiness-overview__toggle">Details</span>
+    </summary>
+    <div class="readiness-overview__body">
+  <div class="row g-3">
+    <section class="col-md-6"><div class="readiness-overview__milestone"><h2 class="h5">Ready to raise requests</h2>
+      <p>{{ 'Request inputs complete' if readiness_summary.ready_for_requests else 'Complete the request inputs first' }}</p>
+      {% if readiness_summary.request_errors %}<details><summary>{{ readiness_summary.request_errors|length }} input checks need attention</summary><ul>{% for message in readiness_summary.request_errors %}<li>{{ message }}</li>{% endfor %}</ul></details>{% endif %}
+      <button type="button" class="btn btn-sm btn-outline-primary" data-summary-step="2">{{ 'View requirements' if readiness_summary.ready_for_requests else 'Complete request inputs' }}</button>
+    </div></section>
+    <section class="col-md-6"><div class="readiness-overview__milestone"><h2 class="h5">Ready to provision</h2>
+      <p>{{ 'Ready for DevOps: publish the handoff for acknowledgement.' if readiness_summary.ready_for_devops else 'Handoff locked until allocated resources and verification are complete.' }}</p>
+      {% if readiness_summary.provision_errors %}<details><summary>{{ readiness_summary.provision_errors|length }} checks remain across the full gate</summary><ul>{% for message in readiness_summary.provision_errors %}<li>{{ message }}</li>{% endfor %}</ul></details>{% endif %}
+    </div></section>
+  </div>
+  {% for group in readiness_summary.groups if group.rows %}
+  <details class="readiness-overview__disclosure"><summary><strong>{{ group.label }}</strong> · {{ group.rows|length }} actions</summary>
+    <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Prerequisite</th><th>Owner</th><th>Ticket / evidence</th><th>Next action</th></tr></thead><tbody>
+    {% for row in group.rows %}<tr><td>{{ row.label }}</td><td>{{ row.owner }}</td><td>{% if row.url %}<a href="{{ row.url }}" target="_blank" rel="noopener noreferrer">{{ row.evidence or 'Open ticket' }}</a>{% else %}{{ row.evidence or 'Not recorded' }}{% endif %}</td><td>{{ row.action }}{% if row.notes %}<br><small>{{ row.notes }}</small>{% endif %}</td></tr>{% endfor %}
+    </tbody></table></div><button type="button" class="btn btn-sm btn-outline-primary" data-summary-step="{{ group.step }}">Open verification section</button>
+  </details>
+  {% endfor %}
+  {% if data.get('_change_impacts') %}<details class="readiness-overview__disclosure"><summary>Configuration change history and review guidance</summary><ul>{% for message in data['_change_impacts'] %}<li>{{ message }}</li>{% endfor %}</ul><small>The milestones above show what is still outstanding.</small></details>{% endif %}
+  {% for kind, template in data.get('servicenow_templates', {}).items() if template.get('needs_review') %}
+  <div class="readiness-review-note">
+    {% if template.get('review_acknowledged_at') %}
+      <span class="text-success"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ kind|upper }} request reviewed — no update needed.</span>
+      <small>{{ template.get('review_acknowledged_by') }} · {{ template.get('review_acknowledged_at') }}</small>
+    {% else %}
+      <strong>{{ kind|upper }} request review reminder</strong>
+      <p>Configuration changed since this request template was saved. This is a reminder to check that the request still matches the setup, not a failed readiness check.</p>
+      <a href="{{ url_for('environment_readiness.servicenow_review', request_type=kind, draft=data.get('_draft_id')) }}">Review the template and existing request</a>
+      {% if not share_token %}<button type="button" class="btn btn-sm btn-outline-success ms-2" data-acknowledge-request-review="{{ kind }}">Reviewed — no update needed</button>{% endif %}
+    {% endif %}
+  </div>
+  {% endfor %}
+    </div>
+  </details>
+  <div id="readinessLiveImpact" class="readiness-change-note" role="status" hidden></div>
+</div>

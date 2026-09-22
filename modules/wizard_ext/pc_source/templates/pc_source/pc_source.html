@@ -1,0 +1,598 @@
+{% extends "wizard_step.html" %}
+
+{% set step_title = "Whitelists" %}
+
+{# Override the default form body so we can attach behavior to the profile dropdown #}
+{% block step_body %}
+
+<style>
+.pc-section-box {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    height: 100%;
+    box-shadow: 0 3px 12px rgba(15, 23, 42, 0.07);
+    overflow: hidden;
+    transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.pc-section-box.source-card { border-left: 4px solid var(--accent-blue); }
+.pc-section-box.output-card { border-left: 4px solid var(--accent-green); }
+.pc-section-box[open] {
+    border-color: var(--accent-blue-border);
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.11);
+}
+.pc-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    cursor: pointer;
+    list-style: none;
+}
+.pc-section-header::-webkit-details-marker { display: none; }
+.pc-section-header::after {
+    content: "+";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-default);
+    color: var(--text-secondary);
+    font-weight: 700;
+    flex: 0 0 1.6rem;
+}
+.pc-section-box[open] > .pc-section-header::after { content: "−"; }
+.pc-section-heading { min-width: 0; flex: 1; }
+.pc-section-body {
+    padding: 0 14px 14px;
+    border-top: 1px solid var(--border-default);
+}
+.pc-section-title {
+    margin: 0;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.pc-section-meta {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+.pc-concept-card {
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 14px;
+    height: 100%;
+    background: var(--bg-surface);
+}
+.pc-concept-card.source {
+    border-left: 4px solid var(--accent-blue);
+}
+.pc-concept-card.output {
+    border-left: 4px solid var(--accent-green);
+}
+.pc-concept-icon {
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    color: var(--accent-blue);
+    flex: 0 0 2rem;
+}
+.pc-concept-card.output .pc-concept-icon {
+    color: var(--accent-green);
+}
+.pc-column-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.55rem;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.pc-section-description {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    line-height: 1.35;
+    margin-top: 0.2rem;
+}
+.pc-selected-count {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.1rem 0.45rem;
+    background: var(--accent-blue-bg);
+    border: 1px solid var(--accent-blue-border);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+.pc-section-actions .btn {
+    border-radius: 999px;
+}
+.pc-section-toolbar {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+}
+.pc-search { max-width: 19rem; }
+.pc-selected-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.45rem;
+}
+.pc-selection-chip {
+    display: inline-flex;
+    max-width: 15rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border: 1px solid var(--border-default);
+    border-radius: 999px;
+    padding: 0.08rem 0.42rem;
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+    font-size: 0.72rem;
+}
+.pc-selection-chip.more { font-weight: 700; }
+.pc-list {
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+    padding: 10px;
+}
+.pc-list .form-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    margin: 0;
+    opacity: 0.72;
+    transition: opacity 100ms ease, background 100ms ease;
+}
+.pc-list .form-check:hover {
+    background: var(--list-hover-bg);
+    opacity: 1;
+}
+.pc-list .form-check.is-selected {
+    background: var(--accent-blue-bg);
+    opacity: 1;
+}
+.pc-list .form-check-label {
+    margin: 0;
+}
+.pc-list .form-check-input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    flex-shrink: 0;
+    border: 1.5px solid var(--border-default);
+    border-radius: 4px;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.pc-list .form-check-input:focus {
+    box-shadow: 0 0 0 2px var(--accent-blue-border);
+}
+.pc-list .form-check-input:checked {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue);
+}
+.pc-section-box.is-expanded .pc-list {
+    max-height: none;
+}
+.pc-section-box.is-expanded {
+    box-shadow: 0 0 0 2px var(--accent-blue-border);
+}
+.pc-action-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.pc-loading {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 600;
+    background: var(--accent-amber-bg);
+    border: 1px solid var(--accent-amber-border);
+    padding: 6px 10px;
+    border-radius: 999px;
+}
+.pc-loading.is-active {
+    display: inline-flex;
+}
+.pc-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--accent-blue-border);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: pc-spin 0.8s linear infinite;
+}
+@keyframes pc-spin {
+    to { transform: rotate(360deg); }
+}
+
+.pc-flow-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 9rem;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.pc-flow-arrow i {
+    color: var(--accent-green);
+    font-size: 1.35rem;
+    margin-bottom: 0.35rem;
+}
+@media (max-width: 767.98px) {
+    .pc-flow-arrow { min-height: auto; flex-direction: row; gap: 0.5rem; }
+    .pc-flow-arrow i { transform: rotate(90deg); margin: 0; }
+    .pc-section-toolbar { align-items: stretch; flex-direction: column; }
+    .pc-search { max-width: none; }
+}
+</style>
+
+<h4 class="mb-3">Whitelists</h4>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="pc-concept-card source">
+            <div class="d-flex gap-3 align-items-start">
+                <span class="pc-concept-icon"><i class="fa-solid fa-folder-tree"></i></span>
+                <div>
+                    <div class="fw-semibold mb-1">Source folders from Praxis Core</div>
+                    <div class="small text-muted">
+                        The left column chooses which folders are copied from <code>SSA/bootstrap</code>,
+                        <code>SSA/deployment</code>, and <code>SSA/helm</code> into the generated repositories.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="pc-concept-card output">
+            <div class="d-flex gap-3 align-items-start">
+                <span class="pc-concept-icon"><i class="fa-solid fa-diagram-project"></i></span>
+                <div>
+                    <div class="fw-semibold mb-1">Rancher Fleet Helm CDs</div>
+                    <div class="small text-muted">
+                        The right column chooses which Helm, application, and bootstrap entries Studio writes to
+                        <code>rancher_helm_pipelines</code> for Fleet CD creation. These do not copy folders by themselves.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% set _meta = form._pc_source_meta if form._pc_source_meta is defined else none %}
+<div class="d-flex align-items-start flex-wrap gap-2 mb-3">
+    <div class="alert alert-info py-2 mb-0 flex-grow-1" style="min-width: 0;">
+        <div class="small">
+            Folder structure is fetched from GitHub and cached on disk (24h by default).
+            {% if _meta is not none %}
+                {% set _src_class = "bg-success" if _meta.source == "pc_cache" else "bg-warning text-dark" %}
+                {% set _state_class = "bg-warning text-dark" if _meta.stale else "bg-success" %}
+                <span class="badge {{ _src_class }} ms-2" title="{{ _meta.cache_path }}">source={{ _meta.source }}</span>
+                <span class="badge bg-secondary ms-1">branch={{ _meta.branch or "default" }}</span>
+                <span class="badge bg-secondary ms-1">total={{ _meta.total }}</span>
+                <span class="badge {{ _state_class }} ms-1">{{ "stale" if _meta.stale else "fresh" }}</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="ms-auto flex-shrink-0">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{{ url_for('.wizard_step', step=step, pc_source_refresh=1, pc_source_branch=(_meta.branch if _meta is not none and _meta.branch else 'default')) }}{% if request.args.get('preflight') %}&preflight=ok{% endif %}">
+            Refresh lists
+        </a>
+    </div>
+</div>
+
+<div class="mb-4">
+    {{ form.profile.label }}
+    {{ form.profile(
+        class="form-select",
+        onchange="onProfileChange(this)"
+    ) }}
+    <div class="form-text">
+        Catalyst is the recommended baseline for Catalyst Single-VPC and Multi-VPC. You can still adjust any checkbox after applying the profile.
+    </div>
+</div>
+
+{% if form.branch_enabled %}
+<div class="mb-4 p-3 border rounded surface-elevated">
+    <div class="form-check form-switch mb-2">
+        {{ form.branch_override(class="form-check-input", onchange="onBranchChange(this)") }}
+        <label class="form-check-label" for="branch_override">Use custom branch (dev only)</label>
+    </div>
+    <div>
+        {{ form.branch_name(class="form-select", onchange="onBranchChange(this)") }}
+        <div class="form-text">Switch off in production via PS_PC_SOURCE_BRANCH_SWITCH.</div>
+    </div>
+</div>
+{% endif %}
+
+<div class="pc-action-row">
+    <div class="text-muted small">Tip: Expand a section to view all options.</div>
+    <div class="pc-loading" id="pcLoading">
+        <span class="pc-spinner" aria-hidden="true"></span>
+        <span>Loading updated lists…</span>
+    </div>
+    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="downloadPcSourceConfig()">
+        <i class="fa-solid fa-download me-1"></i> Download selections
+    </button>
+</div>
+
+<hr>
+
+{# Render a list section with Select/Clear buttons #}
+{% macro render_section(field, title, description, column_label="", wrapper_class="mb-4", card_class="source-card") %}
+<div class="{{ wrapper_class }}" id="{{ field.id }}">
+    {% if column_label %}<div class="pc-column-label">{{ column_label }}</div>{% endif %}
+    <details class="pc-section-box {{ card_class }}">
+        <summary class="pc-section-header">
+            <div class="pc-section-heading">
+                <p class="pc-section-title">{{ title }}</p>
+                <div class="pc-section-meta">
+                    <span class="pc-selected-count" data-selected-count>{{ field.data|length if field.data else 0 }} selected</span>
+                    <span class="ms-1">of {{ field.choices|length }}</span>
+                </div>
+                <div class="pc-section-description">{{ description }}</div>
+                <div class="pc-selected-chips" data-selected-chips>
+                    {% set selected = field.data or [] %}
+                    {% set chip_ns = namespace(shown=0) %}
+                    {% for value, label in field.choices %}
+                        {% if value in selected and chip_ns.shown < 4 %}
+                            <span class="pc-selection-chip">{{ label }}</span>
+                            {% set chip_ns.shown = chip_ns.shown + 1 %}
+                        {% endif %}
+                    {% endfor %}
+                    {% if selected|length > 4 %}<span class="pc-selection-chip more">+{{ selected|length - 4 }} more</span>{% endif %}
+                </div>
+            </div>
+        </summary>
+        <div class="pc-section-body">
+            <div class="pc-section-toolbar">
+                <div class="input-group input-group-sm pc-search">
+                    <span class="input-group-text"><i class="fa-solid fa-magnifying-glass"></i></span>
+                    <input type="search" class="form-control" placeholder="Filter options" aria-label="Filter {{ title }}" oninput="filterSection('{{ field.id }}', this.value)">
+                </div>
+            <div class="pc-section-actions">
+                <div class="btn-group btn-group-sm" role="group">
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="selectAllSection('{{ field.id }}')">Select all</button>
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="clearSection('{{ field.id }}')">Clear</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="pc-list">
+            {% for sub in field %}
+                <div class="form-check">
+                    {{ sub(class="form-check-input") }}
+                    <label class="form-check-label" for="{{ sub.id }}">{{ sub.label.text }}</label>
+                </div>
+            {% endfor %}
+            <div class="text-muted small text-center py-3 d-none" data-no-results>No matching options.</div>
+        </div>
+        </div>
+    </details>
+</div>
+{% endmacro %}
+
+{% macro render_pair(left_field, left_title, left_description, right_field, right_title, right_description) %}
+<div class="row g-4 mb-4 align-items-start">
+    <div class="col-md-5">
+        {{ render_section(left_field, left_title, left_description, "Core source folders", "h-100", "source-card") }}
+    </div>
+    <div class="col-md-2 pc-flow-arrow">
+        <i class="fa-solid fa-arrow-right-long"></i>
+        <span>Creates</span>
+    </div>
+    <div class="col-md-5">
+        {{ render_section(right_field, right_title, right_description, "Generated Rancher Fleet CDs", "h-100", "output-card") }}
+    </div>
+</div>
+{% endmacro %}
+
+{{ render_pair(form.bootstrap, "Bootstrap folders", "Folders copied from SSA/bootstrap.", form.helm_bootstrap_cds, "Bootstrap CDs", "Bootstrap charts registered as Fleet CD pipelines.") }}
+{{ render_pair(form.deployment, "Deployment folders", "Application folders copied from SSA/deployment.", form.helm_app_cds, "Application CDs", "Applications registered as Fleet CD pipelines.") }}
+{{ render_pair(form.helm, "Helm chart folders", "Chart folders copied from SSA/helm.", form.helm_iac_cds, "Infrastructure Helm CDs", "Infrastructure and platform charts registered as Fleet CD pipelines.") }}
+
+{# IAC modules follow the selected profile and are intentionally not exposed as
+   a separate card. Keep their selected values in the POST payload. #}
+{% for module_name in form.iac.data or [] %}
+    <input type="hidden" name="{{ form.iac.name }}" value="{{ module_name }}">
+{% endfor %}
+
+<script>
+function selectAllSection(fieldId) {
+    const boxes = document.querySelectorAll(`#${fieldId} input[type=checkbox]`);
+    boxes.forEach(cb => cb.checked = true);
+    updateSelectedCount(document.getElementById(fieldId));
+}
+
+function clearSection(fieldId) {
+    const boxes = document.querySelectorAll(`#${fieldId} input[type=checkbox]`);
+    boxes.forEach(cb => cb.checked = false);
+    updateSelectedCount(document.getElementById(fieldId));
+}
+
+function updateSelectedCount(section) {
+    if (!section) return;
+    const checked = Array.from(section.querySelectorAll('input[type=checkbox]:checked'));
+    const count = checked.length;
+    const target = section.querySelector('[data-selected-count]');
+    if (target) target.textContent = `${count} selected`;
+    section.querySelectorAll('.pc-list .form-check').forEach((row) => {
+        const checkbox = row.querySelector('input[type=checkbox]');
+        row.classList.toggle('is-selected', Boolean(checkbox && checkbox.checked));
+    });
+    const chips = section.querySelector('[data-selected-chips]');
+    if (chips) {
+        chips.replaceChildren();
+        checked.slice(0, 4).forEach((checkbox) => {
+            const label = section.querySelector(`label[for="${CSS.escape(checkbox.id)}"]`);
+            const chip = document.createElement('span');
+            chip.className = 'pc-selection-chip';
+            chip.textContent = label ? label.textContent.trim() : checkbox.value;
+            chips.appendChild(chip);
+        });
+        if (count > 4) {
+            const more = document.createElement('span');
+            more.className = 'pc-selection-chip more';
+            more.textContent = `+${count - 4} more`;
+            chips.appendChild(more);
+        }
+    }
+}
+
+function filterSection(fieldId, query) {
+    const section = document.getElementById(fieldId);
+    if (!section) return;
+    const needle = String(query || '').trim().toLowerCase();
+    let visible = 0;
+    section.querySelectorAll('.pc-list .form-check').forEach((row) => {
+        const label = row.querySelector('.form-check-label');
+        const matches = !needle || (label && label.textContent.toLowerCase().includes(needle));
+        row.classList.toggle('d-none', !matches);
+        if (matches) visible += 1;
+    });
+    const empty = section.querySelector('[data-no-results]');
+    if (empty) empty.classList.toggle('d-none', visible !== 0);
+}
+
+function downloadPcSourceConfig() {
+    const form = document.querySelector('form');
+    if (!form) return;
+    const payload = {
+        profile: (form.querySelector('[name="profile"]') || {}).value || "custom",
+        bootstrap: [],
+        deployment: [],
+        iac: [],
+        helm: [],
+        helm_iac_cds: [],
+        helm_app_cds: [],
+        helm_bootstrap_cds: [],
+    };
+    const sections = Object.keys(payload).filter(k => k !== "profile");
+    sections.forEach((section) => {
+        const inputs = form.querySelectorAll(`input[name="${section}"]`);
+        inputs.forEach((input) => {
+            if (input.type === 'hidden' || input.checked) payload[section].push(input.value);
+        });
+    });
+    const content = JSON.stringify(payload, null, 2);
+    const blob = new Blob([content], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "pc_source_selections.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+// 🔹 NEW: when profile changes, submit the form so Python can apply defaults
+function onProfileChange(selectEl) {
+    const form = selectEl.form;
+    if (!form) return;
+
+    const marker = form.querySelector('input[name="profile_change"]');
+    if (marker) marker.value = '1';
+    form.dataset.profileChange = 'profile-change';
+    toggleLoading(true);
+
+    form.submit();
+}
+
+function onBranchChange(inputEl) {
+    const form = inputEl.form;
+    if (!form) return;
+
+    const toggle = document.getElementById('branch_override');
+    const branchInput = document.getElementById('branch_name');
+    if (toggle && branchInput) {
+        branchInput.disabled = !toggle.checked;
+        if (toggle.checked && !branchInput.value) {
+            branchInput.value = 'main';
+        }
+    }
+
+    const marker = form.querySelector('input[name="branch_change"]');
+    if (marker) marker.value = '1';
+    form.dataset.branchChange = 'branch-change';
+    toggleLoading(true);
+    form.submit();
+}
+
+// Clear profile-change marker on normal submits so "Next" advances
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.querySelector('form');
+    if (!form) return;
+
+    document.querySelectorAll('.pc-section-box').forEach((box) => {
+        const section = box.parentElement;
+        updateSelectedCount(section);
+        box.querySelectorAll('input[type=checkbox]').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => updateSelectedCount(section));
+        });
+    });
+
+    const marker = form.querySelector('input[name="profile_change"]');
+    if (marker) marker.value = '';
+    const branchMarker = form.querySelector('input[name="branch_change"]');
+    if (branchMarker) branchMarker.value = '';
+
+    const toggle = document.getElementById('branch_override');
+    const branchInput = document.getElementById('branch_name');
+    if (toggle && branchInput) {
+        branchInput.disabled = !toggle.checked;
+    }
+
+    form.addEventListener('submit', function () {
+        if (form.dataset.profileChange === 'profile-change' || form.dataset.branchChange === 'branch-change') {
+            // allow this submit (profile change) and reset for next round-trip
+            form.dataset.profileChange = '';
+            form.dataset.branchChange = '';
+            return;
+        }
+        if (marker) marker.value = '';
+        if (branchMarker) branchMarker.value = '';
+    });
+});
+
+function toggleLoading(on) {
+    const el = document.getElementById('pcLoading');
+    if (!el) return;
+    if (on) el.classList.add('is-active');
+    else el.classList.remove('is-active');
+}
+</script>
+
+
+{% endblock %}

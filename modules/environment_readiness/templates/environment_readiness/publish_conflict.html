@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-shell publish-conflict">
+  {% set hero_title = "Setup already published" %}
+  {% set hero_subtitle = "Choose whether to use the existing setup or publish these changes as its next revision." %}
+  {% set hero_eyebrow = "Duplicate Protection" %}
+  {% include "_page_hero.html" %}
+
+  <section class="publish-conflict__warning">
+    <i class="fa-solid fa-code-branch"></i><div><strong>{{ data.get('environment_name') }} already has a published setup</strong>
+    <p>Praxis will not create another unrelated row with the same environment name. {% if completed_locked %}The completed record is immutable. Open it and use <b>Reopen setup</b> to create an authorized revision draft.{% elif is_reopen_draft %}This owner-authorized reopen draft will become revision {{ existing.revision + 1 }} and restart at Awaiting acknowledgement.{% elif can_edit_existing %}Open revision {{ existing.revision }}, or publish the current validated form as revision {{ existing.revision + 1 }}.{% else %}Only {{ existing.setup_owner }} or an administrator can publish a revision.{% endif %}</p></div>
+  </section>
+
+  <div class="publish-conflict__summary">
+    <article><small>Existing revision</small><strong>Revision {{ existing.revision }}</strong><span>{{ existing.status|replace('paused', 'on hold')|title }} · {{ existing.published_at }}</span></article>
+    <article><small>Proposed publication</small><strong>Revision {{ existing.revision + 1 }}</strong><span>Awaiting DevOps acknowledgement · published by {{ session.get('user') or 'current user' }}</span></article>
+  </div>
+
+  <section class="publish-conflict__changes">
+    <div><h2>What changed?</h2><p>Only changed environment-definition fields are shown here. The new revision will contain the full validated snapshot and prerequisites.</p></div>
+    {% if changed_fields %}<div class="table-responsive"><table class="table align-middle"><thead><tr><th>Field</th><th>Published revision {{ existing.revision }}</th><th>Proposed revision {{ existing.revision + 1 }}</th></tr></thead><tbody>
+      {% for label, previous, proposed in changed_fields %}<tr><th>{{ label }}</th><td>{{ previous }}</td><td class="publish-conflict__new">{{ proposed }}</td></tr>{% endfor %}
+    </tbody></table></div>{% else %}<div class="alert alert-warning mb-0"><strong>No environment-definition changes detected.</strong> Only create a revision if prerequisite evidence, risks, assumptions, or notes changed.</div>{% endif %}
+  </section>
+
+  <form class="publish-conflict__actions" method="post">
+    {% if csrf_token is defined %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endif %}
+    <button class="btn btn-outline-secondary" type="submit" name="conflict_action" value="cancel"><i class="fa-solid fa-arrow-left me-1"></i> Return to draft</button>
+    <span></span>
+    <button class="btn btn-outline-primary" type="submit" name="conflict_action" value="open_existing"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i> Open existing setup</button>
+    {% if can_edit_existing %}<button class="btn btn-primary" type="submit" name="conflict_action" value="create_revision"><i class="fa-solid fa-code-branch me-1"></i> {% if is_reopen_draft %}Publish reopened{% else %}Publish{% endif %} revision {{ existing.revision + 1 }}</button>{% endif %}
+  </form>
+</div>
+<style>
+.publish-conflict { margin:0 auto; }.publish-conflict__warning { display:flex; gap:.8rem; margin:1rem 0; padding:1rem; border:1px solid var(--accent-yellow, #d39e00); border-radius:.85rem; background:var(--accent-yellow-bg, rgba(211,158,0,.1)); }.publish-conflict__warning>i { margin-top:.15rem; color:var(--accent-yellow, #d39e00); font-size:1.3rem; }.publish-conflict__warning p { margin:.25rem 0 0; color:var(--text-secondary); }.publish-conflict__summary { display:grid; grid-template-columns:1fr 1fr; gap:.7rem; margin-bottom:.8rem; }.publish-conflict__summary article { display:grid; padding:1rem; border:1px solid var(--border-default); border-radius:.75rem; background:var(--bg-elevated); }.publish-conflict__summary small,.publish-conflict__summary span,.publish-conflict__changes p { color:var(--text-muted); }.publish-conflict__changes { padding:1rem; border:1px solid var(--border-default); border-radius:.85rem; background:var(--bg-surface); }.publish-conflict__changes h2 { margin:0; font-size:1rem; }.publish-conflict__changes p { margin:.2rem 0 1rem; font-size:.78rem; }.publish-conflict__new { color:var(--accent-blue); font-weight:700; }.publish-conflict__actions { display:grid; grid-template-columns:auto 1fr auto auto; gap:.6rem; margin-top:.8rem; padding:.8rem; border:1px solid var(--border-default); border-radius:.75rem; background:var(--bg-elevated); }@media(max-width:700px){.publish-conflict__summary { grid-template-columns:1fr; }.publish-conflict__actions { grid-template-columns:1fr; }.publish-conflict__actions span { display:none; }}
+</style>
+{% endblock %}

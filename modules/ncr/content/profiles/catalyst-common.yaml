@@ -1,0 +1,411 @@
+schema_version: 1
+platform: catalyst
+defaults:
+  vault_url: https://shared-vault.example.com
+  allow_ips: []
+  ad_url: NEEDS_CONFIRMATION
+  directory_destinations:
+  - 10.32.136.146
+  - 10.32.136.210
+  registry_destinations:
+  - '*.pkg.dev'
+  - pkg-containers.githubusercontent.com
+  - auth.docker.io
+  - registry-1.docker.io
+  - '*.quay.io'
+  - cr.fluentbit.io
+  - docker.elastic.co
+  - istio-release.storage.googleapis.com
+  - kubernetes-sigs.github.io
+  - '*.cloudfront.net'
+  - '*.akamai.net'
+  bde_cidr: 10.48.32.0/19
+  bde_vault_host: https://shared-vault.example.com/
+  bde_rancher_ingress_host: https://rancher-<env>.example.com/
+  bde_rancher_egress_host: https://rancher-<env>.example.com/
+  harbor_host: harbor.example.com
+  ad_access_group: ''
+attribution_defaults:
+  endpoints: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF pages 20–23;
+    hostname components from readiness selection
+endpoints:
+  ilp-game-web-public:
+    namespace: ilp
+    name: game-web
+    gateways: game-web
+    host: game-web.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-game-web-analytics-public:
+    namespace: ilp
+    name: game-web-analytics
+    gateways: game-web-analytics
+    host: analytics.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-game-bridge-public:
+    namespace: ilp
+    name: game-bridge
+    gateways: game-bridge
+    host: gab.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-gateway-api-public:
+    namespace: ilp
+    name: gateway-api
+    gateways: gateway-api
+    host: api.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-gateway-exponea-public:
+    namespace: ilp
+    name: gateway-exponea
+    gateways: gateway-exponea
+    host: exponea.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-gateway-web-public:
+    namespace: ilp
+    name: gateway-web
+    gateways: gateway-web
+    host: gateway-web.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-keycloak-player-public:
+    namespace: ilp
+    name: keycloak-player
+    gateways: keycloak-player
+    host: idp-player.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-camunda-internal:
+    namespace: ilp
+    name: camunda
+    gateways: camunda
+    host: c8.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-backoffice-nuxt-internal:
+    namespace: ilp
+    name: backoffice-nuxt
+    gateways: backoffice-nuxt
+    host: backoffice.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-gateway-cc-internal:
+    namespace: ilp
+    name: gateway-cc
+    gateways: gateway-cc
+    host: cc.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-gateway-api-internal:
+    namespace: ilp
+    name: gateway-api
+    gateways: gateway-api
+    host: api.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-keycloak-internal:
+    namespace: ilp
+    name: keycloak
+    gateways: keycloak
+    host: idp.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-vault-internal:
+    namespace: ilp
+    name: vault
+    gateways: vault
+    host: vault.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  ilp-rabbitmq-internal:
+    namespace: ilp
+    name: rabbitmq
+    gateways: rabbitmq
+    host: rabbitmq.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: ILP Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  cgs-control-room-internal:
+    namespace: cgs
+    name: control-room
+    gateways: control-room
+    host: control-room.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: CGS Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  cgs-icsis-internal:
+    namespace: cgs
+    name: icsis
+    gateways: icsis
+    host: icsis.int.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: CGS Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  cgs-gateway-controlroom-internal:
+    namespace: cgs
+    name: gateway-controlroom
+    gateways: gateway-controlroom
+    host: cr.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: CGS Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  pmv-paymentmethod-vault-public:
+    namespace: pmv
+    name: paymentmethod-vault
+    gateways: paymentmethod-vault
+    host: paymentmethod-vault.{ENV}.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: PMV Public Facing
+    exposure: External
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+  pmv-paymentmethod-vault-internal:
+    namespace: pmv
+    name: paymentmethod-vault
+    gateways: paymentmethod-vault
+    host: paymentmethod-vault.{ENV}.int.{DOMAIN}
+    protocol: NEEDS_CONFIRMATION
+    category: PMV Internal / Administrative
+    exposure: Internal
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23
+egress: {}
+services:
+  registries:
+    source: ALL VPC
+    destination: '{{ defaults.registry_destinations | join(''\n'') }}'
+    protocol: NEEDS_CONFIRMATION
+    purpose: Registries
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23, ALL VPC / Registries
+  paysafe:
+    source: ILP
+    destination: '*.paysafe.com'
+    protocol: NEEDS_CONFIRMATION
+    purpose: ILP egress
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23, ILP VPC
+  directory:
+    source: ILP
+    destination: '{{ defaults.directory_destinations | join('', '') }}'
+    protocol: NEEDS_CONFIRMATION
+    purpose: Active directory service (Keycloak/IDP)
+    attribution: Catalyst Application Deployment and Integration Guide with Praxis, Network request, PDF 2026-09-14
+      pages 20–23, Active directory service
+  harbor:
+    source: ALL VPC
+    destination: '{{ defaults.harbor_host }}'
+    protocol: NEEDS_CONFIRMATION
+    purpose: Harbor registry
+    attribution: Deployment-specific registry; replace the example host before use.
+requires_confirmation:
+- Endpoint and egress ports/protocols are not specified in the PDF tables; confirm them without borrowing ports
+  from Cross VPC access.
+- Confirm permitted source CIDRs and exact source/destination mappings.
+- The guide prints icsis.int.<subdomain>.int.<root-domain>; this spelling is preserved pending confirmation.
+- 'PDF 2026-09-14 page 22: BDE ingress Rancher host has a dot after <env>; egress does not. Confirm the actual BDE
+  Rancher FQDN and its <env> mapping before configuring the Rancher rules.'
+routing: {}
+conditional: {}
+builder:
+  partner_choices:
+  - - paysafe
+    - Paysafe
+  - - exponea
+    - Exponea
+  - - giact
+    - Giact
+  - - hashicorp
+    - HashiCorp
+  - - idology
+    - IDology
+  - - maxmind
+    - MaxMind
+  - - mkodo
+    - Mkodo
+  east_west_choices:
+  - - ilp-cgs-postgres
+    - 'ILP → CGS: Postgres (5432)'
+  - - ilp-cgs-redis
+    - 'ILP → CGS: Redis (6379)'
+  - - ilp-cgs-rabbit
+    - 'ILP → CGS: RabbitMQ (5671/5552)'
+  - - ilp-cgs-https
+    - 'ILP → CGS: HTTPS'
+  - - ilp-fian-postgres
+    - 'ILP → FIAN: Postgres (5432)'
+  - - ilp-fian-https
+    - 'ILP → FIAN: HTTPS'
+  - - cgs-ilp-redis
+    - 'CGS → ILP: Redis (6379)'
+  - - cgs-ilp-rabbit
+    - 'CGS → ILP: RabbitMQ (5671/5552)'
+  - - cgs-ilp-postgres
+    - 'CGS → ILP: Postgres (5432)'
+  egress_rules:
+    eks_to_aws:
+      field: eks_to_aws
+      kind: flag
+      target: EKS → AWS public services
+      negate_rfc1918: true
+      markdown_label: EKS → AWS public services
+    eks_to_registries:
+      field: eks_to_registries
+      kind: flag
+      target: EKS → container registries (Harbor/GHCR/ECR)
+      negate_rfc1918: true
+      markdown_label: EKS → container registries (Harbor/GHCR/ECR)
+    eks_to_cicd:
+      field: eks_to_cicd
+      kind: flag
+      target: EKS → CI/CD (Catalyst)
+      negate_rfc1918: true
+      markdown_label: EKS → CI/CD (Catalyst)
+    sumologic:
+      field: sumologic
+      kind: flag
+      target: 'Observability: Sumo Logic (HTTPS)'
+      negate_rfc1918: true
+      markdown_label: Observability – Sumo Logic
+    grafana:
+      field: grafana
+      kind: flag
+      target: 'Observability: Grafana (HTTPS)'
+      negate_rfc1918: true
+      markdown_label: Observability – Grafana
+    partners:
+      field: partners
+      kind: list
+    flows:
+      field: east_west
+      kind: list
+    win_to_ad:
+      field: win_to_ad
+      kind: flag
+      target: Windows → AD/DCs
+      negate_rfc1918: false
+      markdown_label: Windows → AD/DCs
+    win_to_sccm:
+      field: win_to_sccm
+      kind: flag
+      target: Windows → SCCM/Update
+      negate_rfc1918: false
+      markdown_label: Windows → SCCM/Update
+    kcm_ldaps_ad:
+      field: kcm_ldaps_ad
+      kind: flag
+      target: KCM/Windows → AD LDAPS (636)
+      negate_rfc1918: false
+      markdown_label: KCM/Windows → AD LDAPS (636)
+    win_to_duo:
+      field: win_to_duo
+      kind: flag
+      target: Windows → Duo Security (HTTPS)
+      negate_rfc1918: true
+      markdown_label: Windows → Duo Security
+    vpn_to_jumphosts:
+      field: vpn_to_jumphosts
+      kind: flag
+      target: VPN → JumpHosts
+      negate_rfc1918: false
+      markdown_label: VPN → JumpHosts
+    nessus_scans:
+      field: nessus_scans
+      kind: flag
+      target: Nessus scanning
+      negate_rfc1918: false
+      markdown_label: Nessus scanning
+    jmeter_access:
+      field: jmeter_access
+      kind: flag
+      target: JMeter access
+      negate_rfc1918: false
+      markdown_label: JMeter access
+    adfs_to_apps:
+      field: adfs_to_apps
+      kind: flag
+      target: ADFS → apps (HTTPS)
+      negate_rfc1918: false
+      markdown_label: ADFS → apps (HTTPS)
+    notes:
+      field: notes
+      kind: notes
+  labels:
+    eks_to_aws: EKS → AWS public services
+    eks_to_registries: EKS → registries
+    eks_to_cicd: EKS → CI/CD
+    sumologic: 'Observability: Sumo Logic'
+    grafana: 'Observability: Grafana'
+    partners: 3rd-party partners
+    east_west: Inter-VPC flows
+    win_to_ad: Windows → AD/DCs
+    win_to_sccm: Windows → SCCM
+    kcm_ldaps_ad: KCM/Windows → AD LDAPS
+    win_to_duo: Windows → Duo Security
+    vpn_to_jumphosts: VPN → JumpHosts
+    nessus_scans: Nessus scanning
+    jmeter_access: JMeter testing
+    adfs_to_apps: ADFS → apps
+    notes: Egress notes
+  ingress_defaults:
+    outgoing_paysafe_allowed: unknown
+    port_8080_cross_vpc: 'true'
+    eu_ngl_dev_ad_access: 'true'
+  ingress_labels:
+    outgoing_paysafe_allowed: Outgoing Paysafe Allowed?
+    port_8080_cross_vpc: Port 8080 cross-VPC?
+    eu_ngl_dev_ad_access: EU NGL-Dev AD access?
+  ingress_targets:
+    paysafe_txt: Outgoing traffic to Paysafe
+    port8080_txt: Port 8080 cross-VPC
+    adacc_txt: EU NGL-Dev Active Directory access
