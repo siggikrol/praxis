@@ -45,7 +45,8 @@ def create_wizard_blueprint(env_slug: str, wizard_steps: list[tuple[str, object]
     def resolved_steps():
         from engine.wizards.components import active_steps
         try:
-            return active_steps(env_slug, wizard_steps, session)
+            from engine.wizards.presentation import ordered_steps
+            return ordered_steps(active_steps(env_slug, wizard_steps, session))
         except ValueError as exc:
             abort(400, str(exc))
 

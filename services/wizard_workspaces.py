@@ -115,7 +115,9 @@ def _derive_title(env_slug: str, state: Mapping[str, Any]) -> str:
     common = state.get(f"{env_slug}:common") or {}
     repo = state.get(f"{env_slug}:repository_settings") or {}
     release = state.get("release_selection") or {}
+    project = state.get(f"{env_slug}:project_settings") or {}
     for candidate in (
+        project.get("environment_name") if isinstance(project, dict) else "",
         common.get("environment") if isinstance(common, dict) else "",
         repo.get("new_prefix") if isinstance(repo, dict) else "",
         release.get("customer") if isinstance(release, dict) else "",

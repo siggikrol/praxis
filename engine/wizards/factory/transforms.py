@@ -523,6 +523,10 @@ def _transform_project_settings(form_data):
         return form_data
 
     out = dict(form_data)
+    # Descriptive workspace metadata must never change the infrastructure schema.
+    from engine.wizards.presentation import METADATA_FIELDS
+    for key in METADATA_FIELDS:
+        out.pop(key, None)
     env_types = out.get("environment_type")
     suffixes_raw = out.get("environment_suffixes")
 

@@ -1,4 +1,5 @@
-from flask import request, url_for, current_app
+from flask import request, url_for, current_app, session
+from engine.wizards.presentation import STAGES, LABELS, stage_for, environment_review
 from .utils import _get_step_index
 
 # Keep this for parity with the old factory; adjust if you want to hide steps.
@@ -6,6 +7,8 @@ EXCLUDE_FROM_PROGRESS: set[str] = set()
 
 
 def _friendly_step_label(step_slug: str) -> str:
+    if step_slug in LABELS:
+        return LABELS[step_slug]
     parts = [part for part in str(step_slug or "").split("_") if part]
     if not parts:
         return "Step"
@@ -64,7 +67,16 @@ def inject_wizard_progress(env_slug: str, wizard_steps: list[tuple[str, object]]
         return_step=current if current in steps else steps[0],
     )
 
+    stage_links = []
+    for stage in STAGES:
+        members = [(slug, label, url) for slug, label, url in zip(steps, step_labels, step_urls) if stage_for(slug) == stage]
+        target = url_for(f"{env_slug}_wizard.wizard_finish") if stage == "Review" else (members[0][2] if members else None)
+        stage_links.append({"name": stage, "url": target, "members": members})
     return {
+        "praxis_stages": stage_links,
+        "praxis_stage": stage_for(current),
+        "praxis_step_title": _friendly_step_label(current),
+        "environment_review": environment_review(env_slug, session),
         # Used by wizard_step.html
         "progress_steps": steps,
         "progress_step_labels": step_labels,

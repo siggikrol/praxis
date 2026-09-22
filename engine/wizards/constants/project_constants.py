@@ -11,7 +11,8 @@ UNIFIED_ENV_TYPES = [
 ENV_DEFAULT_ENV_TYPES = ['uat', 'prod']
 
 ENV_TYPE_CHOICES = [(e, e) for e in ENV_TYPES]
-UNIFIED_ENV_TYPES_CHOICES = [(e, e) for e in UNIFIED_ENV_TYPES]
+from engine.wizards.presentation import ENVIRONMENT_LABELS
+UNIFIED_ENV_TYPES_CHOICES = [(e, ENVIRONMENT_LABELS.get(e, e.title())) for e in UNIFIED_ENV_TYPES]
 
 
 PROJECT_DEPLOYMENT_CHOICES = [

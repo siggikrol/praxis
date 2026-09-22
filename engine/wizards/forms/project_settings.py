@@ -1,7 +1,7 @@
 import re
 from flask_wtf import FlaskForm
-from wtforms import StringField, SelectMultipleField
-from wtforms.validators import DataRequired, Regexp
+from wtforms import StringField, SelectMultipleField, TextAreaField
+from wtforms.validators import DataRequired, Regexp, Optional, Length
 from wtforms.widgets import ListWidget, CheckboxInput, HiddenInput
 from engine.wizards.constants.project_constants import (
     UNIFIED_ENV_TYPES_CHOICES,
@@ -13,7 +13,14 @@ from engine.wizards.constants.project_constants import (
 )
 
 
-class ProjectSettingsForm(FlaskForm):
+class EnvironmentDetailsForm(FlaskForm):
+    environment_name = StringField("Environment name", validators=[Optional(), Length(max=120)],
+        description="A display name for this environment. The AWS resource prefix is configured under Cloud.")
+    environment_description = TextAreaField("Description", validators=[Optional(), Length(max=1000)])
+    environment_owner = StringField("Owner / team", validators=[Optional(), Length(max=200)])
+
+
+class ProjectSettingsForm(EnvironmentDetailsForm):
     """Used by the Multi-VPC wizard to select deployment stacks and environment types."""
 
     deployments = SelectMultipleField(
@@ -38,7 +45,7 @@ class ProjectSettingsForm(FlaskForm):
     environment_suffixes = StringField(widget=HiddenInput())
 
 # Used by the Loyalty wizard
-class DefaultProjectSettingsForm(FlaskForm):
+class DefaultProjectSettingsForm(EnvironmentDetailsForm):
     """Loyalty project settings (environment selection only)."""
 
 #    environment_prefix = StringField(
@@ -62,7 +69,7 @@ class DefaultProjectSettingsForm(FlaskForm):
     environment_suffixes = StringField(widget=HiddenInput())
 
 
-class UnifiedProjectSettingsForm(FlaskForm):
+class UnifiedProjectSettingsForm(EnvironmentDetailsForm):
     """Used by Unified wizard"""
 
     environment_type = SelectMultipleField(
@@ -88,7 +95,7 @@ class UnifiedProjectSettingsForm(FlaskForm):
     )
 
 
-class SingleVpcProjectSettingsForm(FlaskForm):
+class SingleVpcProjectSettingsForm(EnvironmentDetailsForm):
     """Single-VPC variant of unified project settings with catalyst defaults."""
 
     environment_type = SelectMultipleField(
@@ -114,7 +121,7 @@ class SingleVpcProjectSettingsForm(FlaskForm):
     )
 
 
-class RgsProjectSettingsForm(FlaskForm):
+class RgsProjectSettingsForm(EnvironmentDetailsForm):
     """RGS variant of Unified project settings (deployments locked to rgs)."""
 
     environment_type = SelectMultipleField(
