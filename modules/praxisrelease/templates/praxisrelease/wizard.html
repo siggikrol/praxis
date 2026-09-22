@@ -3,11 +3,11 @@
 {% block content %}
 <div class="page-shell">
   {% set wizard_titles = {
-    'multi-vpc': 'Catalyst Multi-VPC',
-    'single-vpc': 'Catalyst Single-VPC',
-    'rgs': 'Catalyst RGS',
-    'loyalty': 'Loyalty',
-    'unified': 'Unified Deployment'
+    'multi-vpc': 'Multi-VPC',
+    'single-vpc': 'Single-VPC',
+    'rgs': 'Application platform',
+    'loyalty': 'Application services',
+    'unified': 'Combined architecture'
   } %}
   {% set current_wizard_slug = wizard_slug if wizard_slug is defined and wizard_slug else form.wizard_slug %}
   {% set wizard_name = wizard_titles.get(current_wizard_slug, current_wizard_slug|replace('-', ' ')|title if current_wizard_slug else 'Wizard') %}

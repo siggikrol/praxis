@@ -190,19 +190,12 @@
   {% set current = progress_index if progress_index is not none and progress_index >= 0 else get_step_index(step) %}
   {% set _cur = (current + 1) if current >= 0 else 1 %}
   {% set _pct = (100.0 * _cur / (total or 1)) %}
-  {% set wizard_titles = {
-    'multi-vpc': 'Catalyst Multi-VPC',
-    'single-vpc': 'Catalyst Single-VPC',
-    'rgs': 'Catalyst RGS',
-    'loyalty': 'Loyalty',
-    'unified': 'Unified Deployment'
-  } %}
-  {% set wizard_name = wizard_titles.get(env_slug, env_slug|replace('-', ' ')|title) %}
-  {% set step_title = step_title.split(': ', 1)[1] if ': ' in step_title else step_title %}
+  {% set wizard_name = "Create Environment" %}
+  {% set step_title = praxis_step_title %}
   {% set current_step = _cur %}
   {% set total_steps = total %}
   {% set pct_complete = _pct|round(0)|int %}
-  {% set breadcrumb = wizard_name ~ ' / ' ~ step_title %}
+  {% set breadcrumb = praxis_stage ~ ' / ' ~ environment_review.architecture %}
 
   <div class="page-shell">
 
@@ -219,7 +212,7 @@
     </div>
 
     <div class="d-flex flex-wrap gap-2 align-items-center">
-      <a class="back-btn" href="/wizards">&larr; Back to Wizards</a>
+      <a class="back-btn" href="/wizards">&larr; Back to Environments</a>
       {% if wizard_workspace and wizard_workspace.access != 'viewer' %}
         <a class="back-btn" href="{{ release_change_url }}">
           <i class="fa-solid fa-box-archive"></i> Change Release
@@ -227,7 +220,7 @@
       {% endif %}
       {% if workspace_finish_url %}
         <a class="back-btn" href="{{ workspace_finish_url }}">
-          <i class="fa-solid fa-file-lines"></i> View Generated Spec
+          <i class="fa-solid fa-file-lines"></i> Review Environment
         </a>
       {% endif %}
       {% if workspace_validation_url %}
@@ -240,37 +233,22 @@
       {% endif %}
     </div>
 
-    <!-- PROGRESS BAR -->
-    {% set has_errors = form.errors and (form.errors.values() | list | selectattr('__len__') | list | length) > 0 %}
-    <div class="wizard-progress">
-      <div class="wizard-progress__track">
-        <div class="wizard-progress__fill" style="--progress-pct: {{ pct_complete }}%;"></div>
-        {% for i in range(1, total_steps + 1) %}
-          {% set dot_left = (100.0 * i / total_steps)|round(2) %}
-          {% set step_label = progress_step_labels[i - 1] if progress_step_labels is defined and progress_step_labels|length >= i else (progress_steps[i - 1] | replace('_', ' ') | title) %}
-          {% if i < current_step %}
-            {% set dot_cls = "wizard-progress__dot--done" %}
-          {% elif i == current_step %}
-            {% set dot_cls = "wizard-progress__dot--error" if has_errors else "wizard-progress__dot--active" %}
-          {% else %}
-            {% set dot_cls = "wizard-progress__dot--future" %}
-          {% endif %}
-          {% set step_url = progress_step_urls[i - 1] if progress_step_urls is defined and progress_step_urls|length >= i else none %}
-          <a class="wizard-progress__dot {{ dot_cls }}"
-             href="{{ step_url or '#' }}"
-             style="left: {{ dot_left }}%"
-             title="{{ step_label }} (Step {{ i }} of {{ total_steps }})"
-             aria-label="Go to {{ step_label }} (Step {{ i }} of {{ total_steps }})"
-             aria-current="{{ 'step' if i == current_step else 'false' }}"
-             data-bs-toggle="tooltip"
-             data-bs-placement="top"></a>
-        {% endfor %}
+    {% include "_environment_navigation.html" %}
+    {% if step == 'common' %}
+    <section class="mb-4" aria-label="Cloud provider">
+      <h2 class="h5">Cloud provider</h2>
+      <div class="d-flex flex-wrap gap-3">
+        <div class="border border-primary rounded p-3"><strong>AWS</strong> — Available · Selected</div>
+        <div class="border rounded p-3 text-muted" aria-disabled="true">Google Cloud — Future</div>
+        <div class="border rounded p-3 text-muted" aria-disabled="true">Azure — Future</div>
       </div>
-      <div class="wizard-progress__labels">
-        <span class="wizard-progress__step">Step {{ current_step }} of {{ total_steps }}</span>
-        <span class="wizard-progress__pct">{{ pct_complete }}% complete</span>
-      </div>
-    </div>
+      <p class="small text-muted mt-2">Choose your AWS region below. Networking and service settings follow under Architecture and Capabilities.</p>
+    </section>
+    {% elif praxis_stage == 'Architecture' %}
+    <p><strong>Architecture: {{ environment_review.architecture }}</strong>. Configure its networking and integration details below.</p>
+    {% elif praxis_stage == 'Capabilities' %}
+    <p>Configure the services this environment needs using the existing AWS settings below.</p>
+    {% endif %}
 
     <!-- FORM PANEL -->
     <div class="wizard-panel">
@@ -316,10 +294,10 @@
           {% block step_body %}
             {% if step == 'project_settings' and env_slug in ['single-vpc', 'multi-vpc'] %}
               {% if included_component_labels %}
-                <p class="alert alert-info">Included with Catalyst: {{ included_component_labels|join(', ') }}.</p>
+                <p class="alert alert-info">Included in this architecture: {{ included_component_labels|join(', ') }}.</p>
               {% elif wizard_workspace.workspace_origin != 'readiness' %}
                 <div class="alert alert-info">
-                  This saved setup uses the earlier Catalyst scope.
+                  This saved setup uses the earlier component selection.
                   <button class="btn btn-sm btn-outline-primary" type="submit" name="upgrade_component_profile" value="yes">Save settings and include Camunda OpenSearch</button>
                 </div>
               {% else %}
@@ -327,13 +305,20 @@
               {% endif %}
             {% endif %}
             {# Special layout for project_settings only when both fields exist #}
+            {% if step == 'project_settings' and form.deployments is defined %}
+              {{ render_field(form.environment_name, step) }}
+              {{ render_field(form.environment_description, step) }}
+              {{ render_field(form.environment_owner, step) }}
+            {% endif %}
             {% if step == 'project_settings' and (form.environment_type is defined) and (form.deployments is defined) %}
               <div class="row g-4">
                 <div class="col-md-6">
                   {{ render_field(form.environment_type, step) }}
                 </div>
                 <div class="col-md-6">
-                  {{ render_field(form.deployments, step) }}
+                  <details><summary class="mb-2">Advanced deployment selection</summary>
+                    {{ render_field(form.deployments, step) }}
+                  </details>
                 </div>
               </div>
               {% if step == 'spacelift_settings' %}
@@ -350,7 +335,7 @@
                   <div class="form-text">Filters AWS integrations and spaces by prefix.</div>
                 </div>
               {% endif %}
-              {% for field in form if field.type != 'CSRFTokenField' and field.name not in ['environment_type','deployments'] %}
+              {% for field in form if field.type != 'CSRFTokenField' and field.name not in ['environment_type','deployments','environment_name','environment_description','environment_owner','environment_suffixes'] %}
                 {{ render_field(field, step) }}
               {% endfor %}
             {% else %}
@@ -369,7 +354,7 @@
                 </div>
               {% endif %}
               {% set replacements_ns = namespace(rancher_header_shown=false) %}
-              {% for field in form if field.type != 'CSRFTokenField' %}
+              {% for field in form if field.type != 'CSRFTokenField' and field.name != 'environment_suffixes' %}
                 {% if field.type == 'FormField' %}
                   {% if step == 'replacements' and not replacements_ns.rancher_header_shown %}
                     <div class="border-top mt-4 pt-3 mb-3">

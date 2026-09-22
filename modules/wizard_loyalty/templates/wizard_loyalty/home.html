@@ -3,19 +3,19 @@
 {% block content %}
 <div class="page-shell">
 
-  {% set hero_title = "Loyalty Wizard" %}
-  {% set hero_subtitle = "Start the guided Loyalty environment flow." %}
+  {% set hero_title = "Application services Wizard" %}
+  {% set hero_subtitle = "Start the guided Application services environment flow." %}
   {% set hero_brand_icon = "fa-solid fa-heart" %}
   {% include "_page_hero.html" %}
 
   <a class="back-btn" href="{{ url_for('wizards') }}">
-    <i class="fa-solid fa-arrow-left"></i> Back to Wizards
+    <i class="fa-solid fa-arrow-left"></i> Back to Environments
   </a>
 
   <div class="studio-landing-panel">
-    <p class="text-muted mb-4">Use this landing page to enter the Loyalty wizard before moving into the engine flow.</p>
+    <p class="text-muted mb-4">Use this landing page to enter the Application services wizard before moving into the engine flow.</p>
     <a href="{{ url_for('loyalty.release_selection') }}" class="btn btn-primary btn-lg">
-      Start Loyalty Wizard
+      Start Application services Wizard
     </a>
   </div>
 

@@ -45,7 +45,7 @@
                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
                   <div>
                     <div class="fw-semibold">Draft Editor</div>
-                    <div class="small text-muted">Edit the YAML, check its syntax, run full Praxis Core validation, then publish the validated draft.</div>
+                    <div class="small text-muted">Edit the YAML, check its syntax, run full Praxis validation, then publish the validated draft.</div>
                   </div>
                 </div>
 
@@ -68,7 +68,7 @@
                            value="{{ validation_defaults.harbor_registry_project }}">
                   </div>
                   <div class="col-md-6 col-lg-2">
-                    <label class="form-label mb-1" for="workspacePcVersion">Praxis Core</label>
+                    <label class="form-label mb-1" for="workspacePcVersion">Praxis</label>
                     <input id="workspacePcVersion"
                            class="form-control"
                            type="text"
@@ -177,11 +177,11 @@
 
                 <div class="spec-editor-help mt-3">
                   <div class="small text-muted">
-                    Every check saves the current editor content first. Check Syntax verifies YAML structure locally. Full Validation runs Praxis Core against a saved snapshot. Publish unlocks only when this exact draft has passed full validation.
+                    Every check saves the current editor content first. Check Syntax verifies YAML structure locally. Full Validation runs Praxis against a saved snapshot. Publish unlocks only when this exact draft has passed full validation.
                   </div>
                   {% if is_prod %}
                     <div class="small text-muted mt-1">
-                      Praxis Core is locked in production.
+                      Praxis is locked in production.
                     </div>
                   {% endif %}
                 </div>
@@ -474,7 +474,7 @@
                       <span class="spec-readiness-item__icon"><i class="fa-solid {% if matching_validation %}fa-check{% else %}fa-lock{% endif %}"></i></span>
                       <span class="spec-readiness-item__copy">
                         <strong>Full validation</strong>
-                        <small>{% if matching_validation %}Passed for the current YAML{% else %}Run Praxis Core validation{% endif %}</small>
+                        <small>{% if matching_validation %}Passed for the current YAML{% else %}Run Praxis validation{% endif %}</small>
                       </span>
                       {% if not matching_validation and core_validate.enabled %}
                       <button type="submit" class="btn btn-outline-primary btn-sm" formaction="{{ url_for('spec_validator.validate_draft', draft_id=draft.id) }}">Run</button>

@@ -13,6 +13,8 @@
   {% set tool_count = home_links | selectattr("category", "equalto", "Tools") | list | length %}
   {% set has_readiness_gate = has_endpoint('environment_readiness.published_setups') %}
 
+  <a class="btn btn-primary mb-4" href="{{ url_for('wizards') }}">Create Environment</a>
+
   {% if readiness_home %}
   <section class="home-ops-strip" aria-label="Readiness Gate live summary">
     <span><i class="fa-solid fa-circle pulse-dot"></i> Live readiness</span>
@@ -48,7 +50,7 @@
     <section class="home-panel home-quick-actions"><div class="home-panel__heading"><div><span>Shortcuts</span><h2>Quick actions</h2></div></div><div class="home-action-grid">
       {% if readiness_home.drafts %}<a href="{{ url_for('environment_readiness.workspace', draft=readiness_home.drafts[0]._draft_id) }}"><i class="fa-solid fa-rotate-right"></i><span><strong>Continue last draft</strong><small>{{ readiness_home.drafts[0].environment_name or 'Untitled draft' }}</small></span></a>{% endif %}
       <a href="{{ url_for('environment_readiness.insights', show='attention', _anchor='attention') }}"><i class="fa-solid fa-triangle-exclamation"></i><span><strong>Open attention queue</strong><small>{{ readiness_home.attention_total }} signals</small></span></a>
-      <a href="{{ url_for('wizards') }}"><i class="fa-solid fa-wand-magic-sparkles"></i><span><strong>Open provisioning wizards</strong><small>Advanced direct provisioning path</small></span></a>
+      <a href="{{ url_for('wizards') }}"><i class="fa-solid fa-wand-magic-sparkles"></i><span><strong>Create Environment</strong><small>Environment → Cloud → Architecture → Capabilities → Review</small></span></a>
       <a href="{{ url_for('environment_readiness.insights') }}"><i class="fa-solid fa-chart-line"></i><span><strong>Open Insights</strong><small>Delivery and capacity</small></span></a>
     </div></section>
   </div>
@@ -65,8 +67,8 @@
             <i class="fa-solid fa-wand-magic-sparkles"></i>
           </div>
           <div class="category-card__copy">
-            <div class="category-card__title">Wizards</div>
-            <div class="category-card__desc">Step-by-step provisioning flows and guided setups.</div>
+            <div class="category-card__title">Create Environment</div>
+            <div class="category-card__desc">Define an environment, choose AWS, and configure its architecture and capabilities.</div>
           </div>
           <div class="category-card__footer">
             <span class="card-meta">{{ wizard_count }} available</span>
@@ -106,9 +108,9 @@
       <div class="home-status-bar__pills">
 
         <a class="status-pill status-pill--info"
-           href="{% if has_endpoint('spec_validator.index') %}{{ url_for('spec_validator.index') }}{% else %}{{ url_for('info') }}{% endif %}" title="Open Praxis Core validation">
+           href="{% if has_endpoint('spec_validator.index') %}{{ url_for('spec_validator.index') }}{% else %}{{ url_for('info') }}{% endif %}" title="Open Praxis validation">
           <i class="fa-solid fa-cube"></i>
-          <span>Praxis Core</span>
+          <span>Praxis</span>
           <span class="pill-value">v{{ praxis_core_version }}</span>
         </a>
 

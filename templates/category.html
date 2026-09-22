@@ -16,8 +16,8 @@
 {% block content %}
 <div class="page-shell">
 
-  {% set hero_title = category %}
-  {% set hero_subtitle = subtitle %}
+  {% set hero_title = "Create Environment" if category == "Wizards" else category %}
+  {% set hero_subtitle = "Environment → Cloud → Architecture → Capabilities → Review. Choose an architecture to begin." if category == "Wizards" else subtitle %}
   {% include "_page_hero.html" %}
 
   <a class="back-btn" href="{{ url_for('index') }}">
@@ -30,7 +30,7 @@
     <section class="mb-4">
       <div class="d-flex justify-content-between align-items-end mb-2">
         <div>
-          <h2 class="h6 mb-1">My wizard workspaces</h2>
+          <h2 class="h6 mb-1">My environments</h2>
           <div class="text-muted small">Continue a saved provisioning session or revisit its generated spec and validation runs. Origin labels distinguish Readiness Gate handoffs from setups started directly in a wizard.</div>
         </div>
       </div>

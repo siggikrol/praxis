@@ -2,11 +2,11 @@ from engine.wizards.loyalty.loyalty import bp as engine_bp, wizard_bp
 from .blueprint import bp as ui_bp
 
 class Plugin:
-    title = "Loyalty"
+    title = "Application services"
     icon = "fa-solid fa-heart"
     category = "Wizards"
     home_endpoint = "loyalty.env_home"
-    description = "Loyalty environment setup"
+    description = "Application services environment setup"
     suffix = "playon"
 
 def register(app):

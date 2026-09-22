@@ -63,7 +63,7 @@ def environment_review(env_slug, state):
         data = saved(key)
         status = "Configured" if data else "Not configured"
         if key == "aurora" and data:
-            engines = values(data, "aurora_engine")
+            engines = values(data, "engine")
             status = ", ".join(dict.fromkeys(e.replace("aurora-postgresql", "PostgreSQL").replace("aurora-mysql", "MySQL") for e in engines)) or "Aurora configured"
         capabilities.append((label, status))
     return {

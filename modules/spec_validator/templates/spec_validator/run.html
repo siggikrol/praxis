@@ -2,7 +2,7 @@
 
 {% block content %}
 <div class="page-shell">
-  {% set hero_title = "Praxis Core Validation Run" %}
+  {% set hero_title = "Praxis Validation Run" %}
   {% set hero_subtitle = source_label ~ " | Job: " ~ job.job_id %}
   {% set hero_eyebrow = "Spec Workbench" %}
   {% include "_page_hero.html" %}
@@ -15,7 +15,7 @@
     <div class="tool-toolbar mb-0">
       <div>
         <div class="tool-panel__title">Full Validation</div>
-        <div class="tool-panel__subtitle">Praxis Core is checking the saved draft snapshot.</div>
+        <div class="tool-panel__subtitle">Praxis is checking the saved draft snapshot.</div>
       </div>
       <div class="tool-toolbar__group">
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('tools') }}">
@@ -31,7 +31,7 @@
         <span class="spec-run-summary__icon" id="runIcon"><i class="fa-solid fa-spinner fa-spin"></i></span>
         <div class="spec-run-summary__copy">
           <h3 id="runTitle" class="h5 mb-1">Validation is running</h3>
-          <div id="runMessage" class="text-muted">You can keep this page open while Praxis Core checks the draft.</div>
+          <div id="runMessage" class="text-muted">You can keep this page open while Praxis checks the draft.</div>
           <div id="runReturnNotice" class="small text-muted mt-2 d-none"></div>
         </div>
         <div id="runState" class="badge text-bg-secondary">{{ job.state }}</div>
@@ -161,7 +161,7 @@
       .split("HTTP response headers:")[0]
       .split("HTTP response body:")[0]
       .trim();
-    if (!cleaned) return "Praxis Core could not validate this draft.";
+    if (!cleaned) return "Praxis could not validate this draft.";
     return cleaned.length > 420 ? `${cleaned.slice(0, 417)}...` : cleaned;
   }
 
@@ -274,7 +274,7 @@
     if (passed) {
       if (runIcon) runIcon.innerHTML = '<i class="fa-solid fa-check"></i>';
       if (runTitle) runTitle.textContent = "Full validation passed";
-      if (runMessage) runMessage.textContent = "This saved draft revision passed Praxis Core validation and can continue toward publication.";
+      if (runMessage) runMessage.textContent = "This saved draft revision passed Praxis validation and can continue toward publication.";
       if (runPrimaryAction) {
         runPrimaryAction.textContent = hasDraft ? "Continue to Draft" : "Return to Spec Workbench";
         runPrimaryAction.href = draftUrl;

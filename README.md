@@ -27,3 +27,7 @@ docker compose -f docker-compose.yml -f docker-compose.aws.yml up --build
 Kubernetes/EKS validation requires a separately configured kubeconfig mount and credentials; the default stack does not mount any host credentials.
 
 The default proxy serves HTTP locally. Set `FLASK_SECURE_COOKIES=1` when deploying behind HTTPS.
+
+## Environment workflow
+
+Create Environment groups the existing forms into Environment, Cloud, Architecture, Capabilities, and Review. AWS is the available provider; Google Cloud and Azure are informational future options. Environment name, description, and owner/team are optional workspace metadata, persisted with the existing project settings and excluded from generated specifications. Existing environment type keys, AWS resource prefixes, deployment identifiers, and generation remain unchanged. Review summarizes saved configuration, not deployed infrastructure.

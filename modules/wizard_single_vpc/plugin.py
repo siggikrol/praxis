@@ -5,11 +5,11 @@ from .blueprint import bp as ui_bp
 
 
 class Plugin:
-    title = "Catalyst Single-VPC"
+    title = "Single-VPC"
     icon = "fa-solid fa-diagram-project"
     category = "Wizards"
     home_endpoint = "single-vpc.env_home"   # NOTE: NOT wizard_single_vpc.env_home
-    description = "Single VPC Catalyst wizard"
+    description = "A shared network for an AWS environment"
     suffix = "ctlst"
 
 

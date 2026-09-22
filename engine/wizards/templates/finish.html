@@ -13,16 +13,31 @@
           <p class="lead mb-0">Return to the wizard and complete the missing sections.</p>
         {% else %}
           <i class="fas fa-check-circle fa-3x mb-3"></i>
-          <h2 class="mb-1">All Done!</h2>
-          <p class="lead mb-0">Your spec has been generated with comments.</p>
+          <h2 class="mb-1">Review Environment</h2>
+          <p class="lead mb-0">Review the environment below before downloading or validating its specification.</p>
         {% endif %}
       </div>
     </div>
 
     <div class="card-body">
+      {% include "_environment_navigation.html" %}
+      <section class="border rounded p-4 mb-4" aria-label="Environment summary">
+        <h2 class="h4">{{ environment_review.name }}</h2>
+        {% if environment_review.description %}<p>{{ environment_review.description }}</p>{% endif %}
+        <dl class="row">
+          <dt class="col-sm-3">Environment type</dt><dd class="col-sm-9">{{ environment_review.types|join(', ') or 'Not selected' }}</dd>
+          <dt class="col-sm-3">Owner / team</dt><dd class="col-sm-9">{{ environment_review.owner }}</dd>
+          <dt class="col-sm-3">Cloud</dt><dd class="col-sm-9">AWS / {{ environment_review.region }}</dd>
+          <dt class="col-sm-3">Architecture</dt><dd class="col-sm-9">{{ environment_review.architecture }}</dd>
+        </dl>
+        <h3 class="h5">Capabilities</h3>
+        <p class="small text-muted">Based on saved configuration. This environment has not been provisioned by Praxis.</p>
+        <dl class="row mb-0">{% for label, status in environment_review.capabilities %}<dt class="col-sm-6">{{ label }}</dt><dd class="col-sm-6">{{ status }}</dd>{% endfor %}</dl>
+      </section>
+
 
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <a class="back-btn mb-0" href="{{ url_for('wizards') }}">&larr; Back to Wizards</a>
+        <a class="back-btn mb-0" href="{{ url_for('wizards') }}">&larr; Back to Environments</a>
         <div class="d-flex gap-2 align-items-center">
           {% if wizard_workspace.access == 'viewer' %}
             <span class="badge text-bg-secondary">Shared with you · Viewer</span>
@@ -93,7 +108,7 @@
           <div class="card-body">
             <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
               <div>
-                <div class="fw-semibold">Validate With Praxis Core</div>
+                <div class="fw-semibold">Validate With Praxis</div>
                 <div class="text-muted small">Runs full generation validation, including selected IAC module downloads from S3.</div>
               </div>
               {% if core_validate and core_validate.enabled %}
@@ -121,7 +136,7 @@
                          {% if core_validate_pc_version_locked %}readonly{% endif %}>
                 </div>
                 <div class="col-md-4">
-                  <label class="form-label mb-1" for="coreValidateVersion">Praxis Core Version</label>
+                  <label class="form-label mb-1" for="coreValidateVersion">Praxis Version</label>
                   <input id="coreValidateVersion"
                          class="form-control form-control-sm"
                          type="text"
@@ -165,7 +180,7 @@
                   </div>
                   {% if core_validate_pc_version_locked %}
                     <div class="small text-muted">
-                      Harbor Project and Praxis Core Version are locked in production.
+                      Harbor Project and Praxis Version are locked in production.
                     </div>
                   {% endif %}
                   <div class="small text-muted">

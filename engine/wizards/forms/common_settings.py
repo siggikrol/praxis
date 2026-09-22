@@ -16,7 +16,7 @@ class CommonSettingsForm(FlaskForm):
 
     # NOTE: real regex + hints injected in __init__ based on expected_suffix
     environment = StringField(
-        "Environment",
+        "AWS resource prefix",
         validators=[DataRequired()],  # Regexp set in __init__
         filters=[lambda s: s.strip().lower() if s else s],
         render_kw={"placeholder": "<customer>-ctlst"},

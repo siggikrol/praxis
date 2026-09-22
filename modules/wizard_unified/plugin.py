@@ -5,11 +5,11 @@ from .blueprint import bp as ui_bp
 
 
 class Plugin:
-    title = "Unified Deployment"
+    title = "Combined architecture"
     icon = "fa-solid fa-puzzle-piece"
     category = "Wizards"
     home_endpoint = "unified.env_home"
-    description = "Unified wizard combining single-vpc, rgs, and loyalty components"
+    description = "Unified wizard combining existing architecture and service configurations"
     suffix = "apps"
 
 

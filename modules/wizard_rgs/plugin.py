@@ -4,11 +4,11 @@ from engine.wizards.rgs.rgs import bp as engine_bp, wizard_bp
 from .blueprint import bp as ui_bp
 
 class Plugin:
-    title = "RGS"
-    icon = "fa-solid fa-gamepad"
+    title = "Application platform"
+    icon = "fa-solid fa-server"
     category = "Wizards"
     home_endpoint = "rgs.env_home"
-    description = "RGS environment setup"
+    description = "Application platform environment setup"
     suffix = "rgs"
 
 def register(app):

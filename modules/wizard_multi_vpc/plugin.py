@@ -4,11 +4,11 @@ from engine.wizards.multi_vpc.multi_vpc import bp as engine_bp, wizard_bp
 from .blueprint import bp as ui_bp
 
 class Plugin:
-    title = "Catalyst Multi-VPC"
+    title = "Multi-VPC"
     icon = "fa-solid fa-sitemap"
     category = "Wizards"
     home_endpoint = "multi-vpc.env_home"      
-    description = "Multi-VPC Catalyst wizard"
+    description = "Isolated networks for an AWS environment"
     suffix = "ctlst"                      
 
 
