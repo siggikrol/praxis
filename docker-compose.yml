@@ -103,7 +103,7 @@ services:
       PS_CORE_VALIDATE_TF_TOKEN_SECRET_KEY: ${PS_CORE_VALIDATE_TF_TOKEN_SECRET_KEY:-TF_TOKEN_spacelift_io}
 
       #ENABLED_MODULES: wizard_multi_vpc,wizard_single_vpc,wizard_loyalty,wizard_rgs,wizard_unified,pc_source,status,praxisrelease,releases_explorer
-      ENABLED_MODULES: ncr,environment_readiness,spec_validator,wizard_multi_vpc,wizard_single_vpc,wizard_loyalty,wizard_rgs,wizard_unified,wizard_ext,status,praxisrelease,releases_explorer,artiac_control
+      ENABLED_MODULES: environment_readiness,spec_validator,wizard_multi_vpc,wizard_single_vpc,wizard_loyalty,wizard_rgs,wizard_unified,wizard_ext,status,praxisrelease
 
     expose:
       - "5000"
