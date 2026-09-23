@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="auth-shell">
-    <div class="card shadow-sm auth-card" style="--auth-brand-bg: url('{{ url_for('static', filename='img/praxis.svg') }}');">
+    <div class="card shadow-sm auth-card">
       <div class="card-body">
+        {% include "_brand_wordmark.html" %}
         <h5 class="card-title mb-4 text-center">Welcome to Praxis</h5>
 
         <!-- Login type toggle -->

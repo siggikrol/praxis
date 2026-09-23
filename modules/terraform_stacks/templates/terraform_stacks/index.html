@@ -1,0 +1,8 @@
+{% extends 'terraform_stacks/layout.html' %}
+{% block workspace %}
+{% for kind,title in [('module','Modules'),('stack','Stacks'),('customer','Customers'),('environment','Environments'),('account','Cloud accounts')] %}
+<section class="mb-panel mb-4"><div class="tf-editor-toolbar"><h2 class="h4">{{ title }}</h2><a class="btn btn-outline-primary" href="{{ url_for('terraform_stacks.edit',kind=kind) }}">Add {{ kind }}</a></div>
+{% if kind == 'module' %}<p class="text-muted">Generic code only. Keep account, region, environment and other deployment values in stacks.</p>{% endif %}
+{% for item in catalog[kind] %}<div class="tf-draft-row"><a class="tf-draft-title" href="{{ url_for('terraform_stacks.detail',key=item.id) }}"><strong>{{ item.name }}</strong></a><span class="text-muted">{% if kind == 'module' %}{{ item.data.repository }} · {{ item.data.current_version|default('No versions synced') }} · {{ item.data.status }}{% elif kind == 'stack' %}{{ item.data.version }} · {{ item.data.region }}{% elif kind == 'account' %}AWS · {{ item.data.account_id or 'Not connected' }}{% elif kind == 'environment' %}{{ item.data.type }}{% endif %}</span></div>{% else %}<p class="text-muted mb-0">No {{ title|lower }} yet.</p>{% endfor %}
+</section>{% endfor %}
+{% endblock %}

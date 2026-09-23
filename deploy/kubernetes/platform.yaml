@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: praxis
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: praxis-runs
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: praxis-web
+  namespace: praxis
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: praxis-test
+  namespace: praxis-runs
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: praxis-job-controller
+  namespace: praxis-runs
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, get, patch, delete]
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [list]
+  - apiGroups: ['']
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: praxis-job-controller
+  namespace: praxis-runs
+subjects:
+  - kind: ServiceAccount
+    name: praxis-web
+    namespace: praxis
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: praxis-job-controller
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: test-limits
+  namespace: praxis-runs
+spec:
+  hard:
+    pods: '4'
+    requests.cpu: '2'
+    requests.memory: 2Gi
+    limits.cpu: '8'
+    limits.memory: 12Gi
+    count/jobs.batch: '12'
+    count/secrets: '12'
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-isolation
+  namespace: praxis-runs
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 127.0.0.0/8, 100.64.0.0/10]
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: praxis-data
+  namespace: praxis
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: praxis
+  namespace: praxis
+spec:
+  selector: {app: praxis}
+  ports:
+    - {name: http, port: 80, targetPort: 5000}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: praxis
+  namespace: praxis
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: praxis.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: praxis
+                port: {number: 80}

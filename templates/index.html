@@ -1,178 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Home · Praxis{% endblock %}
+{% block title %}Praxis{% endblock %}
 {% block content %}
 <div class="page-shell">
-
   {% set hero_eyebrow = "Praxis" %}
-  {% set home_name = (current_user or 'there').split('@')[0]|replace('.', ' ')|replace('_', ' ')|title %}
-  {% set hero_title = (home_greeting or 'Good to see you') ~ ", " ~ home_name %}
-  {% set hero_subtitle = "Here is what needs attention and where foundation delivery stands today." %}
+  {% set hero_title = "Your infrastructure workspace" %}
+  {% set hero_subtitle = "A fresh foundation for creating Terraform modules." %}
   {% include "_page_hero.html" %}
 
-  {% set wizard_count = home_links | selectattr("category", "equalto", "Wizards") | list | length %}
-  {% set tool_count = home_links | selectattr("category", "equalto", "Tools") | list | length %}
-  {% set has_readiness_gate = has_endpoint('environment_readiness.published_setups') %}
-
-  <a class="btn btn-primary mb-4" href="{{ url_for('wizards') }}">Create Environment</a>
-
-  {% if readiness_home %}
-  <section class="home-ops-strip" aria-label="Readiness Gate live summary">
-    <span><i class="fa-solid fa-circle pulse-dot"></i> Live readiness</span>
-    <a href="{{ url_for('environment_readiness.insights', show='attention', _anchor='attention') }}"><strong>{{ readiness_home.attention_total }}</strong> need attention</a>
-    <a href="{{ url_for('environment_readiness.published_setups', status='ready') }}"><strong>{{ readiness_home.summary.awaiting }}</strong> awaiting acknowledgement</a>
-    <a href="{{ url_for('environment_readiness.published_setups', status='active') }}"><strong>{{ readiness_home.counts.active }}</strong> active setups</a>
-    <small>Last refreshed now</small>
+  {% if home_links %}
+  <section aria-label="Enabled modules" class="row-list">
+    {% for module in home_links if has_endpoint(module.home_endpoint) %}
+    <a class="row-item" href="{{ url_for(module.home_endpoint) }}">
+      <div class="row-item__icon row-item__icon--blue"><i class="{{ module.icon }}" aria-hidden="true"></i></div>
+      <div class="row-item__body"><div class="row-item__title">{{ module.title }}</div><div class="row-item__sub">{{ module.description }}</div></div>
+      <span class="row-item__arrow" aria-hidden="true">&rarr;</span>
+    </a>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="studio-landing-panel" aria-label="Fresh workspace">
+    <h2 class="h4">A clean starting point</h2>
+    <p>No modules are enabled.</p>
+    <p class="text-muted mb-0">Terraform module authoring is the next step for Praxis.</p>
   </section>
   {% endif %}
-
-  {% if has_readiness_gate %}
-  <section class="home-readiness-feature">
-    <div class="home-readiness-feature__intro">
-      <span class="home-kicker"><i class="fa-solid fa-shield-halved"></i> Primary workspace</span>
-      <h2>Readiness Gate</h2>
-      <p>Prepare the handoff, get the right teams to verify it, and follow foundation delivery without mixing prerequisite waiting time with DevOps execution.</p>
-      <div class="home-feature-actions"><a class="btn btn-primary" href="{{ url_for('environment_readiness.new_workspace') }}"><i class="fa-solid fa-plus"></i> New environment draft</a><a class="btn btn-outline-primary" href="{{ url_for('environment_readiness.published_setups') }}"><i class="fa-solid fa-list-check"></i> Published setups</a></div>
-    </div>
-    <div class="home-readiness-feature__numbers">
-      <a class="home-readiness-stat--attention{% if readiness_home and readiness_home.attention_total %} has-signal{% endif %}" href="{{ url_for('environment_readiness.insights', show='attention', _anchor='attention') }}"><i class="fa-solid fa-triangle-exclamation"></i><span><strong>{{ readiness_home.attention_total if readiness_home else 0 }}</strong><small>Need attention</small></span></a>
-      <a class="home-readiness-stat--active" href="{{ url_for('environment_readiness.published_setups', status='started') }}"><i class="fa-solid fa-person-digging"></i><span><strong>{{ readiness_home.summary.provisioning if readiness_home else 0 }}</strong><small>Provisioning now</small></span></a>
-      <a class="home-readiness-stat--completed" href="{{ url_for('environment_readiness.published_setups', status='completed', urgency='completed_month') }}"><i class="fa-solid fa-flag-checkered"></i><span><strong>{{ readiness_home.summary.completed_month if readiness_home else 0 }}</strong><small>Completed this month</small></span></a>
-    </div>
-  </section>
-  {% endif %}
-
-  {% if readiness_home %}
-  <div class="home-operations-grid">
-    <section class="home-panel home-my-work"><div class="home-panel__heading"><div><span>Personal workspace</span><h2>My work</h2></div><a href="{{ url_for('environment_readiness.published_setups', mine='assigned') }}">View all <i class="fa-solid fa-arrow-right"></i></a></div>
-      {% if readiness_home.assigned_setups %}<div class="home-work-list">{% for setup in readiness_home.assigned_setups[:3] %}<a href="{{ url_for('environment_readiness.setup_detail', setup_id=setup.id) }}"><i class="fa-solid {% if setup.status == 'paused' %}fa-circle-pause{% elif setup.status == 'started' %}fa-person-digging{% else %}fa-inbox{% endif %}"></i><span><strong>{{ setup.environment_name }}</strong><small>{{ setup.customer }} · {{ setup.status|replace('ready', 'awaiting acknowledgement')|title }}</small></span><em>{{ setup.target_date or 'No target' }}</em></a>{% endfor %}</div>{% else %}<div class="home-empty"><i class="fa-solid fa-circle-check"></i><span><strong>No assigned setup needs you</strong><small>Your active assigned work will appear here.</small></span></div>{% endif %}
-      {% if readiness_home.drafts %}<div class="home-draft-row"><span><i class="fa-solid fa-file-pen"></i> My drafts</span>{% for draft in readiness_home.drafts[:3] %}<a href="{{ url_for('environment_readiness.workspace', draft=draft._draft_id) }}">{{ draft.environment_name or 'Untitled draft' }} <small>Step {{ draft._step or 1 }}</small></a>{% endfor %}</div>{% endif %}
-    </section>
-    <section class="home-panel home-quick-actions"><div class="home-panel__heading"><div><span>Shortcuts</span><h2>Quick actions</h2></div></div><div class="home-action-grid">
-      {% if readiness_home.drafts %}<a href="{{ url_for('environment_readiness.workspace', draft=readiness_home.drafts[0]._draft_id) }}"><i class="fa-solid fa-rotate-right"></i><span><strong>Continue last draft</strong><small>{{ readiness_home.drafts[0].environment_name or 'Untitled draft' }}</small></span></a>{% endif %}
-      <a href="{{ url_for('environment_readiness.insights', show='attention', _anchor='attention') }}"><i class="fa-solid fa-triangle-exclamation"></i><span><strong>Open attention queue</strong><small>{{ readiness_home.attention_total }} signals</small></span></a>
-      <a href="{{ url_for('wizards') }}"><i class="fa-solid fa-wand-magic-sparkles"></i><span><strong>Create Environment</strong><small>Environment → Cloud → Architecture → Capabilities → Review</small></span></a>
-      <a href="{{ url_for('environment_readiness.insights') }}"><i class="fa-solid fa-chart-line"></i><span><strong>Open Insights</strong><small>Delivery and capacity</small></span></a>
-    </div></section>
-  </div>
-
-  {% endif %}
-
-  <div class="home-section-title"><div><span>Explore Praxis</span><h2>More workspaces</h2></div></div>
-  <div class="row g-3 home-category-grid mb-4">
-
-    <div class="col-md-6">
-      <a href="{{ url_for('wizards') }}" class="text-decoration-none">
-        <div class="category-card h-100">
-          <div class="category-card__icon-wrap icon-wrap--blue">
-            <i class="fa-solid fa-wand-magic-sparkles"></i>
-          </div>
-          <div class="category-card__copy">
-            <div class="category-card__title">Create Environment</div>
-            <div class="category-card__desc">Define an environment, choose AWS, and configure its architecture and capabilities.</div>
-          </div>
-          <div class="category-card__footer">
-            <span class="card-meta">{{ wizard_count }} available</span>
-            <span class="card-arrow">&rarr;</span>
-          </div>
-        </div>
-      </a>
-    </div>
-
-    <div class="col-md-6">
-      <a href="{{ url_for('tools') }}" class="text-decoration-none">
-        <div class="category-card h-100">
-          <div class="category-card__icon-wrap icon-wrap--green">
-            <i class="fa-solid fa-screwdriver-wrench"></i>
-          </div>
-          <div class="category-card__copy">
-            <div class="category-card__title">Tools</div>
-            <div class="category-card__desc">Targeted utilities for quick checks and actions.</div>
-          </div>
-          <div class="category-card__footer">
-            <span class="card-meta">{{ tool_count }} available</span>
-            <span class="card-arrow">&rarr;</span>
-          </div>
-        </div>
-      </a>
-    </div>
-
-  </div>
-
-  <!-- System Status -->
-  {% if praxis_core_version or gh_quick or spacelift_quick or aws_catalog_quick or pc_source_quick or core_validate_quick or confluence_quick %}
-    <div class="home-status-bar">
-      <div class="home-status-bar__header">
-        <span class="status-bar-title">Platform health</span>
-        <span class="status-bar-live"><span class="live-dot"></span> Cached health</span>
-      </div>
-      <div class="home-status-bar__pills">
-
-        <a class="status-pill status-pill--info"
-           href="{% if has_endpoint('spec_validator.index') %}{{ url_for('spec_validator.index') }}{% else %}{{ url_for('info') }}{% endif %}" title="Open Praxis validation">
-          <i class="fa-solid fa-cube"></i>
-          <span>Praxis</span>
-          <span class="pill-value">v{{ praxis_core_version }}</span>
-        </a>
-
-        {% set cv_cls = "status-pill--ok" if (core_validate_quick and core_validate_quick.enabled) else "status-pill--warn" %}
-        {% if has_endpoint('spec_validator.index') %}<a class="status-pill {{ cv_cls }}" href="{{ url_for('spec_validator.index') }}" title="Open Core Validation status">
-        {% else %}<div class="status-pill {{ cv_cls }}">{% endif %}
-          <i class="fa-solid fa-flask-vial"></i>
-          <span>Core Validation</span>
-          <span class="pill-value">{% if not core_validate_quick %}Unavailable{% elif core_validate_quick.enabled %}Ready{% else %}Unavailable{% endif %}</span>
-        {% if has_endpoint('spec_validator.index') %}</a>{% else %}</div>{% endif %}
-
-        {% set cf_cls = "status-pill--ok" if (confluence_quick and confluence_quick.enabled) else "status-pill--warn" %}
-        {% if has_endpoint('spec_validator.index') %}<a class="status-pill {{ cf_cls }}" href="{{ url_for('spec_validator.index') }}" title="Open Confluence integration status">
-        {% else %}<div class="status-pill {{ cf_cls }}">{% endif %}
-          <i class="fa-solid fa-book-open"></i>
-          <span>Confluence</span>
-          <span class="pill-value">{% if not confluence_quick %}Unavailable{% elif confluence_quick.enabled %}Configured{% else %}Pending{% endif %}</span>
-        {% if has_endpoint('spec_validator.index') %}</a>{% else %}</div>{% endif %}
-
-        {% set gh_cls = "status-pill--ok" if (gh_quick and gh_quick.configured) else "status-pill--warn" %}
-        {% if has_endpoint('status.app_status') %}<a class="status-pill {{ gh_cls }}" href="{{ url_for('status.app_status') }}" title="Open GitHub App status">
-        {% else %}<div class="status-pill {{ gh_cls }}">{% endif %}
-          <i class="fa-brands fa-github"></i>
-          <span>GitHub App</span>
-          <span class="pill-value">{% if gh_quick and gh_quick.configured %}Configured{% else %}Pending{% endif %}</span>
-        {% if has_endpoint('status.app_status') %}</a>{% else %}</div>{% endif %}
-
-        {% set sl_cls = "status-pill--ok" if (spacelift_quick and spacelift_quick.ok) else ("status-pill--err" if (spacelift_quick and spacelift_quick.ok is not none) else "") %}
-        {% if has_endpoint('status.spacelift_cache') %}<a class="status-pill {{ sl_cls }}" href="{{ url_for('status.spacelift_cache') }}" title="Open Spacelift API status">
-        {% else %}<div class="status-pill {{ sl_cls }}">{% endif %}
-          <i class="fa-solid fa-rocket"></i>
-          <span>Spacelift API</span>
-          <span class="pill-value">{% if not spacelift_quick or spacelift_quick.ok is none %}Not checked{% elif spacelift_quick.ok %}{% if spacelift_quick.stale %}Stale{% else %}OK{% endif %}{% else %}Error{% endif %}</span>
-        {% if has_endpoint('status.spacelift_cache') %}</a>{% else %}</div>{% endif %}
-
-        {% set aw_cls = "status-pill--ok" if (aws_catalog_quick and aws_catalog_quick.state == 'fresh') else ("status-pill--warn" if (aws_catalog_quick and aws_catalog_quick.state != 'missing') else "") %}
-        {% if has_endpoint('status.aws_catalogs') %}<a class="status-pill {{ aw_cls }}" href="{{ url_for('status.aws_catalogs') }}" title="Open AWS Catalog status">
-        {% else %}<div class="status-pill {{ aw_cls }}">{% endif %}
-          <i class="fa-solid fa-database"></i>
-          <span>AWS Catalogs</span>
-          <span class="pill-value">{{ aws_catalog_quick.label if aws_catalog_quick else 'Missing' }}</span>
-        {% if has_endpoint('status.aws_catalogs') %}</a>{% else %}</div>{% endif %}
-
-        {% set pc_cls = "status-pill--ok" if (pc_source_quick and pc_source_quick.state == 'fresh') else ("status-pill--warn" if (pc_source_quick and pc_source_quick.state != 'missing') else "") %}
-        {% if has_endpoint('status.pc_source_cache') %}<a class="status-pill {{ pc_cls }}" href="{{ url_for('status.pc_source_cache') }}" title="Open PC Source status">
-        {% else %}<div class="status-pill {{ pc_cls }}">{% endif %}
-          <i class="fa-solid fa-folder-tree"></i>
-          <span>PC Source</span>
-          <span class="pill-value">{{ pc_source_quick.label if pc_source_quick else 'Missing' }}</span>
-        {% if has_endpoint('status.pc_source_cache') %}</a>{% else %}</div>{% endif %}
-
-      </div>
-    </div>
-  {% endif %}
-
 </div>
-<style>
-.home-ops-strip{display:flex;align-items:center;gap:.55rem;margin:-.15rem 0 1rem;padding:.55rem .7rem;border:1px solid var(--border-subtle);border-radius:.75rem;background:var(--bg-elevated)}.home-ops-strip>span{display:flex;align-items:center;gap:.4rem;margin-right:auto;color:var(--text-secondary);font-size:.7rem;font-weight:700}.home-ops-strip .pulse-dot{color:var(--accent-green);font-size:.48rem;filter:drop-shadow(0 0 5px var(--accent-green))}.home-ops-strip a{display:flex;align-items:center;gap:.3rem;padding:.28rem .45rem;border-radius:999px;background:var(--bg-surface);color:var(--text-secondary);font-size:.65rem;text-decoration:none}.home-ops-strip a:hover{color:var(--accent-blue)}.home-ops-strip a strong{color:var(--text-primary)}.home-ops-strip>small{color:var(--text-muted);font-size:.58rem}
-.home-readiness-feature{position:relative;display:grid;grid-template-columns:1.25fr .75fr;gap:1rem;overflow:hidden;margin-bottom:1rem;padding:1.3rem;border:1px solid rgba(139,92,246,.5);border-radius:1rem;background:linear-gradient(120deg,rgba(91,33,182,.18),var(--bg-surface) 55%,rgba(59,130,246,.08));box-shadow:0 16px 40px rgba(0,0,0,.12)}.home-readiness-feature:before{position:absolute;top:-70px;right:-40px;width:230px;height:230px;border-radius:50%;background:radial-gradient(circle,rgba(139,92,246,.2),transparent 70%);content:"";pointer-events:none}.home-kicker,.home-panel__heading span,.home-section-title span{color:#6d28d9;font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.home-kicker i{margin-right:.3rem}.home-readiness-feature h2{margin:.25rem 0;font-size:1.55rem}.home-readiness-feature__intro>p{max-width:720px;margin:.25rem 0 .9rem;color:var(--text-secondary);font-size:.8rem}.home-feature-actions{display:flex;gap:.5rem}.home-feature-actions .btn{display:inline-flex;align-items:center;gap:.4rem}.home-readiness-feature__numbers{z-index:1;display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;align-self:center}.home-readiness-feature__numbers a{display:grid;gap:.35rem;padding:.8rem;border:1px solid rgba(109,40,217,.28);border-radius:.75rem;background:rgba(255,255,255,.72);color:var(--text-primary);text-decoration:none}.home-readiness-feature__numbers a:hover{border-color:#7c3aed}.home-readiness-feature__numbers i{color:#6d28d9}.home-readiness-feature__numbers span{display:grid}.home-readiness-feature__numbers strong{font-size:1.35rem;line-height:1}.home-readiness-feature__numbers small{margin-top:.2rem;color:var(--text-secondary);font-size:.7rem}.home-readiness-feature__numbers .home-readiness-stat--attention i,.home-readiness-feature__numbers .home-readiness-stat--attention strong{color:#d97706}.home-readiness-feature__numbers .home-readiness-stat--attention.has-signal i,.home-readiness-feature__numbers .home-readiness-stat--attention.has-signal strong{color:#dc2626}.home-readiness-feature__numbers .home-readiness-stat--active i,.home-readiness-feature__numbers .home-readiness-stat--active strong{color:#2563eb}.home-readiness-feature__numbers .home-readiness-stat--completed i,.home-readiness-feature__numbers .home-readiness-stat--completed strong{color:#16a34a}[data-theme="dark"] .home-kicker,[data-theme="dark"] .home-panel__heading span,[data-theme="dark"] .home-section-title span{color:#a78bfa}[data-theme="dark"] .home-readiness-feature__numbers a{border-color:var(--border-subtle);background:rgba(15,23,42,.32)}[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--attention i,[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--attention strong{color:#fbbf24}[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--attention.has-signal i,[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--attention.has-signal strong{color:#fb7185}[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--active i,[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--active strong{color:#60a5fa}[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--completed i,[data-theme="dark"] .home-readiness-feature__numbers .home-readiness-stat--completed strong{color:#4ade80}
-.home-operations-grid{display:grid;grid-template-columns:1.25fr .75fr;gap:1rem;margin-bottom:1rem}.home-panel{padding:1rem;border:1px solid var(--border-default);border-radius:1rem;background:var(--bg-surface)}.home-panel__heading{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.75rem}.home-panel__heading h2,.home-section-title h2{margin:.1rem 0 0;font-size:1rem}.home-panel__heading>a{color:var(--accent-blue);font-size:.65rem;text-decoration:none}.home-panel__heading>a i{margin-left:.2rem}.home-work-list{display:grid;gap:.35rem}.home-work-list>a{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.6rem;padding:.55rem;border-radius:.6rem;background:var(--bg-elevated);color:var(--text-primary);text-decoration:none}.home-work-list>a:hover{box-shadow:inset 0 0 0 1px var(--accent-blue)}.home-work-list>a>i{display:grid;place-items:center;width:1.8rem;height:1.8rem;border-radius:.5rem;background:var(--accent-blue-bg);color:var(--accent-blue)}.home-work-list>a>span{display:grid;min-width:0}.home-work-list small{overflow:hidden;color:var(--text-muted);font-size:.62rem;text-overflow:ellipsis;white-space:nowrap}.home-work-list em{color:var(--text-muted);font-size:.58rem;font-style:normal;white-space:nowrap}.home-draft-row{display:flex;align-items:center;flex-wrap:wrap;gap:.35rem;margin-top:.55rem;padding-top:.55rem;border-top:1px solid var(--border-subtle)}.home-draft-row>span{margin-right:.25rem;color:var(--text-muted);font-size:.62rem;font-weight:700}.home-draft-row>a{padding:.22rem .4rem;border-radius:999px;background:var(--accent-blue-bg);color:var(--accent-blue);font-size:.6rem;text-decoration:none}.home-draft-row small{opacity:.75}.home-empty{display:flex;align-items:center;gap:.65rem;padding:1rem;border:1px dashed var(--border-default);border-radius:.7rem;color:var(--text-secondary)}.home-empty>i{color:var(--accent-green)}.home-empty span{display:grid}.home-empty small{color:var(--text-muted);font-size:.65rem}
-.home-action-grid{display:grid;grid-template-columns:1fr 1fr;gap:.45rem}.home-action-grid>a{display:flex;align-items:center;gap:.55rem;min-height:4.1rem;padding:.65rem;border:1px solid var(--border-subtle);border-radius:.7rem;background:var(--bg-elevated);color:var(--text-primary);text-decoration:none}.home-action-grid>a:hover{border-color:var(--accent-blue);background:var(--accent-blue-bg)}.home-action-grid>a>i{color:var(--accent-blue)}.home-action-grid span{display:grid}.home-action-grid small{color:var(--text-secondary);font-size:.7rem}.home-section-title{margin:1.25rem 0 .55rem}.home-category-grid .category-card{min-height:155px}.home-status-bar{margin-top:.5rem!important;opacity:1}.home-status-bar__header{min-height:auto}.home-status-bar__pills{padding:.55rem!important}.home-status-bar .status-pill{padding:.42rem .6rem!important;font-size:.72rem}
-.home-ops-strip>small,.home-work-list small,.home-work-list em,.home-draft-row>span,.home-draft-row>a,.home-empty small,.home-panel__heading>a{font-size:.7rem}.home-ops-strip a{font-size:.7rem}
-@media(max-width:1050px){.home-readiness-feature,.home-operations-grid{grid-template-columns:1fr}.home-readiness-feature__numbers{grid-template-columns:repeat(3,1fr)}}@media(max-width:760px){.home-ops-strip{align-items:stretch;flex-direction:column}.home-ops-strip>span{margin-right:0}.home-ops-strip a{justify-content:space-between}.home-readiness-feature__numbers{grid-template-columns:1fr}.home-feature-actions,.home-action-grid{display:grid;grid-template-columns:1fr}.home-work-list>a{grid-template-columns:auto minmax(0,1fr)}.home-work-list em{grid-column:2}.home-readiness-feature{padding:1rem}}
-</style>
 {% endblock %}

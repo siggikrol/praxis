@@ -1,69 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Information · Praxis{% endblock %}
+{% block title %}About Praxis{% endblock %}
 {% block content %}
 <div class="page-shell">
-
-  {% set hero_title = "Praxis in 60 seconds" %}
-  {% set hero_subtitle = "A quick mental model of how the ecosystem fits together" %}
-  {% set hero_eyebrow = "Praxis" %}
+  {% set hero_title = "Praxis" %}
+  {% set hero_subtitle = "A workspace for infrastructure authoring." %}
   {% include "_page_hero.html" %}
-
-  <a class="back-btn" href="{{ url_for('index') }}">
-    <i class="fa-solid fa-arrow-left"></i> Back to Home
-  </a>
-
-  <div class="row g-4 mb-5">
-    <div class="col-md-4">
-      <div class="feature-card h-100">
-        <h5 class="fw-semibold mb-2">Praxis</h5>
-        <p style="color: var(--text-secondary); font-size: 13px;" class="mb-2">The UI: answer a few guided questions and create a spec.</p>
-        <ul style="color: var(--text-secondary); font-size: 12px;" class="mb-0">
-          <li>Wizards + forms for environments</li>
-          <li>Produces an order form (spec)</li>
-          <li>No Terraform knowledge required</li>
-        </ul>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="feature-card h-100">
-        <h5 class="fw-semibold mb-2">Praxis</h5>
-        <p style="color: var(--text-secondary); font-size: 13px;" class="mb-2">The builder: turns the spec into real infrastructure code.</p>
-        <ul style="color: var(--text-secondary); font-size: 12px;" class="mb-0">
-          <li>Creates repo artifacts automatically</li>
-          <li>Decides build order + structure</li>
-          <li>Applies standards consistently</li>
-        </ul>
-      </div>
-    </div>
-    <div class="col-md-4">
-      <div class="feature-card h-100">
-        <h5 class="fw-semibold mb-2">Praxis Artiac</h5>
-        <p style="color: var(--text-secondary); font-size: 13px;" class="mb-2">The warehouse: approved Terraform building blocks.</p>
-        <ul style="color: var(--text-secondary); font-size: 12px;" class="mb-0">
-          <li>Curated, versioned modules</li>
-          <li>Protects against drift</li>
-          <li>Feeds Core safe components</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="prereq-block">
-    <div class="prereq-block__title">
-      <i class="fa-solid fa-diagram-project"></i>
-      How it works together
-    </div>
-    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 10px;">
-      Praxis captures intent, Core assembles the blueprint, and Artiac ensures only trusted
-      building blocks are used. From there, automation applies the plan consistently.
-    </p>
-    <ul class="prereq-block__list">
-      <li><strong>Praxis:</strong> You describe what you need.</li>
-      <li><strong>Core:</strong> The spec becomes repo-ready infrastructure.</li>
-      <li><strong>Artiac:</strong> Approved modules keep builds safe and repeatable.</li>
-      <li><strong>Automation:</strong> Spacelift executes and provisions.</li>
-    </ul>
-  </div>
-
+  <section class="studio-landing-panel">
+    <h2 class="h4">Starting fresh</h2>
+    <p>Praxis is being developed around creating Terraform modules.</p>
+    <p class="mb-0">The core application provides the workspace and sign-in. Terraform Module Builder creates local wrappers and imports examples from public Terraform Registry modules.</p>
+  </section>
 </div>
 {% endblock %}

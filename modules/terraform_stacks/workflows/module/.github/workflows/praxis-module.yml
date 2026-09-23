@@ -1,0 +1,26 @@
+name: Module validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with: {tofu_version: '1.12.0', tofu_wrapper: false}
+      - run: tofu fmt -check -recursive
+      - run: tofu init -backend=false -input=false
+      - run: tofu validate -no-color
+      # Run only reviewed mocked tests in this dedicated directory.
+      # Real-cloud smoke testing needs a separate protected workflow/environment.
+      - name: Mock tests (when supplied)
+        run: |
+          if [ -d tests/mock ]; then
+            tofu test -no-color -test-directory=tests/mock
+          fi

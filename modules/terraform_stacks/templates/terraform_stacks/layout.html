@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Modules & Stacks · Praxis{% endblock %}
+{% block content %}
+<div class="tf-workspace">
+<header class="tf-heading"><div><p class="tf-eyebrow">Terraform / Foundation</p><h1>Modules &amp; Stacks</h1><p>Reusable code in Git. Deployment configuration in stacks.</p></div><a href="{{ url_for('terraform') }}">Terraform home</a></header>
+<nav class="tf-draft-actions mb-4" aria-label="Terraform workspace"><a href="{{ url_for('terraform_stacks.index') }}">Catalog &amp; targets</a>{% if has_endpoint('terraform_module_builder.index') %}<a href="{{ url_for('terraform_module_builder.index') }}">Module Builder &amp; sanity tests</a>{% endif %}<a href="{{ url_for('terraform_stacks.kit') }}">Download GitHub workflow kit</a></nav>
+{% if not github_connected %}<div class="alert alert-info">GitHub App not connected. Local configuration and exports are available. Git actions require access to the selected repositories. Configuration repository: <strong>{{ config_repository }}</strong>.</div>{% endif %}
+{% for category,message in get_flashed_messages(with_categories=true) %}<div class="alert alert-{{ category }}" role="status">{{ message }}</div>{% endfor %}
+{% block workspace %}{% endblock %}
+</div>
+{% endblock %}

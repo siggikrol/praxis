@@ -1,0 +1,9 @@
+{% extends "terraform_module_builder/layout.html" %}
+{% block builder %}
+<section class="mb-panel tf-delete-confirm">
+<p class="tf-eyebrow">Delete draft</p><h2>{{ draft.name }}</h2>
+<p>Delete this local draft and all {{ draft.document.files|length }} saved files? This cannot be undone. Previously downloaded ZIPs and the upstream module are unaffected.</p>
+<p class="text-muted">{{ draft.document.source.address }} · {{ draft.document.source.version }} · Revision {{ draft.revision }}</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="revision" value="{{ draft.revision }}"><input type="hidden" name="confirm" value="delete"><div class="tf-draft-actions"><a class="btn btn-outline-primary" href="{{ url_for('terraform_module_builder.index', view='drafts') }}">Cancel</a><a href="{{ url_for('terraform_module_builder.draft', key=draft.id) }}">Review draft</a><button class="btn btn-danger">Delete draft permanently</button></div></form>
+</section>
+{% endblock %}

@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
 from urllib.parse import urlencode
 
 from flask import Flask, abort, flash, render_template, session, redirect, request, url_for, current_app
@@ -14,7 +13,6 @@ from flask_wtf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.routing import BuildError
 from jinja2 import ChoiceLoader, FileSystemLoader
-from services.github_helpers.blueprint import github_bp
 
 # --- Import path bootstrap ----------------------------------------------------
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -46,7 +44,8 @@ def load_plugins(app: Flask) -> None:
       - OR expose a Flask Blueprint named 'bp'
 
     Optional allowlist:
-      - env ENABLED_MODULES="status,wizards"  (if unset → load all)
+      - env ENABLED_MODULES="status,wizard_single_vpc"
+      - empty or unset disables all optional modules; "*" explicitly enables all
     """
 
     modules_dir = Path(__file__).parent / "modules"
@@ -54,13 +53,10 @@ def load_plugins(app: Flask) -> None:
         app.logger.info("No modules directory found; skipping plugin load")
         return
 
-    allowlist = {
-        s.strip()
-        for s in os.environ.get("ENABLED_MODULES", "").split(",")
-        if s.strip()
-    } or None  # if empty, load all
-
-
+    configured = os.environ.get("ENABLED_MODULES", "").strip()
+    allowlist = None if configured == "*" else {
+        name.strip() for name in configured.split(",") if name.strip()
+    }
 
     app.logger.info("Autoloading plugins from %s", modules_dir)
 
@@ -70,13 +66,8 @@ def load_plugins(app: Flask) -> None:
             app.logger.info("Skipping github_helpers (now a service)")
             continue
 
-        # 🔥 exclude github_helpers because it's service
-        if pkg_dir == "github_helpers":
-            app.logger.info("Skipping module '%s' (treated as service, not plugin)", pkg_dir)
-            continue
-
         # existing allowlist logic
-        if allowlist and pkg_dir not in allowlist:
+        if allowlist is not None and pkg_dir not in allowlist:
             app.logger.info("Skipping module '%s' (not in ENABLED_MODULES)", pkg_dir)
             continue
 
@@ -241,28 +232,33 @@ app.config["PREFERRED_URL_SCHEME"] = "https"
 
 # --- Register core blueprint(s) ----------------------------------------------
 app.register_blueprint(auth_bp)
-app.register_blueprint(github_bp)
 
 # ---- Load pluggable modules AFTER core config/session ------------------------
 load_plugins(app)
 
-# Validate key caches at startup so first-page status checks are less likely to block
-# on expensive refreshes (configurable via PS_VALIDATE_CACHES_ON_STARTUP* env vars).
-from services.cache_startup_validator import validate_caches_on_startup  # noqa: E402
+# GitHub export belongs to the optional specification/wizard workflows.
+if "spec_validator" in app.blueprints or any(name.endswith("_wizard") for name in app.blueprints):
+    from services.github_helpers.blueprint import github_bp
+    app.register_blueprint(github_bp)
 
-validate_caches_on_startup(app)
+if any(link.get("home_endpoint") != "terraform_module_builder.index" for link in app.home_links):
+    # Validate key caches at startup so first-page status checks are less likely to block
+    # on expensive refreshes (configurable via PS_VALIDATE_CACHES_ON_STARTUP* env vars).
+    from services.cache_startup_validator import validate_caches_on_startup  # noqa: E402
 
-# --- Background refreshers ---------------------------------------------------
-# Keep dynamic AWS-backed option lists (like EC2 instance types) reasonably fresh without
-# requiring app restarts. Safe to call in each gunicorn worker; refresh uses a file lock.
-from services.aws_instance_types.refresher import start_aws_catalog_refresher  # noqa: E402
+    validate_caches_on_startup(app)
 
-start_aws_catalog_refresher()
+    # --- Background refreshers ---------------------------------------------------
+    # Keep dynamic AWS-backed option lists (like EC2 instance types) reasonably fresh without
+    # requiring app restarts. Safe to call in each gunicorn worker; refresh uses a file lock.
+    from services.aws_instance_types.refresher import start_aws_catalog_refresher  # noqa: E402
 
-# Keep PC Source whitelist discovery reasonably fresh (GitHub folder structure cached on disk).
-from services.pc_source_scanner.refresher import start_pc_source_refresher  # noqa: E402
+    start_aws_catalog_refresher()
 
-start_pc_source_refresher()
+    # Keep PC Source whitelist discovery reasonably fresh (GitHub folder structure cached on disk).
+    from services.pc_source_scanner.refresher import start_pc_source_refresher  # noqa: E402
+
+    start_pc_source_refresher()
 
 # --- Auth guard ---------------------------------------------------------------
 def _auth_is_public(path: str) -> bool:
@@ -318,66 +314,17 @@ def _category_home_links(category: str):
 
 @app.route("/")
 def index():
-    current_app.logger.debug("Registered blueprints: %s", list(app.blueprints.keys()))
-    praxis_core_version = (
-        (os.getenv("PS_CORE_VALIDATE_DEFAULT_PC_VERSION") or "1.3.1").strip()
-        or "1.3.1"
-    )
-    if session.get("user"):
-        current_hour = datetime.now().hour
-        home_greeting = (
-            "Good morning" if current_hour < 12
-            else "Good afternoon" if current_hour < 18
-            else "Good evening"
-        )
-        readiness_home = None
-        gh_quick = None
-        spacelift_quick = None
-        aws_catalog_quick = None
-        pc_source_quick = None
-        core_validate_quick = None
-        confluence_quick = None
-        try:
-            from modules.status.service import (
-                cached_github_status,
-                cached_spacelift_status,
-                quick_aws_catalog_status,
-                quick_pc_source_status,
-            )
+    if not session.get("user"):
+        return redirect(url_for("auth.login", next="/"), code=302)
+    return render_template("index.html")
 
-            gh_quick = cached_github_status()
-            spacelift_quick = cached_spacelift_status()
-            aws_catalog_quick = quick_aws_catalog_status()
-            pc_source_quick = quick_pc_source_status()
-        except Exception:
-            pass
-        try:
-            from engine.wizards.factory.core_validate_jobs import feature_state
-            from modules.spec_validator.confluence import load_config
 
-            core_validate_quick = feature_state()
-            confluence_quick = load_config().as_dict()
-        except Exception:
-            pass
-        try:
-            from modules.environment_readiness.store import home_snapshot
+@app.before_request
+def _require_enabled_wizard():
+    if request.path == "/wizards" or request.path.startswith("/wizards/"):
+        if not any(name.endswith("_wizard") for name in app.blueprints):
+            abort(404)
 
-            readiness_home = home_snapshot(str(session.get("user") or ""))
-        except Exception:
-            current_app.logger.exception("Readiness home snapshot unavailable")
-        return render_template(
-            "index.html",
-            readiness_home=readiness_home,
-            home_greeting=home_greeting,
-            gh_quick=gh_quick,
-            spacelift_quick=spacelift_quick,
-            aws_catalog_quick=aws_catalog_quick,
-            pc_source_quick=pc_source_quick,
-            core_validate_quick=core_validate_quick,
-            confluence_quick=confluence_quick,
-            praxis_core_version=praxis_core_version,
-        )
-    return redirect(url_for("auth.login", next="/"), code=302)
 
 @app.route("/wizards")
 def wizards():
@@ -396,6 +343,8 @@ def wizards():
     owner = current_owner(session)
     # Adopt pre-workspace browser sessions without losing their current work.
     for env_slug in ("multi-vpc", "single-vpc", "rgs", "loyalty", "unified"):
+        if f"{env_slug}_wizard" not in current_app.blueprints:
+            continue
         prefix = f"{env_slug}:"
         if not any(key.startswith(prefix) for key in session.keys()):
             continue
@@ -413,14 +362,16 @@ def wizards():
             latest_job_id=str(session.get(f"{env_slug}:core_validate_latest_job_id") or ""),
         )
     owned_workspaces, shared_workspaces = list_workspaces(owner)
-    from modules.environment_readiness.store import setups_for_workspaces
+    owned_workspaces = [item for item in owned_workspaces if f"{item['env_slug']}_wizard" in current_app.blueprints]
+    shared_workspaces = [item for item in shared_workspaces if f"{item['env_slug']}_wizard" in current_app.blueprints]
     from services.wizard_workspaces import annotate_workspace_origins
 
     visible_workspaces = owned_workspaces + shared_workspaces
-    annotate_workspace_origins(
-        visible_workspaces,
-        setups_for_workspaces([str(item["id"]) for item in visible_workspaces]),
-    )
+    origins = {}
+    if "environment_readiness" in current_app.blueprints:
+        from modules.environment_readiness.store import setups_for_workspaces
+        origins = setups_for_workspaces([str(item["id"]) for item in visible_workspaces])
+    annotate_workspace_origins(visible_workspaces, origins)
 
     def _decorate(workspace):
         item = dict(workspace)
@@ -464,6 +415,8 @@ def resume_wizard_workspace(workspace_id):
         # A readiness revision may still reference a workspace the owner just
         # deleted. Repair that stale cross-store link instead of leaving a dead
         # Continue URL behind.
+        if "environment_readiness" not in current_app.blueprints:
+            abort(404)
         from modules.environment_readiness.store import unlink_wizard_workspace
 
         setup_id = unlink_wizard_workspace(
@@ -556,9 +509,9 @@ def delete_wizard_workspace(workspace_id):
     if not delete_workspace(owner=owner, workspace_id=workspace_id):
         abort(404)
 
-    from modules.environment_readiness.store import unlink_wizard_workspace
-
-    unlink_wizard_workspace(workspace_id, wizard_owner=owner)
+    if "environment_readiness" in current_app.blueprints:
+        from modules.environment_readiness.store import unlink_wizard_workspace
+        unlink_wizard_workspace(workspace_id, wizard_owner=owner)
 
     env_slug = str(workspace.get("env_slug") or "")
     if session.get(f"{env_slug}:workspace_id") == workspace_id:
@@ -614,6 +567,14 @@ def remove_wizard_workspace_share(workspace_id, shared_with):
         abort(404)
     flash("Workspace access removed.", "success")
     return redirect(url_for("wizard_workspace_sharing", workspace_id=workspace_id))
+
+@app.get("/terraform")
+def terraform():
+    items = _category_home_links("Terraform")
+    if not items:
+        abort(404)
+    return render_template("terraform.html", category_items=items)
+
 
 @app.route("/tools")
 def tools():

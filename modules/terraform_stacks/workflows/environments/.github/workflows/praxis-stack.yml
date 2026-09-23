@@ -1,0 +1,116 @@
+name: Praxis stack
+run-name: praxis-${{ inputs.request_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        type: choice
+        options: [validate, plan, apply]
+        required: true
+      stack_path: {type: string, required: true}
+      config_commit: {type: string, required: true}
+      request_id: {type: string, required: true}
+      execution_environment: {type: string, required: true}
+      plan_run_id: {type: string, required: false}
+      plan_sha256: {type: string, required: false}
+permissions:
+  contents: read
+concurrency:
+  group: praxis-${{ inputs.stack_path }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: inputs.operation == 'validate'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install 'PyYAML==6.0.2'
+      - run: python scripts/praxis_stack.py
+        env:
+          OPERATION: validate
+          STACK_PATH: ${{ inputs.stack_path }}
+          CONFIG_COMMIT: ${{ inputs.config_commit }}
+          REQUEST_ID: ${{ inputs.request_id }}
+      - uses: actions/upload-artifact@v4
+        with: {name: praxis-result, path: result/result.json, retention-days: 7}
+  execute:
+    if: inputs.operation != 'validate'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.execution_environment }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Require explicit execution configuration
+        env:
+          ENABLED: ${{ vars.PRAXIS_CLOUD_EXECUTION_ENABLED }}
+        run: test "$ENABLED" = true
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install 'PyYAML==6.0.2'
+      - uses: opentofu/setup-opentofu@v1
+        with: {tofu_version: '1.12.0', tofu_wrapper: false}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_EXECUTION_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_STATE_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+      - name: Read private module repositories
+        if: vars.PRAXIS_APP_ID != ''
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.PRAXIS_APP_ID }}
+          private-key: ${{ secrets.PRAXIS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+      - name: Configure Git authentication for private modules
+        if: steps.app.outputs.token != ''
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          HEADER="$(printf 'x-access-token:%s' "$APP_TOKEN" | base64 -w0)"
+          echo "::add-mask::$HEADER"
+          echo "GIT_CONFIG_COUNT=1" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader" >> "$GITHUB_ENV"
+          echo "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $HEADER" >> "$GITHUB_ENV"
+      - name: Download exact approved plan
+        if: inputs.operation == 'apply'
+        uses: actions/download-artifact@v4
+        with:
+          name: praxis-plan
+          path: approved-plan
+          run-id: ${{ inputs.plan_run_id }}
+          github-token: ${{ github.token }}
+      - name: Run requested operation
+        run: python scripts/praxis_stack.py
+        env:
+          OPERATION: ${{ inputs.operation }}
+          STACK_PATH: ${{ inputs.stack_path }}
+          CONFIG_COMMIT: ${{ inputs.config_commit }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          EXECUTION_ENVIRONMENT: ${{ inputs.execution_environment }}
+          CLOUD_EXECUTION_ENABLED: ${{ vars.PRAXIS_CLOUD_EXECUTION_ENABLED }}
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          STATE_BUCKET: ${{ vars.AWS_STATE_BUCKET }}
+          STATE_REGION: ${{ vars.AWS_STATE_REGION }}
+          PLAN_SHA256: ${{ inputs.plan_sha256 }}
+      - name: Retain plan for exact-artifact approval
+        if: inputs.operation == 'plan'
+        uses: actions/upload-artifact@v4
+        with:
+          name: praxis-plan
+          retention-days: 1
+          include-hidden-files: true
+          path: |
+            workspace/tfplan
+            workspace/.terraform.lock.hcl
+            workspace/manifest.json
+      - uses: actions/upload-artifact@v4
+        with: {name: praxis-result, path: result/result.json, retention-days: 7}

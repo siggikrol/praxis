@@ -2,7 +2,7 @@
 {% block title %}{{ category }} · Praxis{% endblock %}
 {% macro workspace_origin(workspace) %}
   {% if workspace.origin_label == 'Readiness Gate' %}
-    {% if workspace.origin_setup %}
+    {% if workspace.origin_setup and has_endpoint('environment_readiness.published_setups') %}
       <a class="badge text-bg-secondary text-decoration-none" href="{{ url_for('environment_readiness.setup_detail', setup_id=workspace.origin_setup.id) }}" title="Open readiness setup {{ workspace.origin_setup.environment_name }}, revision {{ workspace.origin_setup.revision }}"><i class="fa-solid fa-shield-halved me-1" aria-hidden="true"></i>Readiness Gate <i class="fa-solid fa-arrow-up-right-from-square ms-1" aria-hidden="true"></i></a>
     {% else %}
       <span class="badge text-bg-secondary" title="Created through the Readiness Gate; the source record is no longer available"><i class="fa-solid fa-shield-halved me-1" aria-hidden="true"></i>Readiness Gate · source unavailable</span>
