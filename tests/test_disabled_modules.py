@@ -14,6 +14,7 @@ class DisabledModulesTests(unittest.TestCase):
                        FLASK_SECURE_COOKIES="0", PS_VALIDATE_CACHES_ON_STARTUP="0",
                        PS_AWS_CATALOG_REFRESHER_ENABLED="0", PS_PC_SOURCE_REFRESHER_ENABLED="0",
                        PS_RELEASES_PROVIDER="disabled", AWS_EC2_METADATA_DISABLED="true",
+                       PRAXIS_TERRAFORM_DB=directory+"/foundation.sqlite3", PRAXIS_TERRAFORM_MODULE_BUILDER_DB=directory+"/drafts.sqlite3",
                        SESSION_FILE_DIR=directory+"/sessions", PS_ACTIVE_SESSIONS_REGISTRY=directory+"/active.json",
                        PS_WIZARD_WORKSPACES_DB_PATH=directory+"/workspaces.sqlite3",
                        PS_ENVIRONMENT_READINESS_DB=directory+"/readiness.sqlite3", PYTHONDONTWRITEBYTECODE="1")
@@ -79,3 +80,21 @@ create_workspace(owner="test", env_slug="multi-vpc")
 assert client.get("/wizards").status_code == 200
 assert client.get("/single-vpc/wizard/project_settings").status_code == 200
 assert client.get("/wizards/workspaces/missing/resume").status_code == 404''')
+
+
+    def test_draft_git_submission_visible_for_parameterized_endpoint(self):
+        self.run_app("terraform_module_builder,terraform_stacks", '''
+from modules.terraform_module_builder import store
+from flask import session
+with client.session_transaction() as signed_in:
+    user = str(signed_in['user'])
+key = store.create(user, 'draft-vpc', {'source': {'address':'acme/vpc/aws','version':'1','mode':'wrapper'}, 'files': {'main.tf':''}})
+assert app.jinja_env.globals['has_endpoint']('terraform_stacks.submit_draft')
+assert not app.jinja_env.globals['has_endpoint']('missing.endpoint')
+for path in ['/modules/', '/modules/?view=drafts', '/modules/drafts/'+key]:
+    page = client.get(path)
+    assert page.status_code == 200
+    assert ('/terraform/workspace/submit-draft/'+key).encode() in page.data, path
+    assert b'Submit to Git' in page.data, path
+assert client.get('/terraform/workspace/submit-draft/'+key).status_code == 200
+''')

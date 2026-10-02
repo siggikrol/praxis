@@ -2,7 +2,7 @@ import io
 import json
 import zipfile
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, session, url_for
+from flask import current_app, Blueprint, abort, flash, redirect, render_template, request, send_file, session, url_for
 
 from . import authoring, registry, store, testing
 
@@ -66,7 +66,7 @@ def customize():
             name = values.get('name', '').strip()
             if not authoring.NAME.fullmatch(name) or len(name) > 80:
                 raise ValueError('Choose a name using letters, numbers, underscores and hyphens, starting with a letter or underscore (up to 80).')
-            provenance = {'address': module['address'], 'version': module['version'], 'registry_url': module['registry_url'], 'mode': values.get('mode', 'wrapper')}
+            provenance = {'provider': module['provider'], 'address': module['address'], 'version': module['version'], 'registry_url': module['registry_url'], 'mode': values.get('mode', 'wrapper')}
             warnings = []
             if provenance['mode'] == 'example':
                 files, warnings, origin = registry.import_example(module, values.get('example'))
@@ -91,13 +91,20 @@ def draft(key):
         abort(404)
     error, status = None, 200
     if request.method == 'POST':
-        files = {name: request.form.get(f'file_{i}', content) for i, (name, content) in enumerate(sorted(item['document']['files'].items()))}
+        files = {name: request.form.get(f'file_{i}', content) for i, (name, content) in enumerate(sorted(item['document']['files'].items())) if request.form.get(f'remove_{i}') != 'yes'}
         item['document']['files'] = files
         item['name'] = request.form.get('name', item['name']).strip()
         item['revision'] = request.form.get('revision', type=int)
         try:
             if not authoring.NAME.fullmatch(item['name']) or len(item['name']) > 80:
                 raise ValueError('Use a draft name starting with a letter or underscore, with up to 80 letters, numbers, underscores or hyphens.')
+            new_name = request.form.get('new_file_name', '').strip()
+            if new_name:
+                if new_name in files:
+                    raise ValueError('A file with that name already exists.')
+                files[new_name] = request.form.get('new_file_content', '')
+            if not files:
+                raise ValueError('Keep at least one file in the draft.')
             authoring.validate_files(files)
             revision = request.form.get('revision', type=int)
             if not store.update(owner(), key, revision, item['document'], item['name']):
@@ -108,7 +115,11 @@ def draft(key):
                 return redirect(url_for('.draft', key=key))
         except ValueError as exc:
             error, status = str(exc), 400
-    return render_template('terraform_module_builder/draft.html', draft=item, error=error, step=4, view='drafts', test_run=testing.latest(owner(), key)), status
+    linked_modules = []
+    if 'terraform_stacks.manage_module' in current_app.view_functions:
+        from modules.terraform_stacks import store as catalog_store
+        linked_modules = [m for m in catalog_store.objects(owner(), 'module') if m['data'].get('submission', {}).get('draft') == key]
+    return render_template('terraform_module_builder/draft.html', draft=item, error=error, step=4, view='drafts', linked_modules=linked_modules, test_run=testing.latest(owner(), key)), status
 
 
 @bp.post('/drafts/<key>/test')
@@ -120,7 +131,7 @@ def test_draft(key):
         if request.form.get('revision', type=int) != item['revision']:
             raise ValueError('The draft changed. Reload and review the latest saved revision before testing.')
         mode = request.form.get('mode')
-        if mode not in ('validate', 'mock'):
+        if mode not in ('validate', 'mock', 'format'):
             raise ValueError('Choose validation or mock testing.')
         settings = {}
         for name in ('variables', 'data_defaults', 'expected_outputs'):
@@ -173,3 +184,28 @@ def download(key):
         archive.writestr(item['name'] + '/PRAXIS-IMPORT-NOTES.txt', 'Syntax checked only. Review before use.\n' + '\n'.join(item['document']['warnings']))
     buffer.seek(0)
     return send_file(buffer, mimetype='application/zip', as_attachment=True, download_name=item['name']+'.zip')
+
+
+@bp.route('/upload', methods=['GET', 'POST'])
+def upload():
+    error = None
+    if request.method == 'POST':
+        try:
+            from .uploads import import_zip
+            name = request.form.get('name', '').strip()
+            provider = request.form.get('provider', '')
+            if not authoring.NAME.fullmatch(name) or len(name) > 80:
+                raise ValueError('Enter a module name using letters, numbers, underscores and hyphens (up to 80 characters).')
+            if provider not in ('aws', 'google', 'unknown'):
+                raise ValueError('Choose the module cloud provider.')
+            uploaded = request.files.get('archive')
+            if not uploaded or not uploaded.filename:
+                raise ValueError('Choose a module ZIP file.')
+            files, warnings = import_zip(uploaded.stream.read(2_500_001))
+            key = store.create(owner(), name, {'files': files, 'warnings': warnings,
+                'source': {'address': 'Uploaded module', 'version': 'local', 'mode': 'upload', 'provider': provider}})
+            flash('Module uploaded as a draft. Review the files, run a sanity check, then use Submit to Git.', 'success')
+            return redirect(url_for('.draft', key=key))
+        except ValueError as exc:
+            error = str(exc)
+    return render_template('terraform_module_builder/upload.html', error=error, view='drafts', step=1), (400 if error else 200)

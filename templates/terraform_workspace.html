@@ -1,0 +1,7 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="tf-workspace tf-workspace-shell">
+{% include '_terraform_sidebar.html' %}
+<div class="tf-main">{% block terraform_content %}{% endblock %}</div>
+</div>
+{% endblock %}

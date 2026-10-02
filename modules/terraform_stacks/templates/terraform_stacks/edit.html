@@ -1,14 +1,15 @@
 {% extends 'terraform_stacks/layout.html' %}
 {% block workspace %}
+<nav class="tf-breadcrumbs" aria-label="Breadcrumb"><a href="{{ url_for('terraform_stacks.index') }}">Customers</a>{% for name in ['customer','environment'] %}{% if scope.get(name) %}<span>/</span><a href="{{ url_for('terraform_stacks.detail',key=scope[name].id) }}">{{ scope[name].name }}</a>{% endif %}{% endfor %}</nav>
 <h2>{{ 'Edit' if item else 'Add' }} {{ kind }}</h2>
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
 <form method="post" class="mb-panel">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="revision" value="{{ item.revision if item else '' }}">
 <label class="form-label" for="name">Name</label><input class="form-control mb-3" id="name" name="name" required pattern="[a-z][a-z0-9-]{0,62}" value="{{ request.form.get('name',item.name if item else '') }}"><p class="small text-muted">Use a unique slug, for example acme-prod or acme-prod-vpc.</p>
 {% macro field(name,label,value='',placeholder='') %}<label class="form-label" for="{{ name }}">{{ label }}</label><input class="form-control mb-3" id="{{ name }}" name="{{ name }}" value="{{ data.get(name,value) }}" placeholder="{{ placeholder }}">{% endmacro %}
-{% macro select(name,label,kind,optional=false) %}<label class="form-label" for="{{ name }}">{{ label }}</label><select class="form-select mb-3" id="{{ name }}" name="{{ name }}" {% if not optional %}required{% endif %}><option value="">{{ 'Shared / no customer restriction' if optional else 'Choose…' }}</option>{% for o in catalog[kind] %}<option value="{{ o.id }}" {% if data.get(name)==o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}</select>{% endmacro %}
+{% macro select(name,label,kind,optional=false) %}{% if scope.get(name) %}<input type="hidden" name="{{ name }}" value="{{ scope[name].id }}"><p><strong>{{ label }}:</strong> {{ scope[name].name }}</p>{% else %}<label class="form-label" for="{{ name }}">{{ label }}</label><select class="form-select mb-3" id="{{ name }}" name="{{ name }}" {% if not optional %}required{% endif %}><option value="">{{ 'Shared / no customer restriction' if optional else 'Choose…' }}</option>{% for o in catalog[kind] %}<option value="{{ o.id }}" {% if data.get(name)==o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}</select>{% endif %}{% endmacro %}
 {% if kind == 'module' %}
-{{ field('repository','GitHub repository','siggikrol/','siggikrol/praxis-vpc') }}{{ field('compatibility','Terraform / OpenTofu compatibility','','OpenTofu >= 1.12.0') }}
+{{ field('repository','GitHub repository',git_owner ~ '/',git_owner ~ '/praxis-vpc') }}{{ field('compatibility','Terraform / OpenTofu compatibility','','OpenTofu >= 1.12.0') }}
 <label class="form-label" for="status">Status</label><select class="form-select mb-3" id="status" name="status">{% for status in ['Development','Approved','Deprecated'] %}<option {% if data.get('status')==status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select>
 <p class="text-muted">Versions are synced from Git tags and pinned to commits. Module code stays in its repository.</p>
 {% elif kind == 'environment' %}{{ select('customer','Customer','customer') }}
@@ -20,7 +21,7 @@
 <label class="form-label" for="inputs">Deployment inputs (JSON)</label><textarea class="form-control mb-3" id="inputs" name="inputs" rows="12">{{ request.form.get('inputs',data.get('inputs',{})|tojson(indent=2)) }}</textarea><p class="small text-muted">These values are committed to Git. Use configuration values, not secrets.</p>
 {% endif %}
 {% if kind != 'stack' %}{{ field('description','Description') }}{% endif %}
-<button class="btn btn-primary">Save {{ kind }}</button> <a href="{{ url_for('terraform_stacks.index') }}">Cancel</a>
+<button class="btn btn-primary">Save {{ kind }}</button> <a href="{{ url_for('terraform_stacks.detail',key=scope.environment.id if scope.get('environment') else scope.customer.id) if scope else url_for('terraform_stacks.index') }}">Cancel</a>
 </form>
 {% if kind=='stack' %}<script>(()=>{const module=document.getElementById('module'),version=document.getElementById('version');function update(){for(const option of version.options){option.hidden=!!option.dataset.module&&option.dataset.module!==module.value;option.disabled=option.hidden;}if(version.selectedOptions[0]?.disabled)version.value='';}module.addEventListener('change',update);update();})();</script>{% endif %}
 {% endblock %}

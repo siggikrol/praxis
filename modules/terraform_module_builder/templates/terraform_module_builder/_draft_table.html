@@ -1,0 +1,16 @@
+{% from '_cloud_badge.html' import cloud_badge %}
+<div class="tf-catalog-scroll" role="region" aria-label="Module drafts" tabindex="0">
+<table class="tf-catalog-table tf-drafts-table">
+<caption class="visually-hidden">Saved module drafts</caption>
+<thead><tr><th scope="col">Cloud</th><th scope="col">Module</th><th scope="col">Revision</th><th scope="col">Actions</th></tr></thead>
+<tbody>{% for draft in listed_drafts %}<tr>
+<td>{{ cloud_badge(draft.provider) }}</td>
+<th scope="row"><a class="tf-catalog-name" href="{{ url_for('terraform_module_builder.draft', key=draft.id) }}">{{ draft.name }}</a><div class="tf-catalog-health text-muted">Local draft · {{ draft.id[:8] }}</div></th>
+<td><span class="tf-badge">Revision {{ draft.revision }}</span></td>
+<td><div class="tf-catalog-actions" aria-label="Actions for {{ draft.name }}">
+<a href="{{ url_for('terraform_module_builder.draft', key=draft.id) }}" aria-label="Edit {{ draft.name }}">Edit</a>
+<a href="{{ url_for('terraform_module_builder.draft', key=draft.id) }}#draft-name" aria-label="Rename {{ draft.name }}">Rename</a>
+{% if has_endpoint('terraform_stacks.submit_draft') %}<a href="{{ url_for('terraform_stacks.submit_draft',key=draft.id) }}" aria-label="Submit {{ draft.name }} to Git">Submit to Git</a>{% endif %}
+<a class="tf-delete-link" href="{{ url_for('terraform_module_builder.delete_draft', key=draft.id) }}" aria-label="Delete {{ draft.name }}">Delete</a>
+</div></td></tr>{% else %}<tr><td colspan="4" class="tf-catalog-empty"><strong>Your next building block starts here</strong><p class="mb-0 mt-2">Saved wrappers and examples will appear in this workspace.</p></td></tr>{% endfor %}</tbody>
+</table></div>

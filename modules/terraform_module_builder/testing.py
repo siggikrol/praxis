@@ -77,6 +77,26 @@ def start(owner, draft, mode, settings):
     return key
 
 
+def save_format_result(conn, key, result):
+    """Apply formatted files once, only while the tested revision still exists."""
+    row = conn.execute("SELECT * FROM module_test_runs WHERE id=? AND status='running'", (key,)).fetchone()
+    if not row or row['mode'] != 'format' or not result.get('passed'):
+        return result
+    result = dict(result)
+    changed = result.pop('formatted_files', {})
+    draft = conn.execute('SELECT document FROM module_drafts WHERE owner=? AND id=? AND revision=?',
+                         (row['owner'], row['draft_id'], row['revision'])).fetchone()
+    if not draft:
+        return dict(result, passed=False, error='Draft changed or was deleted while formatting. Nothing was overwritten; retry on the current revision.')
+    document = json.loads(draft['document'])
+    if not isinstance(changed, dict) or any(name not in document['files'] or not isinstance(value, str) for name, value in changed.items()):
+        return dict(result, passed=False, error='Invalid formatting result. Draft was not changed.')
+    document['files'].update(changed)
+    conn.execute('UPDATE module_drafts SET document=?,revision=revision+1,updated=? WHERE owner=? AND id=? AND revision=?',
+                 (json.dumps(document), time.time(), row['owner'], row['draft_id'], row['revision']))
+    return dict(result, saved_revision=row['revision'] + 1)
+
+
 def _execute(endpoint, key, payload):
     try:
         response = requests.post(endpoint.rstrip('/')+'/run', json=payload, timeout=(5,390), allow_redirects=False)
@@ -88,6 +108,9 @@ def _execute(endpoint, key, payload):
         result, status = {'error':'Cannot complete the OpenTofu check. Verify the runner is available and try again.'}, 'failed'
     with connection() as conn:
         _table(conn)
+        conn.execute('BEGIN IMMEDIATE')
+        result = save_format_result(conn, key, result)
+        status = 'passed' if status == 'passed' and result.get('passed') else 'failed'
         conn.execute('UPDATE module_test_runs SET status=?,result=? WHERE id=?', (status,json.dumps(result),key))
 
 
@@ -125,6 +148,8 @@ def reconcile():
                     if result is None:
                         continue
                     with connection() as conn:
+                        conn.execute("BEGIN IMMEDIATE")
+                        result = save_format_result(conn, row['id'], result)
                         conn.execute("UPDATE module_test_runs SET status=?,result=?,cleanup_pending=1 WHERE id=? AND status='running'",
                                      ('passed' if result.get('passed') else 'failed',json.dumps(result),row['id']))
                 # Persist before setting TTL. If the web process stops, retry this on restart.

@@ -40,11 +40,11 @@ output "name" { value = "demo" }
         with patch.object(server,'command',return_value={'passed':True}) as execute:
             result=client.post('/run',json=payload)
             self.assertEqual(result.status_code,200)
-            self.assertEqual(execute.call_count,3)
-            self.assertIn('-backend=false',execute.call_args_list[0].args[1])
-            self.assertTrue(execute.call_args_list[1].kwargs['offline'])
+            self.assertEqual(execute.call_count,4)
+            self.assertIn('-backend=false',execute.call_args_list[1].args[1])
             self.assertTrue(execute.call_args_list[2].kwargs['offline'])
-            self.assertIn('-filter=.praxis-tests/praxis.tftest.hcl',execute.call_args_list[2].args[1])
+            self.assertTrue(execute.call_args_list[3].kwargs['offline'])
+            self.assertIn('-filter=.praxis-tests/praxis.tftest.hcl',execute.call_args_list[3].args[1])
             self.assertNotIn('AWS_ACCESS_KEY_ID',execute.call_args.args[2])
         with patch.object(server,'command',return_value={'passed':False}) as execute:
             self.assertFalse(client.post('/run',json=payload).json['passed'])
@@ -63,3 +63,29 @@ output "name" { value = "demo" }
             self.assertEqual(testing.latest('alice',key)['status'],'passed')
             self.assertTrue(store.delete('alice',key,1))
             self.assertIsNone(testing.latest('alice',key))
+
+    def test_format_result_saves_revision_and_rejects_concurrent_edit(self):
+        for changed in (False, True):
+            with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, PRAXIS_TERRAFORM_MODULE_BUILDER_DB=directory+'/db', PRAXIS_TOFU_RUNNER_URL='http://runner', PRAXIS_TEST_BACKEND='http'):
+                key = store.create('alice', 'test', {'files': {'main.tf': 'old'}})
+                draft = store.get('alice', key)
+                with patch.object(testing.threading, 'Thread'):
+                    job = testing.start('alice', draft, 'format', {})
+                if changed:
+                    store.update('alice', key, 1, {'files': {'main.tf': 'user edit'}})
+                response = type('Response', (), {'ok': True, 'json': lambda self: {'passed': True, 'formatted_files': {'main.tf': 'formatted'}}})()
+                with patch.object(testing.requests, 'post', return_value=response):
+                    testing._execute('http://runner', job, {})
+                item = store.get('alice', key)
+                self.assertEqual(item['revision'], 2)
+                self.assertEqual(item['document']['files']['main.tf'], 'user edit' if changed else 'formatted')
+                self.assertEqual(testing.latest('alice', key)['status'], 'failed' if changed else 'passed')
+
+    def test_format_mode_does_not_initialize_or_validate(self):
+        with patch.object(server, 'command', return_value={'passed': True}) as execute:
+            result = server.app.test_client().post('/run', json={'mode': 'format', 'files': {'main.tf': ''}})
+            self.assertTrue(result.json['passed'])
+            execute.assert_called_once()
+            self.assertEqual(execute.call_args.args[1], ['fmt', '-recursive', '-no-color'])
+            self.assertTrue(execute.call_args.kwargs['offline'])
+            self.assertNotIn('check_suite', result.json)

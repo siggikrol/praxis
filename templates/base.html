@@ -37,7 +37,7 @@
         {% if home_links | selectattr('category', 'equalto', 'Wizards') | list %}
         <a class="nav-pill{% if current_endpoint == 'wizards' or '/wizard/' in request.path or request.path.startswith(('/wizards/', '/single-vpc/', '/multi-vpc/', '/rgs/', '/loyalty/', '/unified/')) %} nav-pill--active{% endif %}" href="{{ url_for('wizards') }}"><i class="fa-solid fa-wand-magic-sparkles"></i> Create Environment</a>
         {% endif %}
-        {% if home_links | selectattr('category', 'equalto', 'Terraform') | list %}<a class="nav-pill{% if current_endpoint == 'terraform' or current_endpoint.startswith('terraform_module_builder.') %} nav-pill--active{% endif %}" href="{{ url_for('terraform') }}"><i class="fa-solid fa-cubes"></i> Terraform</a>{% endif %}
+        {% if home_links | selectattr('category', 'equalto', 'Terraform') | list %}<a class="nav-pill{% if current_endpoint == 'terraform' or current_endpoint.startswith('terraform_module_builder.') or current_endpoint.startswith('terraform_stacks.') %} nav-pill--active{% endif %}" href="{{ url_for('terraform') }}"><i class="fa-solid fa-cubes"></i> Terraform</a>{% endif %}
         {% set tool_active = current_endpoint == 'tools' or request.path.startswith(('/artiac', '/iac-artifacts', '/ncr', '/praxisrelease', '/releases', '/spec-validator', '/status')) %}
         {% if home_links | selectattr('category', 'equalto', 'Tools') | list %}
         <a class="nav-pill{% if tool_active %} nav-pill--active{% endif %}" href="{{ url_for('tools') }}"{% if tool_active %} aria-current="page"{% endif %}><i class="fa-solid fa-screwdriver-wrench"></i> Tools</a>

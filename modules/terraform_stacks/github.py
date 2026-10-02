@@ -8,33 +8,107 @@ from urllib.parse import quote
 
 import requests
 from services.github_helpers import github_api
-from . import store
+from . import store, settings
 
 
 def repository():
-    repo = os.getenv('PRAXIS_ENVIRONMENTS_REPOSITORY', 'siggikrol/praxis-environments')
+    repo = settings.load()['repository']
     if not store.REPO.fullmatch(repo):
         raise ValueError('Invalid environments repository configuration.')
     return repo
 
 
 def connected():
+    data = settings.load()
+    if data['auth_mode'] == 'token':
+        return bool(data.get('token'))
     return all(os.getenv(k) for k in ('GITHUB_APP_ID', 'GITHUB_INSTALLATION_ID', 'GITHUB_PRIVATE_KEY'))
 
 
+def transport(method, path, **kwargs):
+    token = settings.token()
+    if token:
+        return requests.request(method, 'https://api.github.com' + path, timeout=30,
+            headers={'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + token}, **kwargs)
+    if connected():
+        return github_api._request(method, path, **kwargs)
+    if method != 'GET':
+        raise ValueError('GitHub is not connected. Configure an API token or GitHub App in GitHub settings. SSH keys are not used for submission.')
+    return requests.get('https://api.github.com' + path, timeout=30, headers={'Accept': 'application/vnd.github+json'}, **kwargs)
+
+
+class RepositoryConflict(ValueError):
+    """GitHub returned a conflict; callers supply operation-specific guidance."""
+
+
+class ResourceNotFound(ValueError):
+    """GitHub 404: absent resource or inaccessible private resource."""
+
+
 def request(method, path, **kwargs):
-    if not connected() and method != 'GET':
-        raise ValueError('Connect the GitHub App before using Git actions. Local configuration and downloads remain available.')
     try:
-        if connected():
-            response = github_api._request(method, path, **kwargs)
-        else:
-            response = requests.get('https://api.github.com' + path, timeout=30, headers={'Accept': 'application/vnd.github+json'}, **kwargs)
-        github_api._raise_for_status(response)
+        response = transport(method, path, **kwargs)
+        if response.status_code == 401:
+            raise ValueError('GitHub rejected the credential (401). Replace the expired or invalid token, or check the GitHub App configuration.')
+        if response.status_code == 403:
+            raise ValueError('GitHub denied access (403). Check repository permissions, organization approval/SSO and API rate limits.')
+        if response.status_code == 404:
+            raise ResourceNotFound('GitHub repository or resource not found (404). Check that it exists and that your token or App has access; private repositories also return 404 when unauthorized.')
+        if response.status_code == 409:
+            raise RepositoryConflict('GitHub returned a repository conflict (409); the repository may not have an initial commit.')
+        if response.status_code == 422:
+            raise ValueError('GitHub could not create this change (422). Check for an existing repository, branch or PR and ensure the submission changes files.')
+        if not 200 <= response.status_code < 300:
+            raise ValueError(f'GitHub returned HTTP {response.status_code}. Retry later or check GitHub service status.')
         return response.json() if response.content else {}
     except (RuntimeError, requests.RequestException) as exc:
-        # Do not reflect raw API bodies or credentials into flash messages.
-        raise ValueError('GitHub request failed. Check App permissions, repository access and workflow setup.') from exc
+        raise ValueError('GitHub could not be reached or authenticated. Check the connection and GitHub settings.') from exc
+
+
+def check_connection():
+    if not connected():
+        raise ValueError('No GitHub credential configured. Save an API token or configure the GitHub App first.')
+    account = settings.load()['owner']
+    target = request('GET', '/users/' + quote(account, safe=''))
+    if settings.load()['auth_mode'] == 'token':
+        identity = request('GET', '/user')['login']
+        return f'Authenticated as {identity}. Destination {target["login"]} exists. Identity verified only; this does not verify access to module repositories.'
+    request('GET', '/installation/repositories', params={'per_page': 1})
+    return f'GitHub App authentication succeeded. Destination: {target["login"]}.'
+
+
+def create_repository(repo):
+    account, name = repo.split('/')
+    target = request('GET', '/users/' + quote(account, safe=''))
+    if target['type'] == 'Organization':
+        path = '/orgs/' + quote(account, safe='') + '/repos'
+    else:
+        identity = request('GET', '/user')
+        if identity['login'].lower() != account.lower():
+            raise ValueError('A personal repository can only be created for the authenticated user. Create it in GitHub first or choose your own account.')
+        path = '/user/repos'
+    created = request('POST', path, json={'name': name, 'private': True, 'auto_init': True,
+                                      'description': 'Reusable Terraform module managed through Praxis.'})
+    try:
+        configure_release_permissions(repo)
+        created['praxis_release_permissions'] = {'configured': True}
+    except ValueError as exc:
+        created['praxis_release_permissions'] = {'configured': False, 'message': str(exc)}
+    return created
+
+
+def configure_release_permissions(repo):
+    path = repo_path(repo) + '/actions/permissions/workflow'
+    try:
+        request('PUT', path, json={'can_approve_pull_request_reviews': True})
+        if request('GET', path).get('can_approve_pull_request_reviews') is not True:
+            raise ValueError('GitHub did not confirm the requested setting.')
+    except ValueError as exc:
+        raise ValueError('Repository exists, but release PR permission could not be configured. '
+                         'Grant Administration write permission to the Praxis token/App and retry, '
+                         'or enable Allow GitHub Actions to create and approve pull requests in '
+                         'repository Settings → Actions → General. Organization policy may prevent this. '
+                         + str(exc)) from exc
 
 
 def repo_path(repo):
@@ -93,14 +167,14 @@ def workflow_runs(repo, commit=None):
     return request('GET', repo_path(repo) + '/actions/runs', params=params).get('workflow_runs', [])
 
 
-def report(repo, run_id):
+def _report(repo, run_id):
     root = repo_path(repo)
     artifacts = request('GET', root + f'/actions/runs/{int(run_id)}/artifacts')['artifacts']
     artifact = next((a for a in artifacts if a['name'] == 'praxis-result' and not a['expired']), None)
     if not artifact:
         raise ValueError('The workflow has no available Praxis result artifact.')
     # Redirect is a signed GitHub blob URL. Never forward the App Authorization header to it.
-    response = github_api._request('GET', root + f"/actions/artifacts/{artifact['id']}/zip", allow_redirects=False)
+    response = transport('GET', root + f"/actions/artifacts/{artifact['id']}/zip", allow_redirects=False)
     if response.status_code != 302:
         raise ValueError('Could not download the workflow result.')
     with requests.get(response.headers['Location'], timeout=30, stream=True) as download:
@@ -116,3 +190,22 @@ def report(repo, run_id):
         if info.file_size > 1_000_000:
             raise ValueError('Workflow result is too large.')
         return json.loads(archive.read(info))
+
+
+def report(repo, run_id):
+    try:
+        return _report(repo, run_id)
+    except (requests.RequestException, zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
+        raise ValueError('The workflow result could not be read. Refresh again or inspect its GitHub logs.') from exc
+
+
+def repository_status(repo):
+    """Read-only preflight; GitHub identity is not a repository permission check."""
+    try:
+        info = request('GET', repo_path(repo))
+        if info.get('permissions', {}).get('push') is False:
+            return False, f'{repo}: readable, but your GitHub user has no push permission.'
+        head(repo)
+        return True, f'{repo}: accessible and initialized. Token write permissions are verified when creating the PR.'
+    except ValueError as exc:
+        return False, f'{repo}: {exc}'

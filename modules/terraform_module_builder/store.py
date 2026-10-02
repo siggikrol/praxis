@@ -29,10 +29,20 @@ def create(owner, name, document):
     return key
 
 
+def cloud_provider(document):
+    source = document.get('source', {})
+    provider = source.get('provider') or source.get('address', '').rstrip('/').split('/')[-1]
+    return provider if provider in ('aws', 'google') else 'unknown'
+
+
 def list_drafts(owner):
     with connection() as conn:
-        return [dict(row) for row in conn.execute(
-            "SELECT id,name,updated,revision FROM module_drafts WHERE owner=? ORDER BY updated DESC", (owner,))]
+        result = []
+        for row in conn.execute('SELECT id,name,updated,revision,document FROM module_drafts WHERE owner=? ORDER BY updated DESC', (owner,)):
+            item = dict(row)
+            item['provider'] = cloud_provider(json.loads(item.pop('document')))
+            result.append(item)
+        return result
 
 
 def get(owner, key):
@@ -42,6 +52,7 @@ def get(owner, key):
         return None
     result = dict(row)
     result["document"] = json.loads(result["document"])
+    result["provider"] = cloud_provider(result["document"])
     return result
 
 

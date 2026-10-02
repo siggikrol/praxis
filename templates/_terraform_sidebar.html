@@ -1,0 +1,23 @@
+{% set endpoint = request.endpoint|default('', true) %}
+{% set foundation = endpoint.startswith('terraform_stacks.') and not authoring_page|default(false) %}
+{% set authoring = endpoint.startswith('terraform_module_builder.') or authoring_page|default(false) %}
+{% set kind = request.view_args.get('kind', '') if request.view_args else '' %}
+{% if item is defined %}{% set kind = item.kind %}{% endif %}
+{% macro link(target, label, icon, active=false, params={}) %}
+{% if has_endpoint(target) %}<a class="tf-side-link{% if active %} active{% endif %}" {% if active %}aria-current="page"{% endif %} href="{{ url_for(target, **params) }}"><i class="{{ icon }}" aria-hidden="true"></i>{{ label }}</a>{% endif %}
+{% endmacro %}
+<aside class="tf-sidebar" aria-label="Terraform navigation">
+<a class="tf-section-link" href="{{ url_for('terraform') }}"><i class="fa-solid fa-cubes" aria-hidden="true"></i> Terraform <span aria-hidden="true">↗</span></a>
+<p class="tf-eyebrow">Modules &amp; Stacks</p>
+{{ link('terraform_stacks.index', 'Customers & environments', 'fa-solid fa-users', foundation and (endpoint.endswith('.index') or kind in ['customer','environment','stack'])) }}
+{{ link('terraform_stacks.catalog', 'Module catalog', 'fa-solid fa-layer-group', foundation and kind=='module', {'kind':'module'}) }}
+{{ link('terraform_stacks.catalog', 'Shared accounts', 'fa-solid fa-cloud', foundation and kind=='account', {'kind':'account'}) }}
+<p class="tf-eyebrow tf-nav-group">Authoring</p>
+{{ link('terraform_module_builder.index', 'Module Builder', 'fa-solid fa-layer-group', authoring and view|default('') != 'drafts' and not endpoint.endswith('.upload')) }}
+{{ link('terraform_module_builder.index', 'Saved drafts', 'fa-regular fa-folder-open', authoring and view|default('') == 'drafts', {'view':'drafts'}) }}
+{{ link('terraform_module_builder.upload', 'Upload module', 'fa-solid fa-upload', endpoint=='terraform_module_builder.upload') }}
+<p class="tf-eyebrow tf-nav-group">Settings &amp; resources</p>
+{{ link('terraform_stacks.github_settings', 'GitHub settings', 'fa-brands fa-github', endpoint=='terraform_stacks.github_settings') }}
+{{ link('terraform_stacks.kit', 'Workflow kit', 'fa-solid fa-download') }}
+<div class="tf-side-note"><i class="fa-solid fa-code" aria-hidden="true"></i><strong>Your code. Your defaults.</strong><p>Create reusable Terraform files for AWS and Google Cloud.</p></div>
+</aside>

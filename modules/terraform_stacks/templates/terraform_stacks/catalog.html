@@ -1,0 +1,34 @@
+{% extends 'terraform_stacks/layout.html' %}
+{% from '_cloud_badge.html' import cloud_badge %}
+{% block workspace %}
+<div class="tf-editor-toolbar"><div><h2>{{ 'Shared module catalog' if kind=='module' else 'Shared cloud accounts' }}</h2><p>{{ 'Reusable modules are available across all customers.' if kind=='module' else 'These targets can be selected by stacks belonging to any customer.' }}</p></div>{% if kind != 'module' or has_endpoint('terraform_module_builder.index') %}<a class="btn btn-primary" href="{{ url_for('terraform_module_builder.index') if kind=='module' else url_for('terraform_stacks.edit',kind=kind) }}">{{ 'Create in Builder' if kind=='module' else 'Add account' }}</a>{% endif %}</div>
+{% if kind == 'module' %}
+<div class="tf-catalog-scroll" role="region" aria-label="Shared module catalog" tabindex="0">
+<table class="tf-catalog-table">
+<caption class="visually-hidden">Shared Terraform modules and their GitHub repositories</caption>
+<thead><tr><th scope="col">Cloud</th><th scope="col">Module</th><th scope="col">Repository</th><th scope="col">Version</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
+<tbody>
+{% for item in items %}
+{% set health = item.data.repository_health|default({}) %}
+<tr>
+<td>{{ cloud_badge(item.data.provider|default('unknown')) }}</td>
+<th scope="row"><a class="tf-catalog-name" href="{{ url_for('terraform_stacks.detail',key=item.id) }}">{{ item.name }}</a></th>
+<td><a href="https://github.com/{{ item.data.repository }}" target="_blank" rel="noopener">{{ item.data.repository }} ↗</a>
+{% if health and health.repository == item.data.repository %}
+<div class="tf-catalog-health {{ 'text-muted' if health.state == 'available' else 'text-warning' }}">
+<span title="Last checked {{ health.checked_at }}">{{ 'Accessible' if health.state == 'available' else ('Missing or inaccessible' if health.state == 'unavailable' else 'Check failed') }}</span>
+{% if health.state != 'available' %}<details><summary>Details</summary><p>{{ health.message }}</p><p>Versions and links may be historical. Drafts and stack pins are retained.</p><small>Last checked {{ health.checked_at }}</small></details>{% endif %}
+</div>
+{% else %}<div class="tf-catalog-health text-muted">Not checked</div>{% endif %}
+</td>
+<td>{% if item.data.current_version %}<span class="tf-badge">{{ item.data.current_version }}</span>{% else %}<span class="text-muted">Not synced</span>{% endif %}</td>
+<td><span class="tf-catalog-status">{{ item.data.status }}</span></td>
+<td><div class="tf-catalog-actions"><a href="{{ url_for('terraform_stacks.detail',key=item.id) }}">View documentation</a></div></td>
+</tr>
+{% else %}<tr><td colspan="6" class="tf-catalog-empty">No modules yet. Add a module or submit a saved draft to get started.</td></tr>{% endfor %}
+</tbody></table>
+</div>
+{% else %}
+<section class="mb-panel">{% for item in items %}<div class="tf-draft-row"><a class="tf-draft-title" href="{{ url_for('terraform_stacks.detail',key=item.id) }}"><strong>{{ item.name }}</strong></a><span>AWS · {{ item.data.account_id or 'Not connected' }}</span></div>{% else %}<p class="text-muted mb-0">No shared accounts yet.</p>{% endfor %}</section>
+{% endif %}
+{% endblock %}

@@ -1,13 +1,17 @@
 {% extends "terraform_module_builder/layout.html" %}
+{% from '_cloud_badge.html' import cloud_badge %}
 {% block builder %}
+<div class="mb-3">{{ cloud_badge(draft.provider) }}</div>
 <div class="tf-editor-toolbar"><div><p class="tf-eyebrow">OpenTofu checks</p><h2>{{ draft.name }}</h2></div><a class="btn btn-outline-primary" href="{{ url_for('terraform_module_builder.draft', key=draft.id) }}">Back to draft</a></div>
 {% if test_run %}
-<section class="mb-panel mb-4"><h3 class="h5">{{ 'Mock test' if test_run.mode == 'mock' else 'Initialize & validate' }} · <span class="tf-test-status tf-test-status--{{ test_run.status }}">{{ test_run.status | capitalize }}</span></h3><p>Saved revision {{ test_run.revision }}{% if test_run.revision != draft.revision %} — this result is for an older revision; current draft is revision {{ draft.revision }}.{% endif %}</p>{% if test_run.status == 'running' %}<div class="tf-test-progress" role="status">
+<section class="mb-panel mb-4"><h3 class="h5">{{ 'Mock test' if test_run.mode == 'mock' else ('Format files' if test_run.mode == 'format' else 'Check formatting & validate') }} · <span class="tf-test-status tf-test-status--{{ test_run.status }}">{{ test_run.status | capitalize }}</span></h3><p>Saved revision {{ test_run.revision }}{% if test_run.revision != draft.revision %} — this result is for an older revision; current draft is revision {{ draft.revision }}.{% endif %}</p>{% if test_run.status == 'running' %}<div class="tf-test-progress" role="status">
   <span class="tf-activity-spinner" aria-hidden="true"></span>
   <div><strong>Check in progress</strong><p class="mb-0 text-muted">Starting the runner and checking your saved files. Dependency downloads may take several minutes.</p></div>
   <span class="tf-test-elapsed" data-started="{{ test_run.created }}" aria-live="off">Running…</span>
 </div>
 <p class="small text-muted mb-0 mt-3">Results update automatically. You can leave this page and return to the draft to see the result.</p>{% else %}<p class="small text-muted mb-0">OpenTofu {{ test_run.result.version | default('') }} · No cloud deployment was performed. A passing mock test does not guarantee deployability.</p>{% endif %}</section>
+{% if test_run.status == "passed" and test_run.mode != "format" and test_run.result.check_suite|default(0) != 2 %}<div class="alert alert-warning">This older result did not include formatting. Run Check formatting &amp; validate again before submitting.</div>{% endif %}
+{% if test_run.result.saved_revision %}<div class="alert alert-success">Formatted files saved as revision {{ test_run.result.saved_revision }}. Return to the draft and run Check formatting &amp; validate before submitting.</div>{% endif %}
 {% if test_run.result.error %}<div class="alert alert-danger">{{ test_run.result.error }}</div>{% endif %}
 {% for item in test_run.result.steps | default([]) %}<details class="mb-panel mb-3" {% if not item.passed %}open{% endif %}><summary><strong class="tf-test-status tf-test-status--{{ 'passed' if item.passed else 'failed' }}">{{ 'Passed' if item.passed else 'Failed' }}</strong>{% if 'Warning:' in item.output %} · <span class="tf-test-warning-badge">Warnings</span>{% endif %} · <code>{{ item.command }}</code> · {{ item.seconds }}s</summary><pre class="tf-test-output mt-3">{% for line in item.output.splitlines(keepends=true) %}{% if line.lstrip().startswith('Warning:') %}<span class="tf-test-warning-line">{{ line }}</span>{% else %}{{ line }}{% endif %}{% endfor %}</pre></details>{% endfor %}
 {% if test_run.result.test_source %}<details class="mb-panel"><summary>Generated mock test</summary><pre class="tf-test-output mt-3">{{ test_run.result.test_source }}</pre></details>{% endif %}

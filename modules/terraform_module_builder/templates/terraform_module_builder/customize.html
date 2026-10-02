@@ -1,5 +1,7 @@
 {% extends "terraform_module_builder/layout.html" %}
+{% from '_cloud_badge.html' import cloud_badge %}
 {% block builder %}
+<div class="mb-3">{{ cloud_badge(module.provider) }}</div>
 <p><a href="{{ url_for('terraform_module_builder.choose', source=module.address, version=module.version) }}">← {{ module.address }}</a> / {{ module.version }}</p>
 <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="source" value="{{ module.address }}"><input type="hidden" name="version" value="{{ module.version }}"><input type="hidden" name="mode" value="{{ values.get('mode', 'wrapper') }}">
 <section class="mb-panel mb-4"><label for="name" class="form-label">{% if values.get('mode') == 'example' %}Draft{% else %}Wrapper{% endif %} name</label><input class="form-control" id="name" name="name" value="{{ values.get('name', 'platform-' ~ module.name) }}" pattern="[A-Za-z_][A-Za-z0-9_-]*" maxlength="80" required></section>

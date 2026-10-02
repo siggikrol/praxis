@@ -22,7 +22,7 @@ def literal(value):
     return json.dumps(value, allow_nan=False).replace('${', '$${').replace('%{', '%%{')
 
 
-def prepare(files, root):
+def prepare(files, root, include_tests=False):
     if not isinstance(files, dict) or not files or len(files) > 200:
         raise ValueError('Provide 1–200 draft files.')
     if sum(len(v.encode()) for v in files.values()) > 2_000_000:
@@ -32,7 +32,7 @@ def prepare(files, root):
         if path.is_absolute() or any(p in ('.', '..', '.terraform', '.git', '.praxis-tests') for p in path.parts) or '\\' in name or '\x00' in name or not path.parts:
             raise ValueError('Unsafe draft file path.')
         # Existing test files never execute; Praxis creates its own plan-only test.
-        if name.endswith(('.tftest.hcl', '.tftest.json', '.tofutest.hcl', '.tofutest.json', '.tfstate', '.tfstate.backup')):
+        if name.endswith(('.tfstate', '.tfstate.backup')) or (not include_tests and name.endswith(('.tftest.hcl', '.tftest.json', '.tofutest.hcl', '.tofutest.json'))):
             continue
         target = root / path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +152,7 @@ def run():
     try:
         payload = request.get_json()
         mode = payload.get('mode')
-        if mode not in ('validate', 'mock'):
+        if mode not in ('validate', 'mock', 'format'):
             raise ValueError('Choose validation or mock testing.')
         settings = payload.get('settings', {})
         for key in ('variables', 'data_defaults', 'expected_outputs'):
@@ -161,7 +161,7 @@ def run():
         with tempfile.TemporaryDirectory(prefix='praxis-tofu-') as directory:
             root = Path(directory) / 'work'
             root.mkdir()
-            prepare(payload['files'], root)
+            prepare(payload['files'], root, include_tests=True)
             home = Path(directory) / 'home'
             home.mkdir()
             environment = {'PATH':'/usr/local/bin:/usr/bin:/bin', 'HOME':str(home), 'TMPDIR':directory,
@@ -169,9 +169,22 @@ def run():
                            'AWS_EC2_METADATA_DISABLED':'true', 'GIT_TERMINAL_PROMPT':'0',
                            'GIT_CONFIG_NOSYSTEM':'1', 'GIT_ALLOW_PROTOCOL':'https', 'TF_CLI_CONFIG_FILE':str(home/'tofurc')}
             (home/'tofurc').write_text('disable_checkpoint = true\n')
+            if mode == 'format':
+                step = command(root, ['fmt', '-recursive', '-no-color'], environment, 60, offline=True)
+                changed = {name: (root / name).read_text() for name in payload['files']
+                           if (root / name).is_file() and (root / name).read_text() != payload['files'][name]}
+                return jsonify(passed=step['passed'], steps=[step], formatted_files=changed,
+                               version='1.12.0', mode=mode)
+            fmt = command(root, ['fmt', '-check', '-diff', '-recursive', '-no-color'], environment, 60, offline=True)
+            if not fmt['passed']:
+                fmt['output'] = fmt.get('output', '') + '\nUse Format files on the saved draft, then run checks again.'
+                return jsonify(passed=False, steps=[fmt], version='1.12.0', mode=mode)
+            for name in payload['files']:
+                if name.endswith(('.tftest.hcl', '.tftest.json', '.tofutest.hcl', '.tofutest.json')):
+                    (root / name).unlink(missing_ok=True)
             test_source = mock_test(root, settings) if mode == 'mock' else ''
             # No user-supplied test file or backend state is used.
-            steps = [command(root, ['init','-backend=false','-input=false','-no-color'], environment, 180)]
+            steps = [fmt, command(root, ['init','-backend=false','-input=false','-no-color'], environment, 180)]
             if steps[-1]['passed']:
                 steps.append(command(root, ['validate','-no-color'], environment, 60, offline=True))
             if mode == 'mock' and steps[-1]['passed']:
@@ -180,7 +193,7 @@ def run():
                 (test_dir/'praxis.tftest.hcl').write_text(test_source)
                 steps.append(command(root, ['test','-no-color','-test-directory=.praxis-tests','-filter=.praxis-tests/praxis.tftest.hcl'], environment, 120, offline=True))
             return jsonify(passed=all(step['passed'] for step in steps), steps=steps, test_source=test_source,
-                           version='1.12.0', mode=mode)
+                           version='1.12.0', mode=mode, check_suite=2)
     except (ValueError, TypeError, KeyError) as exc:
         return jsonify(error=str(exc)), 400
     finally:

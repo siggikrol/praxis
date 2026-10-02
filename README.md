@@ -1,6 +1,6 @@
 # Praxis
 
-Praxis is starting fresh as a workspace for creating Terraform modules. The default Docker setup enables only the Terraform Module Builder, alongside the core application and authentication.
+Praxis is starting fresh as a workspace for creating Terraform modules. The default Docker setup enables Terraform Module Builder and Modules & Stacks, alongside the core application and authentication.
 
 ## Start locally with Rancher Desktop
 
@@ -12,7 +12,7 @@ python deploy/kubernetes/deploy.py --auth-from-compose
 
 This builds both images in Rancher Desktop and deploys Praxis with a persistent volume. The script always names the `rancher-desktop` context; it does not change your current Kubernetes or Docker context. Open **http://praxis.localhost:8088** on this installation. The hostname routes through Traefik; its HTTP port depends on your Rancher Desktop configuration.
 
-For subsequent code changes, run `python deploy/kubernetes/deploy.py` to rebuild and redeploy while retaining login settings and drafts. Only the Terraform Module Builder is enabled. No AWS or Google credentials are required.
+For subsequent code changes, run `python deploy/kubernetes/deploy.py` to rebuild and redeploy while retaining login settings and drafts. Terraform Module Builder and Modules & Stacks are enabled. No AWS or Google credentials are required.
 
 For a **one-time migration from Docker Desktop Compose**, with the source containers running and all tests finished:
 
@@ -36,7 +36,7 @@ kubectl --context rancher-desktop -n praxis-runs get jobs,pods
 Copy `.env.example` to `.env`, set a random `FLASK_SECRET` and optionally override `BASIC_PASSWORD`, and enable the authoring module:
 
 ```dotenv
-ENABLED_MODULES=terraform_module_builder
+ENABLED_MODULES=terraform_module_builder,terraform_stacks
 ```
 
 Then run:
@@ -51,7 +51,7 @@ Compose retains only the shared cache/session volume. Existing Readiness volumes
 
 ## Optional modules
 
-Existing modules remain in the repository but are disabled by default. Explicitly empty `ENABLED_MODULES` means **no optional modules**. Compose defaults to `terraform_module_builder` when the variable is absent; running Python directly with it absent loads no modules. A comma-separated list enables only those modules, for example:
+Existing modules remain in the repository but are disabled by default. Explicitly empty `ENABLED_MODULES` means **no optional modules**. Compose defaults to `terraform_module_builder,terraform_stacks` when the variable is absent; running Python directly with it absent loads no modules. A comma-separated list enables only those modules, for example:
 
 ```dotenv
 ENABLED_MODULES=status
@@ -116,3 +116,52 @@ Terraform against AWS. Plan approval is tied to the commit and saved-plan checks
 See [workflow setup and scope](modules/terraform_stacks/workflows/README.md) for
 GitHub permissions, offline-first setup, state metadata and the later AWS setup.
 No GitHub repositories or cloud resources are created during local deployment.
+
+
+### Submit Builder drafts to GitHub
+
+Use **Submit to Git** on a saved draft. The saved revision must have a passing
+sanity check. Choose a module name and `owner/repository`, review the generic-code
+confirmation, and submit. Praxis registers the module in Modules & Stacks and
+links the PR. Existing repositories need an initial commit (e.g. a README).
+Repository creation is optional and explicit, always private; its token requires
+additional Administration permission. Merge/tag in GitHub and sync versions to
+make a release selectable for stacks.
+
+**Terraform → GitHub settings** stores each user's default GitHub owner and stack
+configuration repository. It supports a fine-grained personal access token or the
+existing deployment-configured GitHub App. Tokens are encrypted in the persistent
+foundation database using a key derived from `FLASK_SECRET`; keep that deployment
+secret stable. The token is never rendered back to the browser. Blank leaves it
+unchanged; Remove saved token deletes it. Test connection checks authentication;
+repository authorization is verified on use. Deploy behind HTTPS for remote access.
+Do not paste credentials in chat or commit them to Git. A Mac SSH key does not
+provide GitHub API authentication to the web app.
+
+For existing repositories, grant Contents and Pull requests read/write, with
+Actions read/write for workflow features. Limit the token to the chosen resource
+owner and repositories. See [GitHub's permission reference](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens).
+
+AWS / Google Cloud badges derive from saved source metadata, including older drafts;
+unknown sources are explicitly labeled rather than guessed from their names.
+
+
+### Customer-first navigation
+
+Modules & Stacks opens a searchable, paginated customer directory. Open a customer
+to manage its environments and accounts, then open an environment to manage its
+stacks. Creating a stack there fixes the customer/environment context and offers
+only that customer's accounts plus shared accounts. Shared modules and shared
+accounts have separate catalog views. Existing object URLs and records are
+preserved; this changes navigation, not Git definitions or state identities.
+
+### Upload your own module
+
+Module Builder → **Upload module** accepts a ZIP and creates an owned, editable
+draft with an explicit cloud label. A containing folder is removed; nested modules
+and text assets are preserved. Limits: 2.5 MB compressed, 2 MB text, 200 files.
+Unsafe paths, links, binary files and invalid Terraform syntax are rejected. Git
+metadata, workflows, local state/plans, .env and .tfvars files are excluded with
+an import notice. Review the draft, run a sanity check, then Submit to Git using
+the same publishing/catalog flow as generated wrappers. Upload does not execute
+code or create repositories.

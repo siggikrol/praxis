@@ -84,12 +84,13 @@ def main():
         backend = {'bucket': os.environ['STATE_BUCKET'], 'region': os.environ['STATE_REGION'], 'key': d['state']['key'], 'use_lockfile': True, 'encrypt': True}
         if not backend['bucket'] or not backend['region']:
             raise ValueError('Configure S3 backend variables in the execution environment.')
+        backend_hash = hashlib.sha256(json.dumps(backend, sort_keys=True).encode()).hexdigest()
         (work / 'backend.json').write_text(json.dumps(backend))
         if operation == 'apply':
             saved = json.loads(Path('approved-plan/manifest.json').read_text())
             plan = Path('approved-plan/tfplan').read_bytes()
             digest = hashlib.sha256(plan).hexdigest()
-            if saved != {'commit': commit, 'stack_id': d['id'], 'config_sha256': hashlib.sha256(config.encode()).hexdigest(), 'plan_sha256': digest} or digest != os.environ['PLAN_SHA256']:
+            if saved != {'commit': commit, 'stack_id': d['id'], 'config_sha256': hashlib.sha256(config.encode()).hexdigest(), 'backend_sha256': backend_hash, 'plan_sha256': digest} or digest != os.environ['PLAN_SHA256']:
                 raise ValueError('Saved plan does not match this approval, commit and stack.')
             (work / '.terraform.lock.hcl').write_bytes(Path('approved-plan/.terraform.lock.hcl').read_bytes())
         init = ['tofu', 'init', '-input=false', '-no-color', '-backend-config=backend.json']
@@ -101,7 +102,7 @@ def main():
             command(['tofu', 'plan', '-input=false', '-no-color', '-lock-timeout=60s', '-out=tfplan'], cwd=work)
             output = command(['tofu', 'show', '-no-color', 'tfplan'], cwd=work, capture_output=True).stdout
             digest = hashlib.sha256((work / 'tfplan').read_bytes()).hexdigest()
-            (work / 'manifest.json').write_text(json.dumps({'commit': commit, 'stack_id': d['id'], 'config_sha256': hashlib.sha256(config.encode()).hexdigest(), 'plan_sha256': digest}))
+            (work / 'manifest.json').write_text(json.dumps({'commit': commit, 'stack_id': d['id'], 'config_sha256': hashlib.sha256(config.encode()).hexdigest(), 'backend_sha256': backend_hash, 'plan_sha256': digest}))
             report.update(plan_sha256=digest, summary=output[:80000], truncated=len(output) > 80000)
         else:
             command(['tofu', 'apply', '-input=false', '-no-color', '-lock-timeout=60s', '../approved-plan/tfplan'], cwd=work)

@@ -14,13 +14,84 @@ jobs:
       - uses: actions/checkout@v4
       - uses: opentofu/setup-opentofu@v1
         with: {tofu_version: '1.12.0', tofu_wrapper: false}
-      - run: tofu fmt -check -recursive
-      - run: tofu init -backend=false -input=false
-      - run: tofu validate -no-color
+      - name: Check formatting (show required changes)
+        id: fmt
+        shell: bash
+        run: |
+          set +e
+          tofu fmt -check -diff -recursive -no-color 2>&1 | tee "$RUNNER_TEMP/praxis-fmt.log"
+          result=${PIPESTATUS[0]}
+          set -e
+          if [ "$result" -ne 0 ]; then
+            echo '::error title=OpenTofu formatting check failed::See the formatting diff. Run tofu fmt -recursive, commit the formatted files, and push again.'
+            {
+              echo '### Formatting check failed'
+              echo 'Run `tofu fmt -recursive` in the module directory, commit the changed files, and push again.'
+              echo 'Initialization, validation and release are blocked until this check passes.'
+              echo '<details><summary>Required formatting changes / diagnostics</summary>'
+              echo ''
+              echo '````text'
+              head -c 40000 "$RUNNER_TEMP/praxis-fmt.log"
+              echo ''
+              echo '````'
+              echo '</details>'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$result"
+      - name: Initialize module dependencies
+        id: init
+        run: tofu init -backend=false -input=false -no-color
+      - name: Validate module configuration
+        id: validate
+        run: tofu validate -no-color
       # Run only reviewed mocked tests in this dedicated directory.
       # Real-cloud smoke testing needs a separate protected workflow/environment.
       - name: Mock tests (when supplied)
+        id: mock
         run: |
           if [ -d tests/mock ]; then
             tofu test -no-color -test-directory=tests/mock
           fi
+      - name: Summarize module checks
+        if: always()
+        env:
+          FMT_RESULT: ${{ steps.fmt.outcome }}
+          INIT_RESULT: ${{ steps.init.outcome }}
+          VALIDATE_RESULT: ${{ steps.validate.outcome }}
+          MOCK_RESULT: ${{ steps.mock.outcome }}
+        shell: bash
+        run: |
+          {
+            echo '## Module checks'
+            echo '| Check | Result |'
+            echo '| --- | --- |'
+            echo "| Formatting | ${FMT_RESULT:-not run} |"
+            echo "| Dependency initialization | ${INIT_RESULT:-not run} |"
+            echo "| Configuration validation | ${VALIDATE_RESULT:-not run} |"
+            if [ ! -d tests/mock ]; then
+              echo '| Mock tests | Not supplied |'
+            else
+              echo "| Mock tests | ${MOCK_RESULT:-not run} |"
+            fi
+            echo ''
+            echo 'A failed check blocks release automation. Open the named step above for its full diagnostics. Skipped checks have not passed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+  release:
+    name: Prepare release PR or publish approved release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    concurrency:
+      group: module-release-main
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+          target-branch: main
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

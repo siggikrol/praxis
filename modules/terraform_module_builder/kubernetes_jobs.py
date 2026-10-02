@@ -95,7 +95,7 @@ def result(key):
             continue
         try:
             log = core.read_namespaced_pod_log(pod.metadata.name, namespace(), container='runner',
-                                               limit_bytes=1_000_000, _request_timeout=TIMEOUT)
+                                               limit_bytes=20_000_000, _request_timeout=TIMEOUT)
             for line in reversed(log.splitlines()):
                 if line.startswith('PRAXIS_RESULT='):
                     parsed = json.loads(line.removeprefix('PRAXIS_RESULT='))

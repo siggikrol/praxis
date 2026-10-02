@@ -82,6 +82,30 @@ class FoundationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'differs'):
                 lifecycle.merged_revision('alice', self.stack)
 
+    def test_empty_stack_repository_explains_prerequisite_without_dispatch(self):
+        with patch.object(github, 'connected', return_value=True), patch.object(github, 'head', side_effect=github.RepositoryConflict('409')), patch.object(github, 'dispatch') as dispatch:
+            with self.assertRaisesRegex(ValueError, 'Submit configuration PR'):
+                lifecycle.start('alice', self.stack, 'validate')
+            dispatch.assert_not_called()
+            self.assertEqual(store.runs('alice', self.key), [])
+
+    def test_stack_publish_bootstraps_empty_repository_and_bundles_workflow(self):
+        pr={'number':1,'html_url':'https://github.com/example/env/pull/1'}
+        with patch.object(github, 'head', side_effect=[github.RepositoryConflict('409'), ('main',SHA)]), patch.object(github, 'request', side_effect=[github.RepositoryConflict('409'), {}, {'tree':[]}]) as api, patch.object(github, 'pull_request', return_value=pr) as submit:
+            lifecycle.publish('alice', self.stack)
+        self.assertEqual(api.call_args_list[1].args[0], 'PUT')
+        self.assertTrue(api.call_args_list[1].args[1].endswith('/contents/README.md'))
+        files=submit.call_args.args[2]
+        self.assertIn('.github/workflows/praxis-stack.yml', files)
+        self.assertIn('scripts/praxis_stack.py', files)
+        self.assertIn(store.config_path('alice',self.stack), files)
+
+    def test_stack_publish_preserves_existing_workflow(self):
+        paths=['.github/workflows/praxis-stack.yml','scripts/praxis_stack.py']
+        with patch.object(github, 'head', return_value=('main',SHA)), patch.object(github, 'request', return_value={'tree':[{'path':p} for p in paths]}), patch.object(github, 'pull_request', return_value={'number':1,'html_url':'https://github.com/pr'}) as submit:
+            lifecycle.publish('alice',self.stack)
+        self.assertEqual(list(submit.call_args.args[2]),[store.config_path('alice',self.stack)])
+
     def test_result_correlated_to_stack_commit_and_request(self):
         data = {'commit': SHA, 'repository': github.repository()}
         key = store.record('alice', self.key, 'validate', data)
@@ -130,6 +154,59 @@ class FoundationTests(unittest.TestCase):
             for path in ['/', '/new/stack', '/objects/' + self.key, '/objects/' + self.module, '/workflow-kit.zip']:
                 response = client.get('/terraform/workspace' + path)
                 self.assertEqual(response.status_code, 200, (path, response.data[:300]))
+
+    def test_customer_navigation_and_scoped_creation(self):
+        root = Path(__file__).resolve().parents[1]
+        app = Flask(__name__, template_folder=str(root / 'templates'))
+        app.secret_key = 'test'
+        app.register_blueprint(bp)
+        app.add_url_rule('/terraform', 'terraform', lambda: '')
+        app.jinja_env.globals.update(has_endpoint=lambda name: False, csrf_token=lambda: 'test')
+        from jinja2 import ChoiceLoader, DictLoader
+        app.jinja_loader = ChoiceLoader([DictLoader({'base.html': '{% block content %}{% endblock %}'}), app.jinja_loader])
+        client = app.test_client()
+        with client.session_transaction() as session:
+            session['user'] = 'alice'
+        other = store.save('alice', 'customer', 'different-customer', {})
+        other_env = store.save('alice', 'environment', 'other-dev', {'customer': other, 'type': 'Development'})
+        other_account = store.save('alice', 'account', 'other-account', {'customer': other, 'provider': 'aws'})
+        shared = store.save('alice', 'account', 'shared-account', {'provider': 'aws'})
+        foreign = store.save('bob', 'customer', 'private-customer', {})
+        prefix = '/terraform/workspace'
+        customer_page = client.get(prefix + '/objects/' + self.customer)
+        self.assertEqual(customer_page.status_code, 200)
+        self.assertIn(b'acme-dev', customer_page.data)
+        self.assertNotIn(b'other-dev', customer_page.data)
+        env_page = client.get(prefix + '/objects/' + self.environment)
+        self.assertIn(b'acme-dev-vpc', env_page.data)
+        path = prefix + '/new/stack?customer=' + self.customer + '&environment=' + self.environment
+        form = client.get(path)
+        self.assertEqual(form.status_code, 200)
+        self.assertIn(b'shared-account', form.data)
+        self.assertNotIn(b'other-account', form.data)
+        self.assertNotIn(b'other-dev', form.data)
+        payload = dict(self.data, name='second-vpc', inputs='{}', customer=other, environment=other_env)
+        response = client.post(path, data=payload)
+        self.assertEqual(response.status_code, 302)
+        created = next(s for s in store.objects('alice', 'stack') if s['name']=='second-vpc')
+        self.assertEqual(created['data']['customer'], self.customer)
+        self.assertEqual(created['data']['environment'], self.environment)
+        payload.update(name='blocked-vpc', account=other_account)
+        response = client.post(path, data=payload)
+        self.assertIn(b'different customer', response.data)
+        self.assertEqual(client.get(prefix + '/new/environment?customer=' + foreign).status_code, 404)
+        self.assertEqual(client.get(prefix + '/objects/' + foreign).status_code, 404)
+        self.assertEqual(client.get(prefix + '/new/stack?customer='+other+'&environment='+self.environment).status_code,404)
+        self.assertEqual(client.get(prefix + '/catalog/module').status_code, 200)
+        self.assertIn(b'shared-account', client.get(prefix + '/catalog/account').data)
+        for n in range(13):
+            store.save('alice','customer','customer-' + str(n),{})
+        listing = client.get(prefix + '/')
+        self.assertEqual(listing.data.count(b'mb-panel tf-customer-card'), 12)
+        self.assertIn(b'Next', listing.data)
+        filtered = client.get(prefix + '/?q=acme')
+        self.assertEqual(filtered.data.count(b'mb-panel tf-customer-card'), 1)
+        self.assertNotIn(b'different-customer', filtered.data)
 
     def test_workflow_schema_and_literal_inputs(self):
         path = Path(__file__).resolve().parents[1] / 'modules/terraform_stacks/workflows/environments/scripts/praxis_stack.py'

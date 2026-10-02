@@ -1,13 +1,9 @@
-{% extends "base.html" %}
+{% extends "terraform_workspace.html" %}
 {% block title %}Module Builder · Terraform · Praxis{% endblock %}
-{% block content %}
-<div class="tf-workspace terraform-module-builder">
-<aside class="tf-sidebar" aria-label="Terraform navigation"><a class="tf-section-link" href="{{ url_for('terraform') }}"><i class="fa-solid fa-cubes" aria-hidden="true"></i> Terraform <span aria-hidden="true">↗</span></a>{% if has_endpoint('terraform_stacks.index') %}<a class="tf-side-link" href="{{ url_for('terraform_stacks.index') }}"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Modules &amp; Stacks</a>{% endif %}<p class="tf-eyebrow">Authoring</p><a class="tf-side-link {% if view|default('registry') != 'drafts' %}active{% endif %}" href="{{ url_for('terraform_module_builder.index') }}"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Module Builder</a><a class="tf-side-link {% if view|default('') == 'drafts' %}active{% endif %}" href="{{ url_for('terraform_module_builder.index', view='drafts') }}"><i class="fa-regular fa-folder-open" aria-hidden="true"></i> Saved drafts</a><div class="tf-side-note"><i class="fa-solid fa-code" aria-hidden="true"></i><strong>Your code. Your defaults.</strong><p>Create reusable Terraform files for AWS and Google Cloud.</p></div></aside>
-<div class="tf-main">
+{% block terraform_content %}
 <header class="tf-heading"><div><p class="tf-eyebrow">Terraform / {{ 'Workspace' if view|default('') == 'drafts' else 'Authoring' }}</p><h1>{{ 'Saved drafts' if view|default('') == 'drafts' else 'Module Builder' }}</h1><p>{{ 'Pick up where you left off.' if view|default('') == 'drafts' else 'Turn a public module into your team’s building block.' }}</p></div><span class="tf-badge">{{ 'Local workspace' if view|default('') == 'drafts' else 'AWS + Google Cloud' }}</span></header>
 {% if step > 1 %}<ol class="mb-steps" aria-label="Authoring progress">{% for label in ['Find module', 'Choose source', 'Customize', 'Save & export'] %}<li {% if step == loop.index %}aria-current="step" class="active"{% elif step > loop.index %}class="complete"{% endif %}><span>{{ loop.index }}</span>{{ label }}</li>{% endfor %}</ol>{% endif %}
 {% for category, message in get_flashed_messages(with_categories=true) %}<div class="alert alert-{{ category }}" role="status">{{ message }}</div>{% endfor %}
 {% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
 {% block builder %}{% endblock %}
-</div></div>
 {% endblock %}

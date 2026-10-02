@@ -1,7 +1,7 @@
-{% extends "base.html" %}
+{% extends "terraform_workspace.html" %}
 {% block title %}Terraform · Praxis{% endblock %}
-{% block content %}
-<div class="tf-workspace tf-overview">
+{% block terraform_content %}
+<div class="tf-overview">
 <header class="tf-heading"><div><p class="tf-eyebrow">Infrastructure authoring</p><h1>Terraform</h1><p>Build reusable infrastructure, starting with the modules you trust.</p></div><span class="tf-badge"><i class="fa-solid fa-code" aria-hidden="true"></i> Git-backed infrastructure</span></header>
 <div class="tf-overview-grid">{% for item in category_items %}<a class="tf-tool-card" href="{{ url_for(item.home_endpoint) }}"><span class="tf-tool-icon"><i class="{{ item.icon }}" aria-hidden="true"></i></span><span class="tf-eyebrow">Create &amp; customize</span><h2>{{ item.title }}</h2><p>{{ item.description }}</p><div class="tf-cloud-tags"><span>AWS</span><span>Google Cloud</span></div><strong class="tf-card-action">Open {{ item.title }} <span aria-hidden="true">→</span></strong></a>{% endfor %}<section class="tf-overview-note"><span class="tf-eyebrow">Your workflow</span><h2>Module → Version → Stack → Git.</h2><ol><li><strong>Find your starting point</strong><span>Explore modules for AWS and Google Cloud.</span></li><li><strong>Make it yours</strong><span>Choose a version, inputs, defaults, and outputs.</span></li><li><strong>Keep your work</strong><span>Save a local draft and export Terraform files.</span></li></ol></section></div>
 </div>

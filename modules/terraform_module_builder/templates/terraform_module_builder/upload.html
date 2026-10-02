@@ -1,0 +1,11 @@
+{% extends 'terraform_module_builder/layout.html' %}
+{% block builder %}
+<section class="mb-panel"><p class="tf-eyebrow">Bring your own code</p><h2>Upload a module</h2><p>Upload your Terraform/OpenTofu module as a ZIP. It becomes a saved draft you can edit, sanity-test and submit to Git. No files are executed during upload.</p>
+<form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<label class="form-label" for="upload-name">Module name</label><input class="form-control mb-3" id="upload-name" name="name" required maxlength="80" pattern="[A-Za-z_][A-Za-z0-9_-]*" value="{{ request.form.get('name','') }}" placeholder="platform-vpc">
+<label class="form-label" for="upload-provider">Cloud provider</label><select class="form-select mb-3" id="upload-provider" name="provider" required><option value="">Choose…</option>{% for value,label in [('aws','AWS'),('google','Google Cloud'),('unknown','Cloud-neutral / other')] %}<option value="{{ value }}" {% if request.form.get('provider')==value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<label class="form-label" for="upload-archive">Module ZIP</label><input type="file" class="form-control mb-3" id="upload-archive" name="archive" accept=".zip,application/zip" required>
+<p class="small text-muted">Up to 2.5 MB compressed, 2 MB of UTF-8 text and 200 files. Include one module, with its Terraform files at the root or inside a containing folder. Nested local modules and text assets are preserved.</p><p class="small text-muted">Git metadata, GitHub workflows, local state, plan files, .env files and .tfvars values are excluded. Review the remaining files for credentials before submitting to Git.</p>
+<button class="btn btn-primary">Upload as draft</button> <a href="{{ url_for('terraform_module_builder.index',view='drafts') }}">Cancel</a>
+</form></section>
+{% endblock %}

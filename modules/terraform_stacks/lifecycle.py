@@ -1,4 +1,6 @@
 """Git-backed stack lifecycle. This process never executes Terraform."""
+import base64
+from pathlib import Path
 import hashlib
 import json
 import os
@@ -16,18 +18,58 @@ def digest(document):
 
 def publish(owner, stack):
     definition = store.definition(owner, stack)
-    pr = github.pull_request(github.repository(), 'praxis/stack-' + uuid.uuid4().hex,
-        {store.config_path(owner, stack): yaml.safe_dump(definition, sort_keys=False)}, 'Configure stack ' + stack['name'])
+    repo = github.repository()
+    try:
+        _, sha = github.head(repo)
+    except github.RepositoryConflict:
+        # Only initialize a repository whose commit listing confirms it is empty.
+        try:
+            commits = github.request('GET', github.repo_path(repo) + '/commits', params={'per_page': 1})
+        except github.RepositoryConflict:
+            commits = []
+        if commits:
+            raise ValueError('The stack repository has a conflict; resolve it in GitHub before publishing.')
+        github.request('PUT', github.repo_path(repo) + '/contents/README.md', json={
+            'message': 'Initialize Praxis stack configuration repository',
+            'content': base64.b64encode(b'# Praxis environments\n\nStack configuration managed through reviewed pull requests.\n').decode()})
+        _, sha = github.head(repo)
+    tree = github.request('GET', github.repo_path(repo) + '/git/trees/' + sha, params={'recursive': 1})
+    if tree.get('truncated'):
+        raise ValueError('Repository tree is too large to safely inspect workflow setup.')
+    present = {p['path'] for p in tree.get('tree', [])}
+    root = Path(__file__).parent / 'workflows' / 'environments'
+    files = {store.config_path(owner, stack): yaml.safe_dump(definition, sort_keys=False)}
+    for path in root.rglob('*'):
+        if path.is_file() and '__pycache__' not in path.parts:
+            name = path.relative_to(root).as_posix()
+            if name not in present:
+                files[name] = path.read_text()
+    try:
+        pr = github.pull_request(repo, 'praxis/stack-' + uuid.uuid4().hex, files, 'Configure stack ' + stack['name'])
+    except ValueError as exc:
+        raise ValueError(f'Stack configuration PR for {repo} could not be created. Installing workflow files requires Workflows write permission. {exc}') from exc
     data = dict(stack['data'], pull_request={'number': pr['number'], 'url': pr['html_url'], 'definition_hash': digest(definition)})
     store.save(owner, 'stack', stack['name'], data, stack['id'], stack['revision'])
     return pr
 
 
 def merged_revision(owner, stack):
-    branch, sha = github.head(github.repository())
-    actual = yaml.safe_load(github.contents(github.repository(), store.config_path(owner, stack), sha))
+    repo = github.repository()
+    try:
+        branch, sha = github.head(repo)
+    except github.RepositoryConflict as exc:
+        raise ValueError(f'Stack configuration repository {repo} is not initialized. Use Submit configuration PR to initialize it and include the stack workflow, merge that PR in GitHub, then validate. No validation was started.') from exc
+    try:
+        actual = yaml.safe_load(github.contents(repo, store.config_path(owner, stack), sha))
+    except github.ResourceNotFound as exc:
+        raise ValueError(f'This stack is not available on the default branch of {repo}. Submit and merge its configuration PR before validating.') from exc
     if actual != store.definition(owner, stack):
         raise ValueError('The Git definition differs from this stack. Submit and merge its configuration PR first.')
+    try:
+        github.contents(repo, '.github/workflows/praxis-stack.yml', sha)
+        github.contents(repo, 'scripts/praxis_stack.py', sha)
+    except github.ResourceNotFound as exc:
+        raise ValueError(f'Stack workflow setup is missing in {repo}. Submit and merge a configuration PR to install it before validating.') from exc
     return branch, sha
 
 
@@ -55,7 +97,7 @@ def start(owner, stack, operation, plan=None):
     if operation == 'apply':
         if not plan or plan['operation'] != 'plan' or plan['status'] != 'approved':
             raise ValueError('Approve a successful plan before applying it.')
-        if plan['data']['commit'] != sha or plan['data']['definition_hash'] != definition_hash:
+        if plan['data']['commit'] != sha or plan['data']['definition_hash'] != definition_hash or plan['data'].get('repository', github.repository()) != github.repository():
             raise ValueError('Configuration changed after planning. Create and approve a new plan.')
         if time.time() - plan['created'] > 86400:
             raise ValueError('The plan expired. Create and approve a new plan.')
@@ -118,7 +160,7 @@ def approve(owner, stack, key):
     if not plan or plan['operation'] != 'plan' or plan['status'] != 'planned':
         raise ValueError('Only a successful, unapplied plan can be approved.')
     _, sha = merged_revision(owner, stack)
-    if sha != plan['data']['commit'] or digest(store.definition(owner, stack)) != plan['data']['definition_hash'] or time.time() - plan['created'] > 86400:
+    if plan['data'].get('repository', github.repository()) != github.repository() or sha != plan['data']['commit'] or digest(store.definition(owner, stack)) != plan['data']['definition_hash'] or time.time() - plan['created'] > 86400:
         raise ValueError('This plan is stale. Request a new plan.')
     data = dict(plan['data'], approval={'by': owner, 'at': time.time(), 'commit': sha, 'plan_sha256': plan['data']['result']['plan_sha256']})
     with store.connection() as db:

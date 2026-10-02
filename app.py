@@ -148,13 +148,9 @@ if os.path.isdir(module_template_path):
 
 # Make has_endpoint always available to templates
 def has_endpoint(name: str) -> bool:
-    try:
-        url_for(name)
-        return True
-    except BuildError:
-        return False
-    except Exception:
-        return False
+    # Existence does not require the values needed to build a particular URL.
+    return name in app.view_functions
+
 
 app.jinja_env.globals.update(has_endpoint=has_endpoint)
 
