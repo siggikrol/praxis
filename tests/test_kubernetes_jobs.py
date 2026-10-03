@@ -14,7 +14,8 @@ class KubernetesJobsTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.env=patch.dict(os.environ,PRAXIS_TERRAFORM_MODULE_BUILDER_DB=self.temp.name+'/db',
-                            PRAXIS_TEST_BACKEND='kubernetes',PRAXIS_TOFU_IMAGE='runner:test')
+                            PRAXIS_TEST_BACKEND='kubernetes',PRAXIS_TOFU_IMAGE='runner:test',
+                            PRAXIS_TOFU_IMAGE_PULL_POLICY='Never')
         self.env.start()
     def tearDown(self):
         self.env.stop();self.temp.cleanup()
@@ -26,6 +27,7 @@ class KubernetesJobsTests(unittest.TestCase):
         self.assertFalse(spec['automountServiceAccountToken'])
         self.assertEqual(spec['restartPolicy'],'Never')
         self.assertEqual(spec['containers'][0]['command'],['python','/runner/job.py'])
+        self.assertEqual(spec['containers'][0]['imagePullPolicy'],'Never')
         self.assertTrue(spec['containers'][0]['securityContext']['readOnlyRootFilesystem'])
         self.assertFalse(any('hostPath' in v or 'persistentVolumeClaim' in v for v in spec['volumes']))
         with self.assertRaises(ValueError): jobs.payload_bytes({'files':{'file':'x'*3_000_001}})

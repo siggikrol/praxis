@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: praxis-runner-cache
+  namespace: praxis-runs
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: praxis-runner-cache}
+  template:
+    metadata:
+      labels: {app: praxis-runner-cache}
+    spec:
+      serviceAccountName: praxis-test
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: cache
+          image: praxis-tofu-runner:kubernetes
+          imagePullPolicy: Never
+          command: [python, -c, "import time; time.sleep(10**9)"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {cpu: 50m, memory: 64Mi}

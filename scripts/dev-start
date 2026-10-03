@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$root"
+
+if [ -x .venv/bin/python ]; then
+  python_command=.venv/bin/python
+else
+  python_command=python3
+fi
+
+exec "$python_command" deploy/kubernetes/deploy.py "$@"

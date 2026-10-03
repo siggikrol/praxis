@@ -4,7 +4,7 @@ import zipfile
 
 from flask import current_app, Blueprint, abort, flash, redirect, render_template, request, send_file, session, url_for
 
-from . import authoring, registry, store, testing
+from . import authoring, draft_wrappers, mock_setup, registry, release_lifecycle, store, testing
 
 bp = Blueprint('terraform_module_builder', __name__, url_prefix='/modules', template_folder='templates')
 
@@ -13,6 +13,25 @@ def owner():
     if not session.get('user'):
         abort(401)
     return str(session['user'])
+
+
+def versioned_dependencies(files):
+    dependencies = draft_wrappers.interface(files)['dependencies']
+    result = []
+    for dependency in dependencies:
+        dependency = dict(dependency, available_versions=[], latest_version='', version_lookup_error='')
+        source = str(dependency.get('source') or '')
+        if len(source.split('/')) == 3:
+            try:
+                versions, latest = registry.available_versions(source)
+                current = str(dependency.get('version') or '')
+                if current and current not in versions:
+                    versions.append(current)
+                dependency.update(available_versions=versions, latest_version=latest)
+            except registry.RegistryError:
+                dependency['version_lookup_error'] = 'Published versions are temporarily unavailable.'
+        result.append(dependency)
+    return result
 
 
 @bp.before_request
@@ -119,7 +138,144 @@ def draft(key):
     if 'terraform_stacks.manage_module' in current_app.view_functions:
         from modules.terraform_stacks import store as catalog_store
         linked_modules = [m for m in catalog_store.objects(owner(), 'module') if m['data'].get('submission', {}).get('draft') == key]
-    return render_template('terraform_module_builder/draft.html', draft=item, error=error, step=4, view='drafts', linked_modules=linked_modules, test_run=testing.latest(owner(), key)), status
+    source=item['document'].get('source',{})
+    parent=source.get('wrapped_draft',{}) if source.get('mode') == 'draft-wrapper' else {}
+    parent_draft=store.get(owner(),parent.get('id')) if parent.get('id') else None
+    test_run=testing.latest(owner(), key)
+    release_history=store.releases(owner(), key)
+    return render_template('terraform_module_builder/draft.html', draft=item, error=error, step=4, view='drafts', linked_modules=linked_modules,
+                           test_run=test_run, dependencies=versioned_dependencies(item['document']['files']),
+                           parent_draft=parent_draft, parent=parent, releases=release_history,
+                           release_state=release_lifecycle.wrapper_release_state(owner(),item),
+                           release_ready=bool(test_run and test_run['status'] == 'passed'
+                               and test_run['revision'] == item['revision']
+                               and test_run.get('mode') != 'format'
+                               and test_run.get('result',{}).get('check_suite') == 2)), status
+
+
+def available_wrapper_name(item):
+    existing={draft['name'] for draft in store.list_drafts(owner())}
+    base=(item['name'][:72]+'_wrapper')
+    if base not in existing:
+        return base
+    number=2
+    while True:
+        suffix=f'_{number}'
+        candidate=base[:80-len(suffix)]+suffix
+        if candidate not in existing:
+            return candidate
+        number += 1
+
+
+@bp.route('/drafts/<key>/wrap',methods=['GET','POST'])
+def wrap_draft(key):
+    item=store.get(owner(),key)
+    if not item:
+        abort(404)
+    if item['document'].get('source', {}).get('mode') == 'draft-wrapper':
+        abort(404)
+    available_releases=release_lifecycle.released_versions(owner(),key)
+    values=request.form if request.method == 'POST' else {
+        'name':available_wrapper_name(item),
+        'release_id':available_releases[0]['id'] if available_releases else '',
+    }
+    selected_release=next(
+        (release for release in available_releases
+         if release['id'] == values.get('release_id')),
+        available_releases[0] if available_releases else None,
+    )
+    error=None
+    if request.method == 'POST':
+        try:
+            if not available_releases:
+                raise ValueError(
+                    f'{item["name"]} has not been released. '
+                    'Test and release the module before creating a deployment wrapper.'
+                )
+            if request.form.get('revision',type=int) != item['revision']:
+                raise ValueError('The source draft changed. Reload and review its current interface.')
+            wrapper_name=request.form.get('name','').strip()
+            if any(draft['name'] == wrapper_name for draft in store.list_drafts(owner())):
+                raise ValueError('A draft already uses this wrapper name. Choose a different name or remove the existing draft first.')
+            release=store.get_release(owner(),request.form.get('release_id',''))
+            if (not release or release['status'] != 'published' or release['draft_id'] != item['id']
+                    or release['layer'] != 'organization-root'):
+                raise ValueError('Choose a published release of this organization module.')
+            released_files=release['source_metadata'].get('files')
+            if not isinstance(released_files,dict) or not released_files:
+                raise ValueError('This older release has no saved interface snapshot. Release the current revision before creating its wrapper.')
+            parent_name=release['source_metadata'].get('draft_name') or item['name']
+            files,warnings,metadata=draft_wrappers.build_released(
+                released_files,wrapper_name,release,parent_name)
+            document={'files':files,'warnings':warnings,'source':{
+                'provider':item['provider'],'address':draft_wrappers.release_source(release),
+                'version':release['version'],'repository':release['repository'],
+                'repository_url':release['repository_url'],'mode':'draft-wrapper',
+                'module_name':metadata['wrapper_module_name'],
+                'wrapped_draft':{'id':item['id'],'name':parent_name,'revision':release['draft_revision']},
+                'wrapped_release':{'id':release['id'],'version':release['version'],'tag':release['tag'],
+                    'commit':release['commit_sha'],'repository':release['repository'],
+                    'repository_url':release['repository_url']},
+                'dependencies':metadata['dependencies'],
+            }}
+            created=store.create(owner(),wrapper_name,document)
+            flash(f'Created deployment wrapper from {item["name"]} {release["tag"]}.','success')
+            return redirect(url_for('.draft',key=created))
+        except (ValueError,registry.RegistryError) as exc:
+            error=str(exc)
+    return render_template('terraform_module_builder/wrap_draft.html',draft=item,values=values,
+                           releases=available_releases,selected_release=selected_release,
+                           error=error,step=3,view='drafts'), (400 if error else 200)
+
+
+@bp.post('/drafts/<key>/modules/<module_name>/version')
+def update_module_version(key,module_name):
+    item=store.get(owner(),key)
+    if not item:
+        abort(404)
+    try:
+        if item['document'].get('source',{}).get('mode') == 'draft-wrapper':
+            raise ValueError('Deployment wrappers can only update to a published organization module release.')
+        revision=request.form.get('revision',type=int)
+        if revision != item['revision']:
+            raise ValueError('The draft changed. Reload before updating its module version.')
+        dependencies=draft_wrappers.interface(item['document']['files'])['dependencies']
+        dependency=next((entry for entry in dependencies if entry['name'] == module_name),None)
+        if not dependency:
+            raise ValueError('The module dependency is no longer present in this draft.')
+        files,version=draft_wrappers.update_module_version(
+            item['document']['files'],module_name,request.form.get('module_version',''))
+        item['document']['files']=files
+        source=item['document'].get('source',{})
+        if source.get('mode') == 'draft-wrapper' and source.get('address') == dependency['source']:
+            source['version']=version
+        if not store.update(owner(),key,revision,item['document']):
+            raise ValueError('The draft changed while its module version was being updated. Reload and try again.')
+        flash(f'Updated module.{module_name} to {version}. Run a check for the new draft revision.','success')
+        return redirect(url_for('.draft',key=key)+'#test-panel')
+    except ValueError as exc:
+        linked_modules=[]
+        return render_template('terraform_module_builder/draft.html',draft=item,error=str(exc),step=4,view='drafts',
+                               linked_modules=linked_modules,test_run=testing.latest(owner(),key),
+                               dependencies=versioned_dependencies(item['document']['files'])),400
+
+
+@bp.post('/drafts/<key>/upgrade-release')
+def upgrade_wrapper_release(key):
+    item=store.get(owner(),key)
+    if not item:
+        abort(404)
+    try:
+        updated,job,test_error=release_lifecycle.upgrade_wrapper(
+            owner(),key,request.form.get('revision',type=int),request.form.get('release_id',''))
+        if test_error:
+            flash(f'Wrapper updated to revision {updated["revision"]}, but its automatic check could not start: {test_error}','warning')
+            return redirect(url_for('.draft',key=key)+'#test-panel')
+        flash(f'Wrapper updated to revision {updated["revision"]}. Its saved test mode is running again.','success')
+        return redirect(url_for('.test_results',key=key))
+    except ValueError as exc:
+        flash(str(exc),'warning')
+        return redirect(url_for('.draft',key=key))
 
 
 @bp.post('/drafts/<key>/test')
@@ -131,8 +287,15 @@ def test_draft(key):
         if request.form.get('revision', type=int) != item['revision']:
             raise ValueError('The draft changed. Reload and review the latest saved revision before testing.')
         mode = request.form.get('mode')
-        if mode not in ('validate', 'mock', 'format'):
+        if mode not in ('validate', 'mock', 'format', 'generate'):
             raise ValueError('Choose validation or mock testing.')
+        if mode == 'generate':
+            generated = mock_setup.generate(item['document']['files'])
+            test_values = {name:json.dumps(generated[name], indent=2)
+                           for name in ('variables', 'data_defaults', 'expected_outputs')}
+            return render_template('terraform_module_builder/draft.html', draft=item, error=None, step=4,
+                                   view='drafts', test_run=testing.latest(owner(), key), test_values=test_values,
+                                   mock_setup=generated)
         settings = {}
         for name in ('variables', 'data_defaults', 'expected_outputs'):
             settings[name] = json.loads(request.form.get(name, '{}') or '{}')
@@ -204,7 +367,7 @@ def upload():
             files, warnings = import_zip(uploaded.stream.read(2_500_001))
             key = store.create(owner(), name, {'files': files, 'warnings': warnings,
                 'source': {'address': 'Uploaded module', 'version': 'local', 'mode': 'upload', 'provider': provider}})
-            flash('Module uploaded as a draft. Review the files, run a sanity check, then use Submit to Git.', 'success')
+            flash('Module uploaded as a draft. Review the files and run a sanity check.', 'success')
             return redirect(url_for('.draft', key=key))
         except ValueError as exc:
             error = str(exc)

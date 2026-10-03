@@ -12,11 +12,17 @@ import yaml
 from . import github, store
 
 
+def _legacy_workflow_only(stack):
+    if stack.get('data', {}).get('wrapper_release_id'):
+        raise ValueError('Cloud workflows are not part of the released-wrapper Stack model yet.')
+
+
 def digest(document):
     return hashlib.sha256(json.dumps(document, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def publish(owner, stack):
+    _legacy_workflow_only(stack)
     definition = store.definition(owner, stack)
     repo = github.repository()
     try:
@@ -54,6 +60,7 @@ def publish(owner, stack):
 
 
 def merged_revision(owner, stack):
+    _legacy_workflow_only(stack)
     repo = github.repository()
     try:
         branch, sha = github.head(repo)
@@ -74,6 +81,7 @@ def merged_revision(owner, stack):
 
 
 def execution_ready(owner, stack):
+    _legacy_workflow_only(stack)
     account = store.get(owner, stack['data']['account'], 'account')
     if os.getenv('PRAXIS_CLOUD_EXECUTION_ENABLED', '0') != '1':
         raise ValueError('Cloud execution is disabled. Configure an AWS execution account and GitHub environment before enabling it.')
@@ -85,6 +93,7 @@ def execution_ready(owner, stack):
 
 
 def start(owner, stack, operation, plan=None):
+    _legacy_workflow_only(stack)
     if operation not in ('validate', 'plan', 'apply'):
         raise ValueError('Unknown operation.')
     if not github.connected():
@@ -128,6 +137,7 @@ def start(owner, stack, operation, plan=None):
 
 
 def refresh(owner, stack):
+    _legacy_workflow_only(stack)
     for run in store.runs(owner, stack['id']):
         if run['status'] not in ('requesting', 'queued', 'in_progress'):
             continue
@@ -155,6 +165,7 @@ def refresh(owner, stack):
 
 
 def approve(owner, stack, key):
+    _legacy_workflow_only(stack)
     execution_ready(owner, stack)
     plan = next((r for r in store.runs(owner, stack['id']) if r['id'] == key), None)
     if not plan or plan['operation'] != 'plan' or plan['status'] != 'planned':

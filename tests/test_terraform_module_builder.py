@@ -90,11 +90,56 @@ class BuilderTests(unittest.TestCase):
             response=client.post('/modules/customize',data={'source':META['address'],'version':'1.2.3','name':'platform-eks','mode':'wrapper'})
         self.assertEqual(response.status_code,302)
         location=response.location
-        self.assertEqual(client.get(location).status_code,200)
+        versions=patch.object(registry,'available_versions',return_value=(['1.3.0','1.2.3'],'1.3.0'))
+        versions.start(); self.addCleanup(versions.stop)
+        draft_page=client.get(location)
+        self.assertEqual(draft_page.status_code,200)
+        self.assertIn(b'<select class="form-select form-select-sm font-monospace"',draft_page.data)
+        self.assertIn(b'1.3.0 (latest)',draft_page.data)
         key=location.rsplit('/',1)[-1]
         item=store.get('alice',key)
+        unreleased=client.get(location+'/wrap')
+        self.assertEqual(unreleased.status_code,200)
+        self.assertIn(b'platform-eks has not been released.',unreleased.data)
+        self.assertIn(b'Test and release the module before creating a deployment wrapper.',unreleased.data)
+        self.assertNotIn(b'Published source',unreleased.data)
+        self.assertNotIn(b'Registry source',unreleased.data)
+        self.assertNotIn(b'Spacelift source',unreleased.data)
+        release=store.reserve_release('alice',item,'organization-root','1.2.3','v1.2.3',
+            'acme/platform-eks',META['address'],META['version'])
+        release=store.update_release('alice',release['id'],'published','a'*40)
+        released_page=client.get(location+'/wrap')
+        self.assertEqual(released_page.status_code,200)
+        for value in (b'Parent module',b'platform-eks',b'Release',b'v1.2.3',
+                      b'Source',b'Praxis managed',b'Git tag',b'Upstream',
+                      META['address'].encode(),b'Upstream version',b'1.2.3'):
+            self.assertIn(value,released_page.data)
+        self.assertNotIn(b'Published source',released_page.data)
+        self.assertNotIn(b'Registry source',released_page.data)
+        self.assertNotIn(b'Spacelift source',released_page.data)
+        wrapped=client.post(location+'/wrap',data={'revision':'1','name':'eks_deployment',
+            'release_id':release['id']})
+        self.assertEqual(wrapped.status_code,302)
+        deployment=store.get('alice',wrapped.location.rsplit('/',1)[-1])
+        self.assertEqual(deployment['document']['source']['wrapped_draft']['id'],key)
+        self.assertEqual(deployment['document']['source']['module_name'],'platform_eks')
+        self.assertEqual(deployment['document']['source']['repository_url'],
+                         'https://github.com/acme/platform-eks')
+        self.assertIn('module "platform_eks"',deployment['document']['files']['main.tf'])
+        self.assertIn('git::https://github.com/acme/platform-eks.git?ref=v1.2.3',deployment['document']['files']['main.tf'])
+        deployment_location=wrapped.location
+        updated=client.post(deployment_location+'/modules/upstream/version',data={'revision':'1','module_version':'1.2.4'})
+        self.assertEqual(updated.status_code,400)
+        deployment=store.get('alice',deployment_location.rsplit('/',1)[-1])
+        self.assertEqual(deployment['revision'],1)
+        self.assertEqual(deployment['document']['source']['version'],'1.2.3')
         with patch('modules.terraform_module_builder.testing.start', return_value='job') as start:
             self.assertEqual(client.post(location+'/test',data={'revision':'0','mode':'validate'}).status_code,400)
+            start.assert_not_called()
+            generated=client.post(location+'/test',data={'revision':'1','mode':'generate'})
+            self.assertEqual(generated.status_code,200)
+            self.assertIn(b'Mock setup generated',generated.data)
+            self.assertIn(b'example-name',generated.data)
             start.assert_not_called()
             self.assertEqual(client.post(location+'/test',data={'revision':'1','mode':'mock','variables':'{"name":"demo"}'}).status_code,302)
             self.assertEqual(start.call_args.args[3]['variables'], {'name':'demo'})
@@ -103,6 +148,19 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(client.post(location,data=data).status_code,302)
         self.assertEqual(client.post(location,data=data).status_code,409)
         self.assertEqual(client.post(location,data=data).status_code,409)
+        current=store.get('alice',key)
+        latest=store.reserve_release('alice',current,'organization-root','1.3.0','v1.3.0',
+            'acme/platform-eks',META['address'],META['version'])
+        latest=store.update_release('alice',latest['id'],'published','b'*40)
+        releases_page=client.get(location+'/wrap').data.decode()
+        self.assertRegex(releases_page,rf'<option value="{latest["id"]}"[^>]*selected')
+        self.assertIn(f'<option value="{release["id"]}"',releases_page)
+        self.assertIn('v1.3.0 (latest)',releases_page)
+        older_wrapper=client.post(location+'/wrap',data={
+            'revision':'2','name':'eks_previous_release','release_id':release['id']})
+        self.assertEqual(older_wrapper.status_code,302)
+        older=store.get('alice',older_wrapper.location.rsplit('/',1)[-1])
+        self.assertIn('?ref=v1.2.3',older['document']['files']['main.tf'])
         download=client.get(location+'/download')
         with zipfile.ZipFile(io.BytesIO(download.data)) as z:
             self.assertIn('renamed-eks/praxis-source.json', z.namelist())
@@ -112,6 +170,7 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(client.post(location+'/delete',data={'revision':'1','confirm':'delete'}).status_code,409)
         with client.session_transaction() as s: s['user']='bob'
         self.assertEqual(client.get(location).status_code,404)
+        self.assertEqual(client.get(location+'/wrap').status_code,404)
         self.assertEqual(client.get(location+'/download').status_code,404)
         self.assertEqual(client.get(location+'/tests').status_code,404)
         self.assertEqual(client.post(location+'/test',data={'revision':'2','mode':'validate'}).status_code,404)
@@ -126,3 +185,10 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(client.get(location+'/download').status_code,404)
         app.config['WTF_CSRF_ENABLED']=True
         self.assertEqual(client.post('/modules/customize',data={}).status_code,400)
+
+    def test_available_versions_puts_latest_first(self):
+        metadata=dict(META,version='1.3.0',versions=['1.0.0','invalid','1.2.3','1.3.0'])
+        with patch.object(registry,'details',return_value=metadata):
+            versions,latest=registry.available_versions(META['address'])
+        self.assertEqual(versions,['1.3.0','1.2.3','1.0.0'])
+        self.assertEqual(latest,'1.3.0')

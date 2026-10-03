@@ -53,7 +53,7 @@ def objects(owner, kind):
         return [decode(r) for r in db.execute('SELECT * FROM tf_objects WHERE owner=? AND kind=? ORDER BY name', (owner, kind))]
 
 
-def validate(owner, kind, name, data):
+def validate(owner, kind, name, data, key=None):
     if kind not in KINDS or not SLUG.fullmatch(name):
         raise ValueError('Use a lowercase name with letters, numbers and hyphens (up to 63 characters).')
     if kind == 'module':
@@ -68,13 +68,23 @@ def validate(owner, kind, name, data):
     elif kind == 'account':
         if data.get('customer'):
             get(owner, data['customer'], 'customer')
-        if data.get('provider') != 'aws':
-            raise ValueError('Stack execution currently supports AWS only.')
-        if data.get('account_id') and not re.fullmatch(r'\d{12}', data['account_id']):
+        if data.get('environment'):
+            environment = get(owner, data['environment'], 'environment')
+            if environment['data'].get('customer') != data.get('customer'):
+                raise ValueError('The environment belongs to a different customer.')
+        if data.get('provider') not in ('aws', 'google'):
+            raise ValueError('Choose AWS or Google Cloud.')
+        if data.get('provider') == 'aws' and data.get('account_id') and not re.fullmatch(r'\d{12}', data['account_id']):
             raise ValueError('AWS account ID must contain 12 digits, or leave it empty until connected.')
+        if data.get('provider') == 'google' and data.get('account_id') and not re.fullmatch(r'[a-z][a-z0-9-]{4,62}', data['account_id']):
+            raise ValueError('Google Cloud project ID must be a lowercase project identifier.')
         if data.get('execution_environment') and not SLUG.fullmatch(data['execution_environment']):
             raise ValueError('Execution environment must be a lowercase slug.')
     elif kind == 'stack':
+        if data.get('wrapper_release_id') or data.get('wrapper_release'):
+            from . import stack_model
+            stack_model.prepare(owner, data, key)
+            return
         customer = get(owner, data.get('customer'), 'customer')
         environment = get(owner, data.get('environment'), 'environment')
         account = get(owner, data.get('account'), 'account')
@@ -100,8 +110,8 @@ def validate(owner, kind, name, data):
 
 def save(owner, kind, name, data, key=None, revision=None):
     previous = get(owner, key, kind) if key else None
-    validate(owner, kind, name, data)
-    if kind == 'stack' and previous and all(previous['data'].get(k) == data.get(k) for k in ('module', 'version')):
+    validate(owner, kind, name, data, key)
+    if kind == 'stack' and data.get('module') and previous and all(previous['data'].get(k) == data.get(k) for k in ('module', 'version')):
         # A moved upstream tag must never silently change an existing stack's code.
         data['module_commit'] = previous['data']['module_commit']
     try:
@@ -138,6 +148,9 @@ def update_run(owner, key, status, data):
 
 def definition(owner, stack):
     d = stack['data']
+    if d.get('wrapper_release_id'):
+        from . import stack_model
+        return stack_model.generated_deployment(owner, stack)
     customer = get(owner, d['customer'], 'customer')
     environment = get(owner, d['environment'], 'environment')
     account = get(owner, d['account'], 'account')
@@ -151,4 +164,6 @@ def definition(owner, stack):
 
 def config_path(owner, stack):
     d = definition(owner, stack)
+    if d.get('schema_version') == 2:
+        return f"{d['context']['customer']}/{d['context']['environment']}/{d['stack']['name']}/stack.yaml"
     return f"{d['customer']}/{d['environment']}/{d['name']}/stack.yaml"

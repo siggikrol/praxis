@@ -48,7 +48,8 @@ def manifest(key, draft_id):
                 'securityContext': {'runAsNonRoot': True, 'runAsUser': 65532, 'runAsGroup': 65532,
                                     'fsGroup': 65532, 'seccompProfile': {'type': 'RuntimeDefault'}},
                 'containers': [{
-                    'name': 'runner', 'image': os.environ['PRAXIS_TOFU_IMAGE'], 'imagePullPolicy': 'IfNotPresent',
+                    'name': 'runner', 'image': os.environ['PRAXIS_TOFU_IMAGE'],
+                    'imagePullPolicy': os.getenv('PRAXIS_TOFU_IMAGE_PULL_POLICY', 'IfNotPresent'),
                     'command': ['python', '/runner/job.py'],
                     'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True,
                                         'capabilities': {'drop': ['ALL']}},

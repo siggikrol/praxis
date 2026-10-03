@@ -4,15 +4,17 @@ Praxis is starting fresh as a workspace for creating Terraform modules. The defa
 
 ## Start locally with Rancher Desktop
 
-Enable Kubernetes and the **Moby (dockerd)** container engine in Rancher Desktop. Install the Python requirements in a virtual environment. Keep your login settings in `.env` as described below, then deploy:
+Enable Kubernetes and the **Moby (dockerd)** container engine in Rancher Desktop. Install the Python requirements in a virtual environment, then start the complete development environment:
 
 ```sh
-python deploy/kubernetes/deploy.py --auth-from-compose
+./scripts/dev-start
 ```
 
-This builds both images in Rancher Desktop and deploys Praxis with a persistent volume. The script always names the `rancher-desktop` context; it does not change your current Kubernetes or Docker context. Open **http://praxis.localhost:8088** on this installation. The hostname routes through Traefik; its HTTP port depends on your Rancher Desktop configuration.
+This builds both images in Rancher Desktop, creates the namespaces, local login secret and persistent volume, and deploys Praxis. It also keeps the test runner image loaded so checks do not fail after the unused-image cleanup runs. If `.env` does not exist, the script creates it with a random Flask secret and the default local login. The script always names the `rancher-desktop` context; it does not change your current Kubernetes or Docker context. Open **http://praxis.localhost:8088** on this installation. The hostname routes through Traefik; its HTTP port depends on your Rancher Desktop configuration.
 
-For subsequent code changes, run `python deploy/kubernetes/deploy.py` to rebuild and redeploy while retaining login settings and drafts. Terraform Module Builder and Modules & Stacks are enabled. No AWS or Google credentials are required.
+For subsequent code changes, run `./scripts/dev-start` again to rebuild and redeploy while retaining login settings and drafts. Terraform Module Builder and Modules & Stacks are enabled. No AWS or Google credentials are required.
+
+To preserve login settings from an existing Docker Desktop Compose installation during a one-time migration, start with `./scripts/dev-start --auth-from-compose`.
 
 For a **one-time migration from Docker Desktop Compose**, with the source containers running and all tests finished:
 
@@ -83,6 +85,14 @@ Saving checks HCL syntax only. The optional OpenTofu checks described below vali
 
 Module package names must identify the technology and purpose, for example `terraform_module_builder`. Avoid generic names such as `builder` or `manager`.
 
+### Root modules and deployment wrappers
+
+A saved root module can wrap a public upstream module while retaining the Praxis interface. Its draft page lists every root-level `module` call with the source, version and file where it was declared. After the exact root revision passes validation or a mock test, **Release** commits that snapshot to its Praxis-managed GitHub repository and creates the next semantic tag. **Create deployment wrapper** defaults to the latest immutable Praxis release and allows any earlier release to be selected. Praxis creates a separate draft that calls the tag-pinned Git source, carries forward all variable declarations and provider/Terraform configuration, and forwards every declared output. The new draft records its parent release, repository URL, commit, tag, draft, revision and upstream provenance so the layers remain visible.
+
+For example, `pds_network` continues to call `terraform-aws-modules/vpc/aws` internally, while `pds_network_wrapper` calls `git::https://github.com/<praxis-owner>/<repository>.git?ref=v1.0.0` through a module block named `pds_network`. The deployment wrapper never replaces that Praxis root layer with the upstream module. If the root module has no release, wrapper creation is blocked until it is tested and released.
+
+Each detected public Registry module call has an editable exact version. Updating it changes only that module block and saves a new draft revision. Releasing a newer organization root version marks its deployment wrappers as having an update available. Accepting that update writes the new tag pin as another wrapper revision and automatically starts the wrapper's previous validation or mock mode. Only a passing result for that exact wrapper revision enables its own release and Git tag.
+
 ## Shared appearance
 
 `static/style.css` owns both themes, shared component styling, and content geometry. Change the tokens at the top (`--studio-content-max-width`, `--studio-content-gutter`, `--bg-*`, `--text-*`, `--brand-*`, `--accent-*`) to update the application consistently. Terraform and Readiness consume these tokens; keep module-specific layout separate from brand color decisions. The header and login share `templates/_brand_wordmark.html`, using the original transparent logo and a CSS mask to lighten only its lettering in dark mode.
@@ -91,15 +101,17 @@ Module package names must identify the technology and purpose, for example `terr
 
 Each saved draft has **Initialize & validate** and **Run mock test** actions. Both deployments build a runner using OpenTofu 1.12.0; Kubernetes starts a fresh Pod per run, while Compose uses a separate runner service. Initialization uses `tofu init -backend=false -input=false`; validation uses `tofu validate`. Mock testing generates a dedicated test with `command = plan` and mocked root providers, then runs only that test. Existing upstream test files are excluded. Supply JSON input values, optional mock data defaults, and expected outputs in the test panel. Empty expected outputs produce a planning smoke test. Complex examples may need realistic mocks; a passing mock does not establish real-world deployability.
 
+**Generate mock setup** prepares those JSON fields before a test. It prefers literal input values from the bundled example that calls the module root, fills missing required inputs from their declared types and names, and adds defaults for referenced provider data-source attributes. Literal outputs become assertions; computed outputs stay empty for review. Generation does not execute Terraform or save a test result. Review the values, then run the mock test.
+
 The runner has no published port, credentials, app data, or Docker socket. Its filesystem is read-only except disposable temporary storage, with resource and command time limits. Downloads during init need public internet. Validation and mock subprocesses inherit a Linux seccomp filter that permits UNIX provider RPC sockets but denies Internet sockets. One job runs at a time. Temporary files are removed after each run; no state is retained. Results and settings stay with the saved draft revision, and deleting the draft deletes its results. Logs can include user-provided test values, so use sample values.
 
 When running the web app outside Compose, configure `PRAXIS_TOFU_RUNNER_URL` to a trusted, separately isolated runner. Do not expose the runner port publicly.
 
 ## Git-backed Modules & Stacks
 
-**Terraform → Modules & Stacks** adds a module catalog, independent customer /
-environment / AWS account targets, and version-pinned stack configuration. Module
-Builder remains the local authoring and sanity-test step before a module PR.
+**Terraform → Modules & Stacks** adds released modules, customer / environment /
+cloud account targets, and version-pinned Stack configuration. Module
+Builder remains the local authoring and sanity-test step before a module release.
 
 Enable both `terraform_module_builder,terraform_stacks`. The foundation catalog
 uses `/tmp/praxis-cache/terraform-foundation.sqlite3` (override with
@@ -107,26 +119,49 @@ uses `/tmp/praxis-cache/terraform-foundation.sqlite3` (override with
 volume. No AWS connection is needed to register targets, sync public Git tags,
 create stacks or export definitions. Public Git access requires internet.
 
-The workspace downloads a GitHub workflow kit and can submit configuration PRs,
-dispatch validation/plan/apply and refresh results when a GitHub App is connected.
-Cloud execution is disabled by default. Configuration validation never reports a
-cloud plan or deployment. GitHub Actions owns execution; the web app does not run
-Terraform against AWS. Plan approval is tied to the commit and saved-plan checksum.
+The first Stack model generates configuration for a future OpenTofu runtime. It
+does not submit plans, run apply, create state, or connect to cloud accounts.
+Older catalog-backed Stack records retain their existing GitHub workflow screens
+for compatibility; released-wrapper Stacks cannot enter that workflow.
 
 See [workflow setup and scope](modules/terraform_stacks/workflows/README.md) for
 GitHub permissions, offline-first setup, state metadata and the later AWS setup.
 No GitHub repositories or cloud resources are created during local deployment.
 
 
-### Submit Builder drafts to GitHub
+### Release Builder drafts to GitHub
 
-Use **Submit to Git** on a saved draft. The saved revision must have a passing
-sanity check. Choose a module name and `owner/repository`, review the generic-code
-confirmation, and submit. Praxis registers the module in Modules & Stacks and
-links the PR. Existing repositories need an initial commit (e.g. a README).
-Repository creation is optional and explicit, always private; its token requires
-additional Administration permission. Merge/tag in GitHub and sync versions to
-make a release selectable for stacks.
+Use **Release** on a saved draft after that exact revision passes validation or a
+mock test. Choose `owner/repository` and the semantic change type. Praxis calculates
+the next version from stable repository tags, commits the saved snapshot to the
+default branch and tags that exact commit. Repository creation is optional and
+explicit, always private; its token requires additional Administration permission.
+
+Praxis stores the release version, tag, commit, upstream source and version, and
+originating draft revision. An organization root release becomes selectable when
+creating a deployment wrapper. Wrapper releases retain the selected root release
+link and cannot use an unpublished draft. Releasing or updating a wrapper does not
+plan or apply cloud infrastructure.
+
+### Configure released-wrapper Stacks
+
+A Stack selects one published deployment wrapper release and pins its semantic
+version, Git tag, and commit. Praxis reads the wrapper variables from that immutable
+release snapshot and builds the Stack input form. Optional inputs can continue to
+use wrapper defaults. Each configured input is stored as either a literal value or
+an output reference to another Stack in the same environment, account, and region.
+References create explicit dependencies, and self-references and cycles are
+rejected.
+
+Stack records contain only context, release pins, input bindings, and dependency
+IDs. Wrapper Terraform files remain in the release repository and are never copied
+into per-customer configuration. The generated `stack.yaml` includes the exact
+wrapper commit source and unresolved Stack output references for a later runtime;
+it contains no credentials, backend, state, plan, or apply instruction.
+
+When a higher semantic version is published for the same wrapper, Stack pages show
+the current and available versions. Praxis does not update the Stack until the new
+version is selected and the regenerated inputs pass validation.
 
 **Terraform → GitHub settings** stores each user's default GitHub owner and stack
 configuration repository. It supports a fine-grained personal access token or the
@@ -149,11 +184,10 @@ unknown sources are explicitly labeled rather than guessed from their names.
 ### Customer-first navigation
 
 Modules & Stacks opens a searchable, paginated customer directory. Open a customer
-to manage its environments and accounts, then open an environment to manage its
-stacks. Creating a stack there fixes the customer/environment context and offers
-only that customer's accounts plus shared accounts. Shared modules and shared
-accounts have separate catalog views. Existing object URLs and records are
-preserved; this changes navigation, not Git definitions or state identities.
+to manage its environments, then open an environment to manage its cloud accounts
+and Stacks. Creating a Stack there fixes the customer/environment context and
+offers only accounts in that environment. Existing legacy object URLs and records
+remain readable.
 
 ### Upload your own module
 
@@ -162,6 +196,6 @@ draft with an explicit cloud label. A containing folder is removed; nested modul
 and text assets are preserved. Limits: 2.5 MB compressed, 2 MB text, 200 files.
 Unsafe paths, links, binary files and invalid Terraform syntax are rejected. Git
 metadata, workflows, local state/plans, .env and .tfvars files are excluded with
-an import notice. Review the draft, run a sanity check, then Submit to Git using
-the same publishing/catalog flow as generated wrappers. Upload does not execute
-code or create repositories.
+an import notice. Review the draft, run a sanity check, then release it through
+the same versioned lifecycle as generated root modules. Upload does not execute
+code or create repositories by itself.

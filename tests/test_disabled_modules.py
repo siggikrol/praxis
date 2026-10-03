@@ -82,19 +82,19 @@ assert client.get("/single-vpc/wizard/project_settings").status_code == 200
 assert client.get("/wizards/workspaces/missing/resume").status_code == 404''')
 
 
-    def test_draft_git_submission_visible_for_parameterized_endpoint(self):
+    def test_draft_release_visible_for_parameterized_endpoint(self):
         self.run_app("terraform_module_builder,terraform_stacks", '''
 from modules.terraform_module_builder import store
 from flask import session
 with client.session_transaction() as signed_in:
     user = str(signed_in['user'])
 key = store.create(user, 'draft-vpc', {'source': {'address':'acme/vpc/aws','version':'1','mode':'wrapper'}, 'files': {'main.tf':''}})
-assert app.jinja_env.globals['has_endpoint']('terraform_stacks.submit_draft')
+assert app.jinja_env.globals['has_endpoint']('terraform_stacks.release_draft')
 assert not app.jinja_env.globals['has_endpoint']('missing.endpoint')
 for path in ['/modules/', '/modules/?view=drafts', '/modules/drafts/'+key]:
     page = client.get(path)
     assert page.status_code == 200
-    assert ('/terraform/workspace/submit-draft/'+key).encode() in page.data, path
-    assert b'Submit to Git' in page.data, path
-assert client.get('/terraform/workspace/submit-draft/'+key).status_code == 200
+    assert ('/terraform/workspace/release-draft/'+key).encode() in page.data, path
+    assert b'Release' in page.data, path
+assert client.get('/terraform/workspace/release-draft/'+key).status_code == 200
 ''')

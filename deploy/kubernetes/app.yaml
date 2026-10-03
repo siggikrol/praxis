@@ -37,6 +37,7 @@ spec:
             - {name: PRAXIS_TEST_BACKEND, value: kubernetes}
             - {name: PRAXIS_TOFU_NAMESPACE, value: praxis-runs}
             - {name: PRAXIS_TOFU_IMAGE, value: 'praxis-tofu-runner:kubernetes'}
+            - {name: PRAXIS_TOFU_IMAGE_PULL_POLICY, value: Never}
             - {name: SESSION_FILE_DIR, value: /tmp/praxis-cache/flask_sessions}
             - {name: PS_ACTIVE_SESSIONS_REGISTRY, value: /tmp/praxis-cache/active_sessions.registry.json}
             - {name: PRAXIS_TERRAFORM_MODULE_BUILDER_DB, value: /tmp/praxis-cache/module-builder.sqlite3}

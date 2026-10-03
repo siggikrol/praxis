@@ -77,6 +77,30 @@ class PublishingTests(unittest.TestCase):
                     github.request('GET','/repos/example/test')
                 self.assertNotIn('private token', str(error.exception))
 
+    def test_release_commit_updates_default_branch_and_tags_exact_commit(self):
+        created = 'c' * 40
+        with patch.object(github, 'head', return_value=('main', 'a' * 40)), \
+                patch.object(github, 'request', side_effect=[
+                    {'tree': {'sha': 'b' * 40}}, {'sha': 'd' * 40},
+                    {'sha': created}, {},
+                ]) as api:
+            self.assertEqual(github.commit_files(
+                'acme/module', {'main.tf': 'new'}, 'release', ['old.tf']), created)
+        self.assertEqual(api.call_args_list[-1].args,
+                         ('PATCH', '/repos/acme/module/git/refs/heads/main'))
+        self.assertEqual(api.call_args_list[-1].kwargs['json'],
+                         {'sha': created, 'force': False})
+        tree = api.call_args_list[1].kwargs['json']['tree']
+        self.assertIn({'path': 'main.tf', 'mode': '100644', 'type': 'blob',
+                       'content': 'new'}, tree)
+        self.assertIn({'path': 'old.tf', 'mode': '100644', 'type': 'blob',
+                       'sha': None}, tree)
+        with patch.object(github, 'versions', return_value=[]), \
+                patch.object(github, 'request') as api:
+            github.create_tag('acme/module', 'v1.2.3', created)
+        api.assert_called_once_with('POST', '/repos/acme/module/git/refs',
+                                    json={'ref': 'refs/tags/v1.2.3', 'sha': created})
+
     def test_cloud_labels_work_for_existing_drafts(self):
         google = drafts.create('alice', 'gke', {'source': {'address': 'terraform-google-modules/kubernetes-engine/google'}})
         unknown = drafts.create('alice', 'unknown', {'source': {}})

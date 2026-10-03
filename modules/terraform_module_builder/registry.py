@@ -96,6 +96,27 @@ def details(address, version=None):
     return data
 
 
+def available_versions(address):
+    """Return published versions newest-first and the Registry's latest release."""
+    data = details(address)
+    latest = version_number(data.get("version"))
+    published = data.get("versions", [])
+    if not isinstance(published, list):
+        raise RegistryError("The Registry returned an unreadable version list.")
+    versions = []
+    for value in reversed(published):
+        try:
+            value = version_number(value)
+        except RegistryError:
+            continue
+        if value not in versions:
+            versions.append(value)
+    if latest in versions:
+        versions.remove(latest)
+    versions.insert(0, latest)
+    return versions, latest
+
+
 def import_example(module, example_path):
     """Import text files only, never extract a downloaded archive onto disk."""
     if example_path not in {entry["path"] for entry in module.get("examples", [])}:

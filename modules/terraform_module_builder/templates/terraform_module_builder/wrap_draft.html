@@ -1,0 +1,23 @@
+{% extends "terraform_module_builder/layout.html" %}
+{% from '_cloud_badge.html' import cloud_badge %}
+{% block builder %}
+<div class="mb-3">{{ cloud_badge(draft.provider) }}</div>
+<p><a href="{{ url_for('terraform_module_builder.draft',key=draft.id) }}">← {{ draft.name }}</a> / deployment wrapper</p>
+<div class="tf-heading"><div><p class="tf-eyebrow">Module layer</p><h2>Create a deployment wrapper</h2><p>Build a caller around a released version of {{ draft.name }}.</p></div></div>
+{% if not releases %}<div class="alert alert-warning"><strong>{{ draft.name }} has not been released.</strong><br>Test and release the module before creating a deployment wrapper.</div>
+{% else %}
+<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="revision" value="{{ draft.revision }}">
+<section class="mb-panel mb-4"><label class="form-label" for="wrapper-name">Wrapper name</label><input class="form-control" id="wrapper-name" name="name" value="{{ values.get('name','') }}" pattern="[A-Za-z_][A-Za-z0-9_-]*" maxlength="80" required>
+<label class="form-label mt-3" for="release-id">Release</label><select class="form-select" id="release-id" name="release_id" required>{% for release in releases %}<option value="{{ release.id }}" data-parent="{{ release.source_metadata.draft_name|default(draft.name, true) }}" data-tag="{{ release.tag }}" data-upstream="{{ release.upstream_source }}" data-upstream-version="{{ release.upstream_version }}" {% if values.get('release_id') == release.id %}selected{% endif %}>{{ release.tag }}{% if loop.first %} (latest){% endif %} · revision {{ release.draft_revision }}</option>{% endfor %}</select><p class="small text-muted mt-2">The wrapper uses the immutable Praxis-managed Git tag for this release.</p>
+<table class="table mb-0" aria-label="Selected parent module release"><tbody>
+<tr><th scope="row">Parent module</th><td data-release-value="parent">{{ selected_release.source_metadata.draft_name|default(draft.name, true) }}</td></tr>
+<tr><th scope="row">Release</th><td data-release-value="release">{{ selected_release.tag }}</td></tr>
+<tr><th scope="row">Source</th><td>Praxis managed</td></tr>
+<tr><th scope="row">Git tag</th><td data-release-value="tag">{{ selected_release.tag }}</td></tr>
+<tr><th scope="row">Upstream</th><td data-release-value="upstream">{{ selected_release.upstream_source }}</td></tr>
+<tr><th scope="row">Upstream version</th><td data-release-value="upstream-version">{{ selected_release.upstream_version }}</td></tr>
+</tbody></table></section>
+<button class="btn btn-primary">Create deployment wrapper</button></form>
+{% endif %}
+{% endblock %}
+{% block step_scripts %}{% if releases %}<script>const release=document.getElementById('release-id');const showRelease=()=>{const option=release.options[release.selectedIndex];for(const [name,value] of Object.entries({parent:option.dataset.parent,release:option.dataset.tag,tag:option.dataset.tag,upstream:option.dataset.upstream,'upstream-version':option.dataset.upstreamVersion})){document.querySelector(`[data-release-value="${name}"]`).textContent=value;}};release.addEventListener('change',showRelease);</script>{% endif %}{% endblock %}
