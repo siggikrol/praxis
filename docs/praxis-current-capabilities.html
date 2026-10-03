@@ -629,7 +629,7 @@
             </ul>
           </div>
         </div>
-        <p>Dependency initialization can use public HTTPS. Validation and mock execution then block internet sockets. Private Registry dependencies require separate authentication; credentials are not automatically passed into the isolated runner.</p>
+        <p>Dependency initialization can use public HTTPS. A private Praxis-managed GitHub release receives the signed-in user's saved GitHub credential through the one-run payload. Git can use it only for <code>github.com</code> during initialization; the temporary helper and token file are removed before validation or mock execution, when internet sockets are blocked. Other private Registry dependencies still require separate authentication.</p>
       </section>
 
       <section id="development">

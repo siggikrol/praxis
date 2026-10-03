@@ -46,12 +46,19 @@ def start(owner, draft, mode, settings):
     endpoint = os.getenv('PRAXIS_TOFU_RUNNER_URL', '')
     if backend not in ('http', 'kubernetes'):
         raise ValueError('Unknown OpenTofu test backend.')
+    payload = {'files':draft['document']['files'], 'mode':mode, 'settings':settings}
+    source = draft['document'].get('source', {})
+    if mode != 'format' and source.get('mode') == 'draft-wrapper':
+        from modules.terraform_stacks import github
+        token = github.access_token(owner)
+        if token:
+            payload['git_auth'] = {'host': 'github.com', 'token': token}
     if backend == 'kubernetes':
         reconcile()
         if not os.getenv('PRAXIS_TOFU_IMAGE'):
             raise ValueError('The Kubernetes test image is not configured.')
         from .kubernetes_jobs import payload_bytes
-        payload_bytes({'files': draft['document']['files'], 'mode':mode, 'settings':settings})
+        payload_bytes(payload)
     if backend == 'http' and not endpoint:
         raise ValueError('OpenTofu runner is not configured. Start the Docker Compose setup to enable testing.')
     key = uuid.uuid4().hex
@@ -63,7 +70,6 @@ def start(owner, draft, mode, settings):
             raise ValueError('A check is already running. Wait for it to finish before starting another.')
         conn.execute('INSERT INTO module_test_runs(id,owner,draft_id,revision,mode,created,status,settings,result,backend) VALUES(?,?,?,?,?,?,?,?,?,?)',
                      (key,owner,draft['id'],draft['revision'],mode,time.time(),'running',json.dumps(settings),'{}',backend))
-    payload = {'files':draft['document']['files'], 'mode':mode, 'settings':settings}
     if backend == 'kubernetes':
         try:
             from . import kubernetes_jobs

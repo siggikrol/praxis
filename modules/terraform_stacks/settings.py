@@ -35,8 +35,8 @@ def cipher():
     return Fernet(base64.urlsafe_b64encode(hashlib.sha256(b'praxis-github-token-v1\0' + raw).digest()))
 
 
-def token():
-    data = load()
+def token(owner=None):
+    data = load(owner)
     if data['auth_mode'] != 'token' or not data.get('token'):
         return None
     try:

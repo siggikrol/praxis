@@ -49,6 +49,42 @@ output "name" { value = "demo" }
         with patch.object(server,'command',return_value={'passed':False}) as execute:
             self.assertFalse(client.post('/run',json=payload).json['passed'])
             self.assertEqual(execute.call_count,1)
+
+    def test_private_git_credential_exists_only_during_init(self):
+        token = 'github_pat_private-module'
+        payload = {
+            'files': {'main.tf': 'output "name" {value="demo"}'},
+            'mode': 'validate', 'settings': {},
+            'git_auth': {'host': 'github.com', 'token': token},
+        }
+        credential_files = []
+
+        def execute(root, args, environment, timeout, offline=False):
+            if args[0] == 'init':
+                self.assertEqual(environment['GIT_CONFIG_KEY_0'],
+                                 'credential.https://github.com.helper')
+                self.assertNotIn(token, repr(environment))
+                helper = Path(environment['GIT_CONFIG_VALUE_0'].removeprefix('!'))
+                token_file = Path(environment['PRAXIS_GIT_TOKEN_FILE'])
+                self.assertTrue(helper.is_file())
+                self.assertEqual(token_file.read_text(), token)
+                credential_files.extend((helper, token_file))
+            else:
+                self.assertNotIn('PRAXIS_GIT_TOKEN_FILE', environment)
+            return {'passed': True, 'command': 'tofu ' + ' '.join(args), 'output': ''}
+
+        with patch.object(server, 'command', side_effect=execute):
+            response = server.app.test_client().post('/run', json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(token, response.get_data(as_text=True))
+        self.assertTrue(credential_files)
+        self.assertTrue(all(not path.exists() for path in credential_files))
+
+        invalid = dict(payload, git_auth={'host': 'example.com', 'token': token})
+        with patch.object(server, 'command', return_value={'passed': True}):
+            response = server.app.test_client().post('/run', json=invalid)
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(token, response.get_data(as_text=True))
     def test_job_revision_owner_and_deletion(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,PRAXIS_TERRAFORM_MODULE_BUILDER_DB=directory+'/db',PRAXIS_TOFU_RUNNER_URL='http://runner'):
             key=store.create('alice','test',{'files':{'main.tf':''}})

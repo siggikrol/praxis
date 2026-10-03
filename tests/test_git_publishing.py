@@ -46,6 +46,8 @@ class PublishingTests(unittest.TestCase):
     def test_token_encryption_user_isolation_and_removal(self):
         self.configure()
         self.assertEqual(settings.token(), 'test-token')
+        self.assertEqual(settings.token('alice'), 'test-token')
+        self.assertEqual(github.access_token('alice'), 'test-token')
         self.assertEqual(github.repository(), 'another-org/environments')
         with store.connection() as db:
             value = db.execute('SELECT data FROM tf_git_settings').fetchone()[0]
@@ -68,6 +70,10 @@ class PublishingTests(unittest.TestCase):
             self.assertEqual(send.call_args.kwargs['headers']['Authorization'], 'Bearer test-token')
         settings.save('alice', dict(settings.load(), auth_mode='app'))
         self.assertIsNone(settings.token())
+        with patch.dict(os.environ, {'GITHUB_APP_ID':'1','GITHUB_INSTALLATION_ID':'2',
+                                     'GITHUB_PRIVATE_KEY':'key'}), \
+                patch.object(github.github_api,'get_token',return_value='installation-token'):
+            self.assertEqual(github.access_token('alice'),'installation-token')
 
     def test_precise_errors_do_not_reflect_remote_content(self):
         for code, text in [(401,'rejected'),(403,'denied'),(404,'not found'),(409,'conflict'),(422,'could not create')]:

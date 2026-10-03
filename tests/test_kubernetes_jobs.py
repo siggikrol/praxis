@@ -40,6 +40,23 @@ class KubernetesJobsTests(unittest.TestCase):
         secret=core.create_namespaced_secret.call_args.args[1]
         self.assertEqual(secret['metadata']['ownerReferences'][0]['uid'],'job-uid')
         self.assertEqual(json.loads(gzip.decompress(base64.b64decode(secret['data']['payload.json.gz']))),payload)
+
+    def test_private_wrapper_token_is_ephemeral_job_input(self):
+        key=store.create('alice','wrapper',{
+            'files':{'main.tf':'module "root" { source = "git::https://github.com/acme/root.git?ref=v1.0.0" }'},
+            'source':{'mode':'draft-wrapper'},
+        })
+        with patch('modules.terraform_stacks.github.access_token',return_value='saved-token'), \
+                patch.object(jobs,'submit') as submit:
+            testing.start('alice',store.get('alice',key),'validate',{'variables':{'name':'demo'}})
+        payload=submit.call_args.args[2]
+        self.assertEqual(payload['git_auth'],{'host':'github.com','token':'saved-token'})
+        with store.connection() as connection:
+            row=dict(connection.execute(
+                'SELECT settings,result FROM module_test_runs WHERE draft_id=?',(key,)
+            ).fetchone())
+        self.assertEqual(json.loads(row['settings']),{'variables':{'name':'demo'}})
+        self.assertNotIn('saved-token',json.dumps(row))
     def test_restart_reconciliation_persists_before_cleanup(self):
         key=store.create('alice','test',{'files':{'main.tf':''}})
         with patch.object(jobs,'submit'):

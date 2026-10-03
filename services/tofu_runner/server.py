@@ -1,4 +1,4 @@
-"""Disposable OpenTofu workspaces. Never mount app data, credentials or Docker here."""
+"""Disposable OpenTofu workspaces with init-only private Git authentication."""
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -140,6 +140,38 @@ def command(root, args, environment, timeout, offline=False):
             'output':text, 'seconds':round(time.monotonic()-start, 1)}
 
 
+def git_environment(environment, home, auth):
+    """Create an init-only, github.com-scoped helper without embedding its token in URLs."""
+    if auth is None:
+        return environment, []
+    if (not isinstance(auth, dict) or auth.get('host') != 'github.com'
+            or not isinstance(auth.get('token'), str)
+            or not auth['token'] or len(auth['token']) > 512
+            or any(character.isspace() for character in auth['token'])):
+        raise ValueError('Invalid Git authentication supplied to the runner.')
+    token_file = home / '.praxis-github-token'
+    helper = home / '.praxis-git-credential'
+    token_file.write_text(auth['token'])
+    token_file.chmod(0o600)
+    helper.write_text('''#!/bin/sh
+case "$1" in
+  get)
+    printf '%s\\n' 'username=x-access-token'
+    printf '%s' 'password='
+    cat "$PRAXIS_GIT_TOKEN_FILE"
+    printf '\\n'
+    ;;
+esac
+''')
+    helper.chmod(0o700)
+    result = dict(environment)
+    result.update(GIT_CONFIG_COUNT='1',
+                  GIT_CONFIG_KEY_0='credential.https://github.com.helper',
+                  GIT_CONFIG_VALUE_0='!' + str(helper),
+                  PRAXIS_GIT_TOKEN_FILE=str(token_file))
+    return result, [helper, token_file]
+
+
 @app.get('/healthz')
 def health():
     return 'ok'
@@ -184,7 +216,15 @@ def run():
                     (root / name).unlink(missing_ok=True)
             test_source = mock_test(root, settings) if mode == 'mock' else ''
             # No user-supplied test file or backend state is used.
-            steps = [fmt, command(root, ['init','-backend=false','-input=false','-no-color'], environment, 180)]
+            init_environment, credential_files = git_environment(
+                environment, home, payload.get('git_auth'))
+            try:
+                init = command(root, ['init','-backend=false','-input=false','-no-color'],
+                               init_environment, 180)
+            finally:
+                for credential_file in credential_files:
+                    credential_file.unlink(missing_ok=True)
+            steps = [fmt, init]
             if steps[-1]['passed']:
                 steps.append(command(root, ['validate','-no-color'], environment, 60, offline=True))
             if mode == 'mock' and steps[-1]['passed']:

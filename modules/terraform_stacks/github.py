@@ -25,6 +25,19 @@ def connected():
     return all(os.getenv(k) for k in ('GITHUB_APP_ID', 'GITHUB_INSTALLATION_ID', 'GITHUB_PRIVATE_KEY'))
 
 
+def access_token(owner=None):
+    """Return the configured HTTPS Git credential for one ephemeral operation."""
+    data = settings.load(owner)
+    if data['auth_mode'] == 'token':
+        return settings.token(owner)
+    if all(os.getenv(k) for k in ('GITHUB_APP_ID', 'GITHUB_INSTALLATION_ID', 'GITHUB_PRIVATE_KEY')):
+        try:
+            return github_api.get_token()
+        except RuntimeError as exc:
+            raise ValueError('GitHub App authentication could not create an installation token.') from exc
+    return None
+
+
 def transport(method, path, **kwargs):
     token = settings.token()
     if token:
