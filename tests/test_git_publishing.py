@@ -68,6 +68,10 @@ class PublishingTests(unittest.TestCase):
         with patch.object(github.requests, 'request', return_value=response) as send:
             self.assertEqual(github.request('GET','/user')['login'], 'alice')
             self.assertEqual(send.call_args.kwargs['headers']['Authorization'], 'Bearer test-token')
+            session['user'] = 'bob'
+            github.request('GET', '/user', catalog_owner='alice')
+            self.assertEqual(send.call_args.kwargs['headers']['Authorization'], 'Bearer test-token')
+            session['user'] = 'alice'
         settings.save('alice', dict(settings.load(), auth_mode='app'))
         self.assertIsNone(settings.token())
         with patch.dict(os.environ, {'GITHUB_APP_ID':'1','GITHUB_INSTALLATION_ID':'2',

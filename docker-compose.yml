@@ -31,6 +31,7 @@ services:
       ENABLED_MODULES: ${ENABLED_MODULES-terraform_module_builder,terraform_stacks}
       PRAXIS_ENVIRONMENTS_REPOSITORY: ${PRAXIS_ENVIRONMENTS_REPOSITORY:-siggikrol/praxis-environments}
       PRAXIS_CLOUD_EXECUTION_ENABLED: "0"
+      PRAXIS_MODULE_DOC_CACHE_REFRESH_SECONDS: "86400"
       PRAXIS_TOFU_RUNNER_URL: http://tofu-runner:8080
       SESSION_FILE_DIR: /tmp/praxis-cache/flask_sessions
       PS_ACTIVE_SESSIONS_REGISTRY: /tmp/praxis-cache/active_sessions.registry.json

@@ -18,8 +18,8 @@ def repository():
     return repo
 
 
-def connected():
-    data = settings.load()
+def connected(owner=None):
+    data = settings.load(owner)
     if data['auth_mode'] == 'token':
         return bool(data.get('token'))
     return all(os.getenv(k) for k in ('GITHUB_APP_ID', 'GITHUB_INSTALLATION_ID', 'GITHUB_PRIVATE_KEY'))
@@ -38,12 +38,12 @@ def access_token(owner=None):
     return None
 
 
-def transport(method, path, **kwargs):
-    token = settings.token()
+def transport(method, path, catalog_owner=None, **kwargs):
+    token = settings.token(catalog_owner)
     if token:
         return requests.request(method, 'https://api.github.com' + path, timeout=30,
             headers={'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + token}, **kwargs)
-    if connected():
+    if connected(catalog_owner):
         return github_api._request(method, path, **kwargs)
     if method != 'GET':
         raise ValueError('GitHub is not connected. Configure an API token or GitHub App in GitHub settings. SSH keys are not used for submission.')
@@ -58,9 +58,9 @@ class ResourceNotFound(ValueError):
     """GitHub 404: absent resource or inaccessible private resource."""
 
 
-def request(method, path, **kwargs):
+def request(method, path, catalog_owner=None, **kwargs):
     try:
-        response = transport(method, path, **kwargs)
+        response = transport(method, path, catalog_owner=catalog_owner, **kwargs)
         if response.status_code == 401:
             raise ValueError('GitHub rejected the credential (401). Replace the expired or invalid token, or check the GitHub App configuration.')
         if response.status_code == 403:
@@ -137,20 +137,22 @@ def head(repo):
     return branch, request('GET', root + '/commits/' + quote(branch, safe=''))['sha']
 
 
-def versions(repo):
+def versions(repo, catalog_owner=None):
     # Resolve tags to commits (including annotated tags); never use a mutable tag at execution time.
     root = repo_path(repo)
     result = []
     for page in range(1, 11):
-        tags = request('GET', root + '/tags', params={'per_page': 100, 'page': page})
+        tags = request('GET', root + '/tags', catalog_owner=catalog_owner,
+                       params={'per_page': 100, 'page': page})
         result.extend({'tag': t['name'], 'commit': t['commit']['sha']} for t in tags)
         if len(tags) < 100:
             break
     return result
 
 
-def contents(repo, path, ref):
-    value = request('GET', repo_path(repo) + '/contents/' + quote(path, safe='/'), params={'ref': ref})
+def contents(repo, path, ref, catalog_owner=None):
+    value = request('GET', repo_path(repo) + '/contents/' + quote(path, safe='/'),
+                    catalog_owner=catalog_owner, params={'ref': ref})
     if value.get('encoding') != 'base64':
         raise ValueError('Git file could not be read.')
     return base64.b64decode(value['content']).decode()

@@ -541,7 +541,7 @@
       <section id="deployment-wrapper">
         <p class="eyebrow">Layer</p>
         <h2>Creating deployment wrappers</h2>
-        <p>Praxis can create a deployment wrapper only after the Praxis root module has a released Git commit and semantic tag. The newest release is selected by default, and any earlier released version remains selectable.</p>
+        <p>Praxis can create a deployment wrapper only after the Praxis root module has a released Git commit and semantic tag. Releasing now requires a passing mock plan for the exact saved root revision. The newest release is selected by default, and any earlier released version remains selectable.</p>
         <p>The inspection discovers:</p>
         <ul>
           <li>Input variables, including type, default, description, and HCL validation blocks.</li>
@@ -564,7 +564,7 @@
           <li>Change only the selected module block.</li>
           <li>Save the change as a new draft revision.</li>
           <li>Update deployment-wrapper provenance when applicable.</li>
-          <li>Move directly to the test section after saving.</li>
+          <li>Move directly to the test section after saving; wrapper release updates start a new mock test automatically.</li>
         </ul>
         <p>Public upstream versions use exact semantic versions. Deployment wrappers use only Praxis release records whose semantic Git tag, commit SHA, repository URL, release version, and source snapshot agree. Results from the previous version remain attached to their older draft revision.</p>
       </section>
@@ -576,10 +576,10 @@
         <table>
           <thead><tr><th>Action</th><th>Behavior</th></tr></thead>
           <tbody>
-            <tr><td>Check formatting &amp; validate</td><td>Checks formatting, initializes dependencies without a backend, and runs configuration validation.</td></tr>
+            <tr><td>Check formatting &amp; validate</td><td>Checks formatting, initializes dependencies without a backend, and runs configuration validation. This result alone cannot authorize a release.</td></tr>
             <tr><td>Format files</td><td>Formats the saved files and stores changed output as a new draft revision.</td></tr>
             <tr><td>Generate mock setup</td><td>Builds editable starting inputs, data-source defaults, and output expectations.</td></tr>
-            <tr><td>Run mock test</td><td>Runs a plan-only OpenTofu test with mocked root providers.</td></tr>
+            <tr><td>Run mock test</td><td>Runs a plan-only OpenTofu test with mocked root providers. A passing result for the exact revision is required before release.</td></tr>
           </tbody>
         </table>
         <p>The results page reports the run state, tested revision, OpenTofu version, commands, durations, warnings, errors, generated test source, and whether the result is stale relative to the current draft.</p>
@@ -599,7 +599,8 @@
           <li>Turns literal outputs into starting assertions.</li>
         </ul>
         <h3>Running the test</h3>
-        <p>The mock runner creates an OpenTofu <code>plan</code> test with mocked root providers. Empty expected outputs produce a planning smoke test; supplied expectations are evaluated as assertions.</p>
+        <p>The mock runner creates an OpenTofu <code>plan</code> test with mocked root providers. Root-module tests plan the selected third-party dependency and own compatibility checks after an upstream version update. Deployment-wrapper tests override the already-released parent module and verify wrapper wiring without planning the parent's internals again. Empty expected outputs produce a planning smoke test; supplied expectations are evaluated as assertions.</p>
+        <p>A wrapper bound to a tag created under the earlier validation-only rule cannot be mock-tested or released until the recorded parent revision has a passing root mock result.</p>
         <p>These tests can reveal broken expressions, missing required values, invalid provider aliases, bad output references, and dependency compatibility problems. Generated samples must still be reviewed because Praxis cannot infer every organization-specific value.</p>
       </section>
 

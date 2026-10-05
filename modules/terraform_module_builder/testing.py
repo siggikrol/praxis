@@ -25,20 +25,39 @@ def _table(conn):
                     raise
 
 
-def latest(owner, key):
+def latest(owner, key, mode=None, revision=None):
     if os.getenv('PRAXIS_TEST_BACKEND') == 'kubernetes':
         reconcile()
     with connection() as conn:
         _table(conn)
         conn.execute("UPDATE module_test_runs SET status='failed',result=? WHERE status='running' AND backend='http' AND created<?",
                      (json.dumps({'error':'The worker stopped or exceeded its time limit. Run the check again.'}), time.time()-420))
-        row = conn.execute('SELECT * FROM module_test_runs WHERE owner=? AND draft_id=? ORDER BY created DESC LIMIT 1', (owner,key)).fetchone()
+        where = ['owner=?', 'draft_id=?']
+        values = [owner, key]
+        if mode is not None:
+            where.append('mode=?')
+            values.append(mode)
+        if revision is not None:
+            where.append('revision=?')
+            values.append(revision)
+        row = conn.execute(
+            'SELECT * FROM module_test_runs WHERE ' + ' AND '.join(where)
+            + ' ORDER BY created DESC LIMIT 1', values).fetchone()
     if not row:
         return None
     result = dict(row)
     result['result'] = json.loads(result['result'])
     result['settings'] = json.loads(result['settings'])
     return result
+
+
+def release_ready(owner, key, revision):
+    """A release must have plan-tested this exact saved revision."""
+    result = latest(owner, key, mode='mock', revision=revision)
+    return bool(result and result['status'] == 'passed'
+                and result.get('mode') == 'mock'
+                and result.get('revision') == revision
+                and result.get('result', {}).get('check_suite') == 2)
 
 
 def start(owner, draft, mode, settings):
@@ -49,6 +68,22 @@ def start(owner, draft, mode, settings):
     payload = {'files':draft['document']['files'], 'mode':mode, 'settings':settings}
     source = draft['document'].get('source', {})
     if mode != 'format' and source.get('mode') == 'draft-wrapper':
+        if mode == 'mock':
+            binding = source.get('wrapped_release', {})
+            if binding.get('id'):
+                from . import store as draft_store
+                parent_release = draft_store.get_release(owner, binding['id'])
+                if (not parent_release or parent_release.get('status') != 'published'
+                        or not release_ready(owner, parent_release['draft_id'],
+                                             parent_release['draft_revision'])):
+                    parent_name = source.get('wrapped_draft', {}).get('name') or 'The parent module'
+                    raise ValueError(
+                        f'{parent_name} {binding.get("tag") or "release"} has not passed '
+                        'a mock test for its released root revision. Test the root module first.'
+                    )
+            module_name = source.get('module_name')
+            if module_name:
+                payload['override_modules'] = [module_name]
         from modules.terraform_stacks import github
         token = github.access_token(owner)
         if token:

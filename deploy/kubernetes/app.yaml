@@ -33,6 +33,7 @@ spec:
           env:
             - {name: PRAXIS_ENVIRONMENTS_REPOSITORY, value: siggikrol/praxis-environments}
             - {name: PRAXIS_CLOUD_EXECUTION_ENABLED, value: '0'}
+            - {name: PRAXIS_MODULE_DOC_CACHE_REFRESH_SECONDS, value: '86400'}
             - {name: ENABLED_MODULES, value: "terraform_module_builder,terraform_stacks"}
             - {name: PRAXIS_TEST_BACKEND, value: kubernetes}
             - {name: PRAXIS_TOFU_NAMESPACE, value: praxis-runs}

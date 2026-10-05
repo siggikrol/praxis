@@ -98,11 +98,9 @@ def upgrade_wrapper(owner, key, revision, release_id):
     if not store.update(owner, key, revision, draft['document']):
         raise ValueError('The wrapper changed while it was being updated. Reload and try again.')
     updated = store.get(owner, key)
-    mode = previous_test.get('mode') if previous_test else 'validate'
-    mode = mode if mode in ('validate', 'mock') else 'validate'
     settings = previous_test.get('settings', {}) if previous_test else {}
     try:
-        job = testing.start(owner, updated, mode, settings)
+        job = testing.start(owner, updated, 'mock', settings)
         return updated, job, None
     except ValueError as exc:
         return updated, None, str(exc)

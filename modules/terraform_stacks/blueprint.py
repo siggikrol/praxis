@@ -357,9 +357,6 @@ def release_draft(key):
             return redirect(url_for('terraform_module_builder.draft', key=key))
         except ValueError as exc:
             flash(str(exc), 'warning')
-    result = testing.latest(owner(), key)
-    ready = bool(result and result['status'] == 'passed' and result['revision'] == draft['revision']
-                 and result.get('mode') != 'format'
-                 and result.get('result', {}).get('check_suite') == 2)
+    ready = testing.release_ready(owner(), key, draft['revision'])
     return render_template('terraform_stacks/release.html', draft=draft, ready=ready,
                            existing=existing, repository=repository)

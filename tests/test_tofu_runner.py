@@ -29,6 +29,22 @@ output "name" { value = "demo" }
             self.assertIn('output.name',source)
             with self.assertRaises(ValueError): server.prepare({'../escape.tf':''},root)
             with self.assertRaises(ValueError): server.mock_test(root,{'expected_outputs':{'missing':'x'}})
+
+    def test_wrapper_mock_overrides_released_parent_module(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            server.prepare({'main.tf': '''
+module "pds_network" {
+  source = "git::https://github.com/acme/pds-network.git?ref=v2.1.0"
+}
+output "vpc_id" { value = module.pds_network.vpc_id }
+'''}, root)
+            source=server.mock_test(root, {}, ['pds_network'])
+            document=hcl2.loads(source)
+            self.assertEqual(document['override_module'][0]['target'],
+                             '${module.pds_network}')
+            with self.assertRaisesRegex(ValueError, 'not declared'):
+                server.mock_test(root, {}, ['another_module'])
     def test_json_mock_providers(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
@@ -49,6 +65,11 @@ output "name" { value = "demo" }
         with patch.object(server,'command',return_value={'passed':False}) as execute:
             self.assertFalse(client.post('/run',json=payload).json['passed'])
             self.assertEqual(execute.call_count,1)
+
+        invalid=dict(payload, override_modules=['missing'])
+        with patch.object(server,'command',return_value={'passed':True}):
+            response=client.post('/run',json=invalid)
+        self.assertEqual(response.status_code,400)
 
     def test_private_git_credential_exists_only_during_init(self):
         token = 'github_pat_private-module'
@@ -99,6 +120,30 @@ output "name" { value = "demo" }
             self.assertEqual(testing.latest('alice',key)['status'],'passed')
             self.assertTrue(store.delete('alice',key,1))
             self.assertIsNone(testing.latest('alice',key))
+
+    def test_release_uses_passing_mock_for_exact_revision(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, PRAXIS_TERRAFORM_MODULE_BUILDER_DB=directory+'/db',
+                PRAXIS_TOFU_RUNNER_URL='http://runner'):
+            key=store.create('alice','test',{'files':{'main.tf':''}})
+            draft=store.get('alice',key)
+            responses = {
+                'mock': {'passed':True,'steps':[],'mode':'mock','check_suite':2},
+                'validate': {'passed':True,'steps':[],'mode':'validate','check_suite':2},
+            }
+            for mode in ('mock','validate'):
+                with patch.object(testing.threading,'Thread'):
+                    job=testing.start('alice',draft,mode,{})
+                response=type('Response',(),{
+                    'ok':True, 'json':lambda self, value=responses[mode]:value,
+                })()
+                with patch.object(testing.requests,'post',return_value=response):
+                    testing._execute('http://runner',job,{})
+            self.assertEqual(testing.latest('alice',key)['mode'],'validate')
+            self.assertEqual(testing.latest('alice',key,mode='mock',revision=1)['mode'],
+                             'mock')
+            self.assertTrue(testing.release_ready('alice',key,1))
+            self.assertFalse(testing.release_ready('alice',key,2))
 
     def test_format_result_saves_revision_and_rejects_concurrent_edit(self):
         for changed in (False, True):

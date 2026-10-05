@@ -51,9 +51,11 @@ def blocks(value):
     return [value] if isinstance(value, dict) else value
 
 
-def mock_test(root, settings):
+def mock_test(root, settings, override_modules=None):
+    override_modules = [] if override_modules is None else override_modules
     providers = {}
     outputs = set()
+    modules = set()
     for doc in configs(root):
         for entry in blocks(doc.get('output', [])):
             outputs.update(entry)
@@ -67,6 +69,8 @@ def mock_test(root, settings):
                 providers.setdefault(name, set())
                 if spec.get('alias'):
                     providers[name].add(name + '.' + spec['alias'])
+        for block in blocks(doc.get('module', [])):
+            modules.update(block)
         for kind in ('resource', 'data'):
             for block in blocks(doc.get(kind, [])):
                 for resource_type in block:
@@ -93,6 +97,14 @@ def mock_test(root, settings):
                 if resource_type.startswith(name + '_'):
                     lines.append(f'  mock_data "{resource_type}" {{\n    defaults = {literal(values)}\n  }}')
             lines.append('}')
+    if (not isinstance(override_modules, list) or len(override_modules) > 20
+            or any(not isinstance(name, str) or not NAME.fullmatch(name)
+                   for name in override_modules)):
+        raise ValueError('Invalid module overrides supplied to the runner.')
+    for name in override_modules:
+        if name not in modules:
+            raise ValueError(f'Module override target {name} is not declared in this draft.')
+        lines.append(f'override_module {{\n  target = module.{name}\n}}')
     lines.append('run "praxis_mock_plan" {\n  command = plan')
     variables = settings.get('variables', {})
     if variables:
@@ -214,7 +226,10 @@ def run():
             for name in payload['files']:
                 if name.endswith(('.tftest.hcl', '.tftest.json', '.tofutest.hcl', '.tofutest.json')):
                     (root / name).unlink(missing_ok=True)
-            test_source = mock_test(root, settings) if mode == 'mock' else ''
+            overrides = payload.get('override_modules', [])
+            if mode != 'mock' and overrides:
+                raise ValueError('Module overrides are only available for mock tests.')
+            test_source = mock_test(root, settings, overrides) if mode == 'mock' else ''
             # No user-supplied test file or backend state is used.
             init_environment, credential_files = git_environment(
                 environment, home, payload.get('git_auth'))

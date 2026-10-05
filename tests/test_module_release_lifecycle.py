@@ -69,7 +69,7 @@ class ModuleReleaseLifecycleTests(unittest.TestCase):
         })
 
     def test_promotes_passing_revision_with_semver_tag_and_provenance(self):
-        passed = {'status': 'passed', 'revision': 1, 'mode': 'validate',
+        passed = {'status': 'passed', 'revision': 1, 'mode': 'mock',
                   'result': {'check_suite': 2}}
         with patch.object(releases.testing, 'latest', return_value=passed), \
                 patch.object(github, 'connected', return_value=True), \
@@ -129,11 +129,20 @@ class ModuleReleaseLifecycleTests(unittest.TestCase):
     def test_unpublished_revision_cannot_be_released_or_wrapped(self):
         with patch.object(releases.testing, 'latest', return_value=None), \
                 patch.object(github, 'commit_files') as commit:
-            with self.assertRaisesRegex(ValueError, 'successful validation or mock'):
+            with self.assertRaisesRegex(ValueError, 'successful mock test'):
                 releases.promote('alice', self.root, 1, 'acme/platform-vpc')
             commit.assert_not_called()
         with self.assertRaisesRegex(ValueError, 'invalid'):
             draft_wrappers.build_released(FILES, 'deployment', {}, 'platform_vpc')
+
+    def test_validation_only_cannot_release_updated_root_revision(self):
+        validation = {'status': 'passed', 'revision': 1, 'mode': 'validate',
+                      'result': {'check_suite': 2}}
+        with patch.object(releases.testing, 'latest', return_value=validation), \
+                patch.object(github, 'commit_files') as commit:
+            with self.assertRaisesRegex(ValueError, 'successful mock test'):
+                releases.promote('alice', self.root, 1, 'acme/platform-vpc')
+            commit.assert_not_called()
 
     def test_wrapper_upgrade_creates_revision_and_restarts_saved_test(self):
         first = self.publish_record(self.root, '0.1.0')
@@ -157,6 +166,19 @@ class ModuleReleaseLifecycleTests(unittest.TestCase):
         self.assertEqual(start.call_args.args[1]['revision'], 2)
         self.assertEqual(start.call_args.args[2:], ('mock', previous['settings']))
 
+    def test_wrapper_upgrade_always_retests_wiring_with_mock_plan(self):
+        first = self.publish_record(self.root, '0.1.0')
+        root = drafts.get('alice', self.root)
+        wrapper = self.create_wrapper(first)
+        self.assertTrue(drafts.update('alice', self.root, 1, root['document']))
+        second = self.publish_record(self.root, '0.2.0')
+        previous = {'mode': 'validate', 'settings': {'variables': {'name': 'demo'}},
+                    'status': 'passed', 'revision': 1, 'result': {'check_suite': 2}}
+        with patch.object(release_lifecycle.testing, 'latest', return_value=previous), \
+                patch.object(release_lifecycle.testing, 'start', return_value='job') as start:
+            release_lifecycle.upgrade_wrapper('alice', wrapper, 1, second['id'])
+        self.assertEqual(start.call_args.args[2:], ('mock', previous['settings']))
+
     def test_releases_tested_wrapper_with_root_release_link(self):
         root_release = self.publish_record(self.root, '1.0.0')
         wrapper = self.create_wrapper(root_release)
@@ -176,6 +198,13 @@ class ModuleReleaseLifecycleTests(unittest.TestCase):
         self.assertEqual(wrapper_release['upstream_source'],
                          'git::https://github.com/acme/platform-vpc.git')
         self.assertEqual(wrapper_release['upstream_version'], '1.0.0')
+
+    def test_wrapper_release_rejects_parent_without_root_mock_evidence(self):
+        root_release = self.publish_record(self.root, '1.0.0')
+        wrapper = drafts.get('alice', self.create_wrapper(root_release))
+        with patch.object(releases.testing, 'release_ready', return_value=False):
+            with self.assertRaisesRegex(ValueError, 'released root revision'):
+                releases._upstream('alice', wrapper)
 
 
 if __name__ == '__main__':

@@ -147,10 +147,7 @@ def draft(key):
                            test_run=test_run, dependencies=versioned_dependencies(item['document']['files']),
                            parent_draft=parent_draft, parent=parent, releases=release_history,
                            release_state=release_lifecycle.wrapper_release_state(owner(),item),
-                           release_ready=bool(test_run and test_run['status'] == 'passed'
-                               and test_run['revision'] == item['revision']
-                               and test_run.get('mode') != 'format'
-                               and test_run.get('result',{}).get('check_suite') == 2)), status
+                           release_ready=testing.release_ready(owner(), key, item['revision'])), status
 
 
 def available_wrapper_name(item):
@@ -271,7 +268,7 @@ def upgrade_wrapper_release(key):
         if test_error:
             flash(f'Wrapper updated to revision {updated["revision"]}, but its automatic check could not start: {test_error}','warning')
             return redirect(url_for('.draft',key=key)+'#test-panel')
-        flash(f'Wrapper updated to revision {updated["revision"]}. Its saved test mode is running again.','success')
+        flash(f'Wrapper updated to revision {updated["revision"]}. Its mock test is running.','success')
         return redirect(url_for('.test_results',key=key))
     except ValueError as exc:
         flash(str(exc),'warning')

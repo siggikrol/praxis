@@ -87,11 +87,11 @@ Module package names must identify the technology and purpose, for example `terr
 
 ### Root modules and deployment wrappers
 
-A saved root module can wrap a public upstream module while retaining the Praxis interface. Its draft page lists every root-level `module` call with the source, version and file where it was declared. After the exact root revision passes validation or a mock test, **Release** commits that snapshot to its Praxis-managed GitHub repository and creates the next semantic tag. **Create deployment wrapper** defaults to the latest immutable Praxis release and allows any earlier release to be selected. Praxis creates a separate draft that calls the tag-pinned Git source, carries forward all variable declarations and provider/Terraform configuration, and forwards every declared output. The new draft records its parent release, repository URL, commit, tag, draft, revision and upstream provenance so the layers remain visible.
+A saved root module can wrap a public upstream module while retaining the Praxis interface. Its draft page lists every root-level `module` call with the source, version and file where it was declared. After the exact root revision passes a mock plan, **Release** commits that snapshot to its Praxis-managed GitHub repository and creates the next semantic tag. A validation-only result cannot release a module because it does not exercise the updated upstream module in a plan. **Create deployment wrapper** defaults to the latest immutable Praxis release and allows any earlier release to be selected. Praxis creates a separate draft that calls the tag-pinned Git source, carries forward all variable declarations and provider/Terraform configuration, and forwards every declared output. The new draft records its parent release, repository URL, commit, tag, draft, revision and upstream provenance so the layers remain visible.
 
 For example, `pds_network` continues to call `terraform-aws-modules/vpc/aws` internally, while `pds_network_wrapper` calls `git::https://github.com/<praxis-owner>/<repository>.git?ref=v1.0.0` through a module block named `pds_network`. The deployment wrapper never replaces that Praxis root layer with the upstream module. If the root module has no release, wrapper creation is blocked until it is tested and released.
 
-Each detected public Registry module call has an editable exact version. Updating it changes only that module block and saves a new draft revision. Releasing a newer organization root version marks its deployment wrappers as having an update available. Accepting that update writes the new tag pin as another wrapper revision and automatically starts the wrapper's previous validation or mock mode. Only a passing result for that exact wrapper revision enables its own release and Git tag.
+Each detected public Registry module call has an editable exact version. Updating it changes only that module block and saves a new draft revision. Releasing a newer organization root version marks its deployment wrappers as having an update available. Accepting that update writes the new tag pin as another wrapper revision and automatically starts its mock test. Only a passing mock result for that exact wrapper revision enables its own release and Git tag. A tag created under an older validation-only rule must gain a passing mock result for its recorded root revision before a bound wrapper can be tested or released.
 
 ## Shared appearance
 
@@ -99,7 +99,7 @@ Each detected public Registry module call has an editable exact version. Updatin
 
 ## OpenTofu checks
 
-Each saved draft has **Initialize & validate** and **Run mock test** actions. Both deployments build a runner using OpenTofu 1.12.0; Kubernetes starts a fresh Pod per run, while Compose uses a separate runner service. Initialization uses `tofu init -backend=false -input=false`; validation uses `tofu validate`. Mock testing generates a dedicated test with `command = plan` and mocked root providers, then runs only that test. Existing upstream test files are excluded. Supply JSON input values, optional mock data defaults, and expected outputs in the test panel. Empty expected outputs produce a planning smoke test. Complex examples may need realistic mocks; a passing mock does not establish real-world deployability.
+Each saved draft has **Initialize & validate** and **Run mock test** actions. Both deployments build a runner using OpenTofu 1.12.0; Kubernetes starts a fresh Pod per run, while Compose uses a separate runner service. Initialization uses `tofu init -backend=false -input=false`; validation uses `tofu validate`. Mock testing generates a dedicated test with `command = plan` and mocked root providers, then runs only that test. Root-module mocks plan the selected third-party dependency, so an upstream version change must pass on that exact revision before release. Deployment-wrapper mocks override the already-released parent module and test the wrapper's inputs, outputs, provider setup and immutable module reference without planning the parent's internals again. Existing upstream test files are excluded. Supply JSON input values, optional mock data defaults, and expected outputs in the test panel. Empty expected outputs produce a planning smoke test. Complex examples may need realistic mocks; a passing mock does not establish real-world deployability.
 
 **Generate mock setup** prepares those JSON fields before a test. It prefers literal input values from the bundled example that calls the module root, fills missing required inputs from their declared types and names, and adds defaults for referenced provider data-source attributes. Literal outputs become assertions; computed outputs stay empty for review. Generation does not execute Terraform or save a test result. Review the values, then run the mock test.
 
@@ -119,6 +119,14 @@ uses `/tmp/praxis-cache/terraform-foundation.sqlite3` (override with
 volume. No AWS connection is needed to register targets, sync public Git tags,
 create stacks or export definitions. Public Git access requires internet.
 
+Praxis caches immutable module documentation in the foundation database and warms
+the latest synced release for every catalog module at startup when due, then once
+every 24 hours. A database lease ensures only one web worker runs each refresh.
+Set `PRAXIS_MODULE_DOC_CACHE_REFRESH_SECONDS` to change the interval or
+`PRAXIS_MODULE_DOC_CACHE_REFRESH_ENABLED=0` to disable the background warmer.
+Private repositories are refreshed with their catalog owner's saved GitHub
+credential, and cached entries remain isolated by owner.
+
 The first Stack model generates configuration for a future OpenTofu runtime. It
 does not submit plans, run apply, create state, or connect to cloud accounts.
 Older catalog-backed Stack records retain their existing GitHub workflow screens
@@ -131,8 +139,8 @@ No GitHub repositories or cloud resources are created during local deployment.
 
 ### Release Builder drafts to GitHub
 
-Use **Release** on a saved draft after that exact revision passes validation or a
-mock test. Choose `owner/repository` and the semantic change type. Praxis calculates
+Use **Release** on a saved draft after that exact revision passes a mock test.
+Choose `owner/repository` and the semantic change type. Praxis calculates
 the next version from stable repository tags, commits the saved snapshot to the
 default branch and tags that exact commit. Repository creation is optional and
 explicit, always private; its token requires additional Administration permission.

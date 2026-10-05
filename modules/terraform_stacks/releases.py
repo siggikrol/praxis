@@ -88,11 +88,8 @@ def checked_draft(owner, key, revision):
     draft = draft_store.get(owner, key)
     if not draft or draft['revision'] != revision:
         raise ValueError('The draft changed. Reload and test its current saved revision before releasing.')
-    result = testing.latest(owner, key)
-    if (not result or result['status'] != 'passed' or result['revision'] != revision
-            or result.get('mode') == 'format'
-            or result.get('result', {}).get('check_suite') != 2):
-        raise ValueError('Run a successful validation or mock test on this saved revision before releasing it.')
+    if not testing.release_ready(owner, key, revision):
+        raise ValueError('Run a successful mock test on this saved revision before releasing it.')
     authoring.validate_files(draft['document']['files'])
     if any(PurePosixPath(path).parts[0] in ('.github', '.git')
            for path in draft['document']['files']):
@@ -112,6 +109,11 @@ def _upstream(owner, draft):
                 or binding.get('repository') != upstream['repository']
                 or binding.get('repository_url', upstream['repository_url']) != upstream['repository_url']):
             raise ValueError('This deployment wrapper is not pinned to a published organization module release.')
+        if not testing.release_ready(owner, upstream['draft_id'], upstream['draft_revision']):
+            raise ValueError(
+                'The pinned organization module release has not passed a mock test for '
+                'its released root revision. Test the root module before releasing this wrapper.'
+            )
         dependencies = draft_wrappers.interface(draft['document']['files'])['dependencies']
         module_name = source.get('module_name') or 'upstream'
         selected = [item for item in dependencies if item['name'] == module_name]

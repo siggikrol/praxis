@@ -44,19 +44,40 @@ class KubernetesJobsTests(unittest.TestCase):
     def test_private_wrapper_token_is_ephemeral_job_input(self):
         key=store.create('alice','wrapper',{
             'files':{'main.tf':'module "root" { source = "git::https://github.com/acme/root.git?ref=v1.0.0" }'},
-            'source':{'mode':'draft-wrapper'},
+            'source':{'mode':'draft-wrapper','module_name':'root'},
         })
         with patch('modules.terraform_stacks.github.access_token',return_value='saved-token'), \
                 patch.object(jobs,'submit') as submit:
-            testing.start('alice',store.get('alice',key),'validate',{'variables':{'name':'demo'}})
+            testing.start('alice',store.get('alice',key),'mock',{'variables':{'name':'demo'}})
         payload=submit.call_args.args[2]
         self.assertEqual(payload['git_auth'],{'host':'github.com','token':'saved-token'})
+        self.assertEqual(payload['override_modules'],['root'])
         with store.connection() as connection:
             row=dict(connection.execute(
                 'SELECT settings,result FROM module_test_runs WHERE draft_id=?',(key,)
             ).fetchone())
         self.assertEqual(json.loads(row['settings']),{'variables':{'name':'demo'}})
         self.assertNotIn('saved-token',json.dumps(row))
+
+    def test_wrapper_mock_waits_for_exact_parent_root_mock(self):
+        root_key=store.create('alice','root',{'files':{'main.tf':''}})
+        root=store.get('alice',root_key)
+        release=store.reserve_release(
+            'alice',root,'organization-root','1.0.0','v1.0.0','acme/root',
+            'terraform-aws-modules/vpc/aws','6.7.3')
+        release=store.update_release('alice',release['id'],'published','a'*40)
+        wrapper_key=store.create('alice','wrapper',{
+            'files':{'main.tf':'module "root" { source = "git::https://github.com/acme/root.git?ref=v1.0.0" }'},
+            'source':{
+                'mode':'draft-wrapper','module_name':'root',
+                'wrapped_draft':{'id':root_key,'name':'root','revision':1},
+                'wrapped_release':{'id':release['id'],'tag':'v1.0.0'},
+            },
+        })
+        with patch.object(jobs,'submit') as submit:
+            with self.assertRaisesRegex(ValueError, 'Test the root module first'):
+                testing.start('alice',store.get('alice',wrapper_key),'mock',{})
+        submit.assert_not_called()
     def test_restart_reconciliation_persists_before_cleanup(self):
         key=store.create('alice','test',{'files':{'main.tf':''}})
         with patch.object(jobs,'submit'):

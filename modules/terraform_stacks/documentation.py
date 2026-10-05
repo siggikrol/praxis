@@ -1,10 +1,56 @@
 """Read catalog documentation from a selected, immutable Git commit."""
 import json
 import re
+import time
 from markdown_it import MarkdownIt
 from markupsafe import Markup
 import hcl2
-from . import github
+from . import github, store
+
+
+def _cached_files(owner, repository, commit):
+    with store.connection() as db:
+        db.execute('''CREATE TABLE IF NOT EXISTS tf_module_documentation_cache (
+            owner TEXT NOT NULL, repository TEXT NOT NULL, commit_sha TEXT NOT NULL,
+            files TEXT NOT NULL, accessed REAL NOT NULL,
+            PRIMARY KEY(owner,repository,commit_sha))''')
+        row = db.execute(
+            'SELECT files FROM tf_module_documentation_cache '
+            'WHERE owner=? AND repository=? AND commit_sha=?',
+            (owner, repository, commit),
+        ).fetchone()
+        if row:
+            db.execute(
+                'UPDATE tf_module_documentation_cache SET accessed=? '
+                'WHERE owner=? AND repository=? AND commit_sha=?',
+                (time.time(), owner, repository, commit),
+            )
+    return json.loads(row['files']) if row else None
+
+
+def _cache_files(owner, repository, commit, files):
+    with store.connection() as db:
+        db.execute('''CREATE TABLE IF NOT EXISTS tf_module_documentation_cache (
+            owner TEXT NOT NULL, repository TEXT NOT NULL, commit_sha TEXT NOT NULL,
+            files TEXT NOT NULL, accessed REAL NOT NULL,
+            PRIMARY KEY(owner,repository,commit_sha))''')
+        db.execute(
+            'INSERT OR REPLACE INTO tf_module_documentation_cache VALUES(?,?,?,?,?)',
+            (owner, repository, commit, json.dumps(files), time.time()),
+        )
+        # A cached release is at most 2 MB. Bound persistent storage while keeping
+        # recently viewed releases available across workers and restarts.
+        db.execute('''DELETE FROM tf_module_documentation_cache WHERE rowid IN (
+            SELECT rowid FROM tf_module_documentation_cache
+            ORDER BY accessed DESC LIMIT -1 OFFSET 256)''')
+
+
+def _versions(item):
+    # Version discovery is explicit in the module workflow. Reuse that synced
+    # snapshot instead of calling GitHub for every catalog page view.
+    if 'versions' in item['data']:
+        return item['data']['versions']
+    return github.versions(item['data']['repository'], catalog_owner=str(item.get('owner', '')))
 
 
 def markdown(text):
@@ -37,7 +83,7 @@ def describe(files):
 
 def load(item, selected=''):
     repo = item['data']['repository']
-    versions = [v for v in github.versions(repo) if re.fullmatch(r'v?\d+\.\d+\.\d+', v['tag'])]
+    versions = [v for v in _versions(item) if re.fullmatch(r'v?\d+\.\d+\.\d+', v['tag'])]
     versions.sort(key=lambda v: tuple(map(int, v['tag'].lstrip('v').split('.'))), reverse=True)
     result = dict(versions=versions, selected=None, inputs=[], outputs=[], warnings=[], readme='', changelog='', usage='')
     if not versions:
@@ -48,11 +94,17 @@ def load(item, selected=''):
     sha = version['commit']
     if not re.fullmatch(r'[0-9a-fA-F]{40}', sha):
         raise ValueError('GitHub returned an invalid version commit.')
-    tree = github.request('GET', github.repo_path(repo) + '/git/trees/' + sha)
-    paths = [p for p in tree.get('tree', []) if p.get('type') == 'blob' and (p['path'].lower() in ('readme.md', 'changelog.md') or p['path'].endswith(('.tf','.tf.json','.tofu','.tofu.json')))]
-    if tree.get('truncated') or len(paths) > 40 or sum(p.get('size', 0) for p in paths) > 2_000_000:
-        raise ValueError('Module documentation exceeds the supported size. Read it in GitHub.')
-    files = {p['path']: github.contents(repo, p['path'], sha) for p in paths}
+    owner = str(item.get('owner', ''))
+    files = _cached_files(owner, repo, sha)
+    if files is None:
+        tree = github.request('GET', github.repo_path(repo) + '/git/trees/' + sha,
+                              catalog_owner=owner)
+        paths = [p for p in tree.get('tree', []) if p.get('type') == 'blob' and (p['path'].lower() in ('readme.md', 'changelog.md') or p['path'].endswith(('.tf','.tf.json','.tofu','.tofu.json')))]
+        if tree.get('truncated') or len(paths) > 40 or sum(p.get('size', 0) for p in paths) > 2_000_000:
+            raise ValueError('Module documentation exceeds the supported size. Read it in GitHub.')
+        files = {p['path']: github.contents(repo, p['path'], sha, catalog_owner=owner)
+                 for p in paths}
+        _cache_files(owner, repo, sha, files)
     inputs, outputs, warnings = describe(files)
     lines = ['module "' + item['name'].replace('-', '_') + '" {', '  source = "git::https://github.com/' + repo + '.git?ref=' + sha + '"', '']
     for variable in inputs:
